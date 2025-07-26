@@ -21,6 +21,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+                'google_id',        // ADD: Google OAuth ID
+        'avatar',           // ADD: Profile picture from Google
+        'email_verified_at',
     ];
 
     /**
@@ -46,6 +49,22 @@ class User extends Authenticatable
         ];
     }
 
+    // PostgreSQL specific scopes
+    public function scopeGoogleUsers($query)
+    {
+        return $query->whereNotNull('google_id');
+    }
+
+    public function scopeRegularUsers($query)
+    {
+        return $query->whereNull('google_id');
+    }
+
+    public function scopeVerified($query)
+    {
+        return $query->whereNotNull('email_verified_at');
+    }
+
     // E-commerce Relationships
     public function orders()
     {
@@ -56,6 +75,24 @@ class User extends Authenticatable
     {
         return $this->hasMany(ShoppingCart::class);
     }
+
+        // Accessors
+    public function getAvatarUrlAttribute()
+    {
+        if ($this->avatar) {
+            return $this->avatar;
+        }
+        
+        $hash = md5(strtolower(trim($this->email)));
+        return "https://www.gravatar.com/avatar/{$hash}?d=identicon&s=150";
+    }
+
+    public function getIsGoogleUserAttribute()
+    {
+        return !is_null($this->google_id);
+    }
+    
+
 
     public function reviews()
     {

@@ -1,11 +1,11 @@
 <?php
-// app/Models/Product.php
+// File: app/Models/Product.php - PostgreSQL Optimized
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Builder;
 
 class Product extends Model
 {
@@ -14,36 +14,81 @@ class Product extends Model
     protected $fillable = [
         'name',
         'slug',
-        'description',
         'short_description',
-        'sku',
+        'description',
         'price',
         'sale_price',
-        'stock_quantity',
+        'sku',
+        'category_id',
         'brand',
-        'sizes',
-        'colors',
         'images',
+        'features',
+        'specifications',
         'is_active',
         'is_featured',
-        'category_id',
+        'stock_quantity',
+        'min_stock_level',
         'weight',
-        'specifications',
+        'dimensions',
         'published_at',
+        'meta_data',
     ];
 
-    protected $casts = [
-        'sizes' => 'array',
-        'colors' => 'array',
-        'images' => 'array',
-        'specifications' => 'array',
-        'is_active' => 'boolean',
-        'is_featured' => 'boolean',
-        'price' => 'decimal:2',
-        'sale_price' => 'decimal:2',
-        'weight' => 'decimal:2',
-        'published_at' => 'datetime',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'price' => 'decimal:2',
+            'sale_price' => 'decimal:2',
+            'weight' => 'decimal:2',
+            'is_active' => 'boolean',
+            'is_featured' => 'boolean',
+            'images' => 'array', // PostgreSQL JSON handling
+            'features' => 'array', // PostgreSQL JSON handling
+            'specifications' => 'array', // PostgreSQL JSON handling
+            'dimensions' => 'array', // PostgreSQL JSON handling
+            'meta_data' => 'array', // PostgreSQL JSON handling
+            'published_at' => 'datetime',
+        ];
+    }
+
+    // PostgreSQL specific scopes
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true)
+                    ->whereNotNull('published_at')
+                    ->where('published_at', '<=', now());
+    }
+
+    public function scopeFeatured($query)
+    {
+        return $query->where('is_featured', true);
+    }
+
+    public function scopeInStock($query)
+    {
+        return $query->where('stock_quantity', '>', 0);
+    }
+
+    public function scopeByCategory($query, $categoryId)
+    {
+        return $query->where('category_id', $categoryId);
+    }
+
+    public function scopeByBrand($query, $brand)
+    {
+        return $query->where('brand', $brand);
+    }
+
+    // PostgreSQL full-text search
+    public function scopeSearch($query, $search)
+    {
+        return $query->where(function ($q) use ($search) {
+            $q->where('name', 'ILIKE', "%{$search}%") // PostgreSQL case-insensitive
+              ->orWhere('description', 'ILIKE', "%{$search}%")
+              ->orWhere('short_description', 'ILIKE', "%{$search}%")
+              ->orWhere('brand', 'ILIKE', "%{$search}%");
+        });
+    }
 
     // Relationships
     public function category()
@@ -56,109 +101,33 @@ class Product extends Model
         return $this->hasMany(OrderItem::class);
     }
 
-    public function reviews()
-    {
-        return $this->hasMany(ProductReview::class);
-    }
-
-    public function wishlists()
-    {
-        return $this->hasMany(Wishlist::class);
-    }
-
     public function cartItems()
     {
         return $this->hasMany(ShoppingCart::class);
     }
 
-    public function productImages()
+    public function wishlistItems()
     {
-        return $this->hasMany(ProductImage::class)->orderBy('sort_order');
+        return $this->hasMany(Wishlist::class);
     }
 
+    // Accessors
     public function getCurrentPriceAttribute()
-{
-    return $this->sale_price ?? $this->price;
-}
+    {
+        return $this->sale_price ?: $this->price;
+    }
 
-public function getDiscountPercentageAttribute()
-{
-    if ($this->sale_price && $this->price > $this->sale_price) {
+    public function getIsOnSaleAttribute()
+    {
+        return !is_null($this->sale_price) && $this->sale_price < $this->price;
+    }
+
+    public function getDiscountPercentageAttribute()
+    {
+        if (!$this->is_on_sale) {
+            return 0;
+        }
+        
         return round((($this->price - $this->sale_price) / $this->price) * 100);
-    }
-    return 0;
-}
-
-public function getInStockAttribute()
-{
-    return $this->stock_quantity > 0;
-}
-
-// Scopes
-public function scopeActive($query)
-{
-    return $query->where('is_active', true);
-}
-
-public function scopeFeatured($query)
-{
-    return $query->where('is_featured', true);
-}
-
-public function scopePublished($query)
-{
-    return $query->whereNotNull('published_at')
-                 ->where('published_at', '<=', now());
-}
-
-public function scopeInStock($query)
-{
-    return $query->where('stock_quantity', '>', 0);
-}
-
-    // Accessors & Mutators
-    
-
-    public function getAverageRatingAttribute()
-    {
-        return $this->reviews()->avg('rating') ?? 0;
-    }
-
-    public function getReviewsCountAttribute()
-    {
-        return $this->reviews()->count();
-    }
-
-    public function setNameAttribute($value)
-    {
-        $this->attributes['name'] = $value;
-        $this->attributes['slug'] = Str::slug($value);
-    }
-
-    // Auto generate SKU if empty
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function ($product) {
-            if (empty($product->sku)) {
-                $product->sku = 'SF-' . strtoupper(Str::random(8));
-            }
-        });
-
-        // Update stock status when stock changes
-        static::updated(function ($product) {
-            if ($product->isDirty('stock_quantity')) {
-                if ($product->stock_quantity <= 0) {
-                    $product->update(['is_active' => false]);
-                }
-                
-                // Trigger low stock alert
-                if ($product->stock_quantity <= 5 && $product->stock_quantity > 0) {
-                    // Dispatch low stock notification
-                    // event(new LowStockAlert($product));
-                }
-            }
-        });
     }
 }

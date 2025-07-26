@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\Product; // TAMBAHKAN INI - INI YANG MENYEBABKAN ERROR
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
