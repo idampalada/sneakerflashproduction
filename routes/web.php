@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
 
 // =====================================
 // PUBLIC ROUTES
@@ -66,15 +67,22 @@ Route::get('/password/reset', function() {
 // CHECKOUT ROUTES (Guest & Authenticated)
 // =====================================
 
+// Main checkout routes
 Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
 Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
-Route::get('/checkout/cities', [CheckoutController::class, 'getCities'])->name('checkout.getCities');
-Route::post('/checkout/shipping', [CheckoutController::class, 'calculateShipping'])->name('checkout.calculateShipping');
 
-// Payment callbacks (public endpoints)
-Route::get('/checkout/success/{orderNumber}', [CheckoutController::class, 'finish'])->name('checkout.finish');
+// AJAX routes for checkout
+Route::get('/checkout/cities', [CheckoutController::class, 'getCities'])->name('checkout.cities');
+Route::post('/checkout/shipping', [CheckoutController::class, 'calculateShipping'])->name('checkout.shipping');
+
+// Checkout completion routes
+Route::get('/checkout/success/{orderNumber}', [CheckoutController::class, 'success'])->name('checkout.success');
+Route::get('/checkout/finish/{orderNumber}', [CheckoutController::class, 'finish'])->name('checkout.finish');
 Route::get('/checkout/unfinish', [CheckoutController::class, 'unfinish'])->name('checkout.unfinish');
 Route::get('/checkout/error', [CheckoutController::class, 'error'])->name('checkout.error');
+
+// Payment notification (for payment gateways like Midtrans)
+Route::post('/checkout/payment/notification', [CheckoutController::class, 'paymentNotification'])->name('checkout.notification');
 
 // =====================================
 // AUTHENTICATED USER ROUTES
@@ -85,7 +93,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{orderNumber}', [OrderController::class, 'show'])->name('orders.show');
     
-    // User Profile (akan ditambahkan nanti)
+    // User Profile
     Route::get('/profile', function() {
         return view('frontend.profile.index');
     })->name('profile.index');
@@ -93,122 +101,204 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profile/edit', function() {
         return view('frontend.profile.edit');
     })->name('profile.edit');
+    
+    // User Account Settings
+    Route::patch('/profile', function() {
+        // Profile update logic here
+        return redirect()->route('profile.index')->with('success', 'Profile updated successfully');
+    })->name('profile.update');
+    
+    // User Wishlist (if implemented)
+    Route::get('/wishlist', function() {
+        return view('frontend.wishlist.index');
+    })->name('wishlist.index');
 });
+
+// =====================================
+// SEARCH & FILTER ROUTES
+// =====================================
+
+// Advanced search
+Route::get('/search', [ProductController::class, 'search'])->name('search');
+
+// Product filters
+Route::get('/filter', [ProductController::class, 'filter'])->name('products.filter');
+
+// Brand pages
+Route::get('/brands/{brand}', [ProductController::class, 'byBrand'])->name('products.brand');
+
+// =====================================
+// STATIC PAGES
+// =====================================
+
+Route::get('/about', function() {
+    return view('frontend.pages.about');
+})->name('about');
+
+Route::get('/contact', function() {
+    return view('frontend.pages.contact');
+})->name('contact');
+
+Route::post('/contact', function() {
+    // Contact form submission logic
+    return back()->with('success', 'Message sent successfully!');
+})->name('contact.submit');
+
+Route::get('/shipping-info', function() {
+    return view('frontend.pages.shipping');
+})->name('shipping.info');
+
+Route::get('/returns', function() {
+    return view('frontend.pages.returns');
+})->name('returns');
+
+Route::get('/size-guide', function() {
+    return view('frontend.pages.size-guide');
+})->name('size.guide');
+
+Route::get('/terms', function() {
+    return view('frontend.pages.terms');
+})->name('terms');
+
+Route::get('/privacy', function() {
+    return view('frontend.pages.privacy');
+})->name('privacy');
+
+// =====================================
+// API ROUTES (for AJAX calls)
+// =====================================
+
+Route::prefix('api')->group(function() {
+    // Quick product search for autocomplete
+    Route::get('/products/search', [ProductController::class, 'quickSearch'])->name('api.products.search');
+    
+    // Get product variants (size, color)
+    Route::get('/products/{id}/variants', [ProductController::class, 'getVariants'])->name('api.products.variants');
+    
+    // Check product stock
+    Route::get('/products/{id}/stock', [ProductController::class, 'checkStock'])->name('api.products.stock');
+    
+    // Newsletter subscription
+    Route::post('/newsletter', function() {
+        // Newsletter subscription logic
+        return response()->json(['success' => true, 'message' => 'Subscribed successfully!']);
+    })->name('api.newsletter');
+});
+
+// =====================================
+// ADMIN REDIRECT (Temporarily disabled due to Filament config issue)
+// =====================================
+
+// Route::get('/admin', function() {
+//     return redirect('/admin/login');
+// });
 
 // =====================================
 // DEBUG ROUTES (Remove in production)
 // =====================================
 
-Route::get('/debug/categories', function() {
-    $allCategories = \App\Models\Category::all();
-    $activeCategories = \App\Models\Category::where('is_active', true)->get();
-    
-    echo "<h2>Debug Data Kategori</h2>";
-    echo "<h3>Total Kategori: " . $allCategories->count() . "</h3>";
-    echo "<h3>Kategori Aktif: " . $activeCategories->count() . "</h3>";
-    
-    if ($activeCategories->count() > 0) {
-        echo "<table border='1' style='border-collapse: collapse; width: 100%;'>";
-        echo "<tr style='background: #f5f5f5;'><th style='padding: 8px; border: 1px solid #ddd;'>ID</th><th style='padding: 8px; border: 1px solid #ddd;'>Name</th><th style='padding: 8px; border: 1px solid #ddd;'>Slug</th><th style='padding: 8px; border: 1px solid #ddd;'>Active</th></tr>";
-        foreach ($activeCategories as $cat) {
-            echo "<tr>";
-            echo "<td style='padding: 8px; border: 1px solid #ddd;'>{$cat->id}</td>";
-            echo "<td style='padding: 8px; border: 1px solid #ddd;'>{$cat->name}</td>";
-            echo "<td style='padding: 8px; border: 1px solid #ddd;'>{$cat->slug}</td>";
-            echo "<td style='padding: 8px; border: 1px solid #ddd;'>".($cat->is_active ? 'YES' : 'NO')."</td>";
-            echo "</tr>";
-        }
-        echo "</table>";
-    }
-    
-    echo "<br><a href='/' style='color: blue; text-decoration: underline;'>Back to Home</a>";
+Route::prefix('debug')->group(function() {
+    Route::get('/routes', function() {
+        $routes = collect(Route::getRoutes())->map(function ($route) {
+            return [
+                'method' => implode('|', $route->methods()),
+                'uri' => $route->uri(),
+                'name' => $route->getName(),
+                'action' => $route->getActionName(),
+            ];
+        });
+        
+        return response()->json($routes);
+    });
+
+    Route::get('/checkout', function() {
+        dd([
+            'session_cart' => session('cart', []),
+            'cart_count' => count(session('cart', [])),
+            'csrf_token' => csrf_token(),
+            'user' => Auth::user(),
+            'routes' => [
+                'checkout.index' => route('checkout.index'),
+                'checkout.store' => route('checkout.store'),
+                'checkout.cities' => route('checkout.cities'),
+                'checkout.shipping' => route('checkout.shipping'),
+            ]
+        ]);
+    });
+
+    Route::get('/session', function() {
+        return response()->json([
+            'cart' => session('cart', []),
+            'user' => Auth::user(),
+            'csrf' => csrf_token(),
+            'all_session' => session()->all()
+        ]);
+    });
+
+    Route::get('/categories', function() {
+        $allCategories = \App\Models\Category::all();
+        $activeCategories = \App\Models\Category::where('is_active', true)->get();
+        
+        return response()->json([
+            'total_categories' => $allCategories->count(),
+            'active_categories' => $activeCategories->count(),
+            'categories' => $activeCategories->map(function($cat) {
+                return [
+                    'id' => $cat->id,
+                    'name' => $cat->name,
+                    'slug' => $cat->slug,
+                    'is_active' => $cat->is_active,
+                    'products_count' => $cat->products()->count()
+                ];
+            })
+        ]);
+    });
+
+    Route::get('/products', function() {
+        $products = \App\Models\Product::with('category')->get();
+        
+        return response()->json([
+            'total_products' => $products->count(),
+            'active_products' => $products->where('is_active', true)->count(),
+            'products' => $products->map(function($product) {
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'slug' => $product->slug,
+                    'price' => $product->price,
+                    'sale_price' => $product->sale_price,
+                    'stock' => $product->stock_quantity,
+                    'category' => $product->category->name ?? 'No Category',
+                    'is_active' => $product->is_active
+                ];
+            })
+        ]);
+    });
+
+    Route::get('/clear-cart', function() {
+        session()->forget('cart');
+        return response()->json(['message' => 'Cart cleared', 'cart' => session('cart', [])]);
+    });
 });
 
-Route::get('/debug/add-sample-data', function() {
-    echo "<h2>Adding Sample Data...</h2>";
-    
-    // Add sample categories if none exist
-    if (\App\Models\Category::count() == 0) {
-        $categories = [
-            ['name' => 'Running Shoes', 'slug' => 'running-shoes', 'description' => 'Professional running shoes'],
-            ['name' => 'Basketball Shoes', 'slug' => 'basketball-shoes', 'description' => 'High-performance basketball shoes'],
-            ['name' => 'Casual Shoes', 'slug' => 'casual-shoes', 'description' => 'Comfortable everyday shoes'],
-            ['name' => 'Training Shoes', 'slug' => 'training-shoes', 'description' => 'Versatile training shoes'],
-        ];
-        
-        foreach ($categories as $index => $catData) {
-            \App\Models\Category::create([
-                'name' => $catData['name'],
-                'slug' => $catData['slug'],
-                'description' => $catData['description'],
-                'is_active' => true,
-                'sort_order' => ($index + 1) * 10,
-            ]);
-        }
-        echo "<p style='color: green;'>✓ Sample categories added!</p>";
-    } else {
-        echo "<p style='color: orange;'>Categories already exist.</p>";
-    }
-    
-    // Add sample products if none exist
-    if (\App\Models\Product::count() == 0) {
-        $categories = \App\Models\Category::all();
-        if ($categories->count() > 0) {
-            $products = [
-                [
-                    'name' => 'Nike Air Max 270',
-                    'slug' => 'nike-air-max-270',
-                    'short_description' => 'Comfortable running shoes',
-                    'description' => 'Premium running shoes with air cushioning technology for maximum comfort.',
-                    'price' => 2500000,
-                    'category_id' => $categories->first()->id,
-                    'brand' => 'Nike',
-                    'is_active' => true,
-                    'is_featured' => true,
-                    'published_at' => now(),
-                    'stock_quantity' => 50,
-                ],
-                [
-                    'name' => 'Adidas Ultraboost 22',
-                    'slug' => 'adidas-ultraboost-22',
-                    'short_description' => 'Premium running shoes',
-                    'description' => 'Advanced running shoes with boost technology for superior energy return.',
-                    'price' => 3000000,
-                    'sale_price' => 2400000,
-                    'category_id' => $categories->first()->id,
-                    'brand' => 'Adidas',
-                    'is_active' => true,
-                    'is_featured' => true,
-                    'published_at' => now(),
-                    'stock_quantity' => 30,
-                ],
-                [
-                    'name' => 'Puma RS-X',
-                    'slug' => 'puma-rs-x',
-                    'short_description' => 'Retro-inspired sneakers',
-                    'description' => 'Bold and chunky sneakers with retro-futuristic design elements.',
-                    'price' => 1800000,
-                    'category_id' => $categories->count() > 2 ? $categories[2]->id : $categories->first()->id,
-                    'brand' => 'Puma',
-                    'is_active' => true,
-                    'is_featured' => false,
-                    'published_at' => now(),
-                    'stock_quantity' => 25,
-                ],
-            ];
-            
-            foreach ($products as $prodData) {
-                \App\Models\Product::create($prodData);
-            }
-            echo "<p style='color: green;'>✓ Sample products added!</p>";
-        } else {
-            echo "<p style='color: red;'>Cannot add products: No categories found.</p>";
-        }
-    } else {
-        echo "<p style='color: orange;'>Products already exist.</p>";
-    }
-    
-    echo "<br><br>";
-    echo "<a href='/debug/categories' style='color: blue; text-decoration: underline; margin-right: 20px;'>View Categories</a>";
-    echo "<a href='/' style='color: blue; text-decoration: underline;'>Back to Home</a>";
+// =====================================
+// FALLBACK ROUTES
+// =====================================
+
+// Handle old URLs or redirects
+Route::get('/shop', function() {
+    return redirect()->route('products.index');
+});
+
+Route::get('/category/{slug}', function($slug) {
+    return redirect()->route('categories.show', $slug);
+});
+
+Route::get('/product/{slug}', function($slug) {
+    return redirect()->route('products.show', $slug);
+});
+
+// 404 handling for specific paths
+Route::fallback(function() {
+    abort(404);
 });

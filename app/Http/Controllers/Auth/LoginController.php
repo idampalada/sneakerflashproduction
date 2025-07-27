@@ -1,31 +1,38 @@
 <?php
 // File: app/Http/Controllers/Auth/LoginController.php
+// FIXED VERSION - Same pattern as working RegisterController
 
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Foundation\Auth\AuthenticatesUsers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
-    use AuthenticatesUsers;
-
-    protected $redirectTo = '/';
-
-    public function __construct()
-    {
-        $this->middleware('guest')->except('logout');
-    }
-
+    /**
+     * Show the login form.
+     */
     public function showLoginForm()
     {
+        // Check if user is already logged in (same as RegisterController)
+        if (Auth::check()) {
+            return redirect('/');
+        }
+
         return view('auth.login');
     }
 
+    /**
+     * Handle user login.
+     */
     public function login(Request $request)
     {
+        // Check if user is already logged in (same as RegisterController)
+        if (Auth::check()) {
+            return redirect('/');
+        }
+
         $request->validate([
             'email' => 'required|email',
             'password' => 'required|string|min:6',
@@ -54,6 +61,9 @@ class LoginController extends Controller
         ])->withInput($request->except('password'));
     }
 
+    /**
+     * Handle user logout.
+     */
     public function logout(Request $request)
     {
         Auth::logout();

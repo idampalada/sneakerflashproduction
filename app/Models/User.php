@@ -1,13 +1,13 @@
 <?php
-
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
@@ -21,7 +21,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-                'google_id',        // ADD: Google OAuth ID
+        'google_id',        // ADD: Google OAuth ID
         'avatar',           // ADD: Profile picture from Google
         'email_verified_at',
     ];
@@ -47,6 +47,18 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Determine if the user can access the Filament admin panel.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        // Allow access for specific admin emails
+        return in_array($this->email, [
+            'admin@sneakerflash.com',
+            'admin@sneaker.com',
+        ]);
     }
 
     // PostgreSQL specific scopes
@@ -76,13 +88,12 @@ class User extends Authenticatable
         return $this->hasMany(ShoppingCart::class);
     }
 
-        // Accessors
+    // Accessors
     public function getAvatarUrlAttribute()
     {
         if ($this->avatar) {
             return $this->avatar;
         }
-        
         $hash = md5(strtolower(trim($this->email)));
         return "https://www.gravatar.com/avatar/{$hash}?d=identicon&s=150";
     }
@@ -91,8 +102,6 @@ class User extends Authenticatable
     {
         return !is_null($this->google_id);
     }
-    
-
 
     public function reviews()
     {
@@ -110,29 +119,29 @@ class User extends Authenticatable
     }
 
     // Helper methods
-public function getCartCount()
-{
-    return $this->cartItems()
-        ->whereHas('product', function ($query) {
-            $query->where('is_active', true)
-                  ->where('stock_quantity', '>', 0);
-        })
-        ->sum('quantity');
-}
+    public function getCartCount()
+    {
+        return $this->cartItems()
+            ->whereHas('product', function ($query) {
+                $query->where('is_active', true)
+                      ->where('stock_quantity', '>', 0);
+            })
+            ->sum('quantity');
+    }
 
-public function getCartTotal()
-{
-    return $this->cartItems()
-        ->whereHas('product', function ($query) {
-            $query->where('is_active', true)
-                  ->where('stock_quantity', '>', 0);
-        })
-        ->get()
-        ->sum(function ($item) {
-            $price = $item->product->sale_price ?? $item->product->price;
-            return $price * $item->quantity;
-        });
-}
+    public function getCartTotal()
+    {
+        return $this->cartItems()
+            ->whereHas('product', function ($query) {
+                $query->where('is_active', true)
+                      ->where('stock_quantity', '>', 0);
+            })
+            ->get()
+            ->sum(function ($item) {
+                $price = $item->product->sale_price ?? $item->product->price;
+                return $price * $item->quantity;
+            });
+    }
 
     public function getTotalSpent()
     {

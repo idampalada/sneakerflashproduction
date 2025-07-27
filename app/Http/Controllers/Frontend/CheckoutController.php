@@ -3,136 +3,103 @@
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Product;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Auth;
 
 class CheckoutController extends Controller
 {
     public function index()
     {
+        // Get cart from session
         $cart = Session::get('cart', []);
         
         if (empty($cart)) {
-            return redirect()->route('cart.index')->with('error', 'Your cart is empty!');
+            return redirect()->route('cart.index')->with('error', 'Your cart is empty.');
         }
 
+        // Get cart items
         $cartItems = $this->getCartItems($cart);
         $subtotal = $cartItems->sum('subtotal');
-        
-        // Simple provinces array (nanti bisa diganti dengan Raja Ongkir)
-        $provinces = [
-            ['province_id' => '1', 'province' => 'DI Yogyakarta'],
-            ['province_id' => '2', 'province' => 'DKI Jakarta'], 
-            ['province_id' => '3', 'province' => 'Jawa Barat'],
-            ['province_id' => '4', 'province' => 'Jawa Tengah'],
-            ['province_id' => '5', 'province' => 'Jawa Timur'],
-            ['province_id' => '6', 'province' => 'Banten'],
-            ['province_id' => '7', 'province' => 'Bali'],
-            ['province_id' => '8', 'province' => 'Sumatera Utara'],
-            ['province_id' => '9', 'province' => 'Sumatera Barat'],
-            ['province_id' => '10', 'province' => 'Sumatera Selatan'],
-        ];
-        
+
+        // Get provinces for shipping
+        $provinces = $this->getProvinces();
+
+        Log::info('Session cart data: ' . json_encode($cart));
+        Log::info('Checkout Debug', [
+            'cart_count' => count($cart),
+            'cart_items_count' => $cartItems->count(),
+            'subtotal' => $subtotal
+        ]);
+
         return view('frontend.checkout.index', compact('cartItems', 'subtotal', 'provinces'));
-    }
-
-    public function getCities(Request $request)
-    {
-        // Simple cities array (nanti bisa diganti dengan Raja Ongkir)
-        $cities = [
-            ['city_id' => '155', 'city_name' => 'Jakarta Pusat'],
-            ['city_id' => '156', 'city_name' => 'Jakarta Utara'],
-            ['city_id' => '157', 'city_name' => 'Jakarta Barat'],
-            ['city_id' => '158', 'city_name' => 'Jakarta Selatan'],
-            ['city_id' => '159', 'city_name' => 'Jakarta Timur'],
-            ['city_id' => '160', 'city_name' => 'Bandung'],
-            ['city_id' => '161', 'city_name' => 'Surabaya'],
-            ['city_id' => '162', 'city_name' => 'Yogyakarta'],
-            ['city_id' => '163', 'city_name' => 'Semarang'],
-            ['city_id' => '164', 'city_name' => 'Medan'],
-        ];
-        
-        return response()->json($cities);
-    }
-
-    public function calculateShipping(Request $request)
-    {
-        // Simple shipping calculation (nanti bisa diganti dengan Raja Ongkir)
-        $shippingOptions = [
-            [
-                'courier' => 'JNE',
-                'service' => 'REG',
-                'description' => 'Regular Service',
-                'cost' => 15000,
-                'etd' => '1-2',
-                'formatted_cost' => 'Rp 15.000',
-                'formatted_etd' => '1-2 hari'
-            ],
-            [
-                'courier' => 'JNE',
-                'service' => 'YES',
-                'description' => 'Yakin Esok Sampai',
-                'cost' => 25000,
-                'etd' => '1',
-                'formatted_cost' => 'Rp 25.000',
-                'formatted_etd' => '1 hari'
-            ],
-            [
-                'courier' => 'POS',
-                'service' => 'Reguler',
-                'description' => 'Pos Reguler',
-                'cost' => 12000,
-                'etd' => '2-3',
-                'formatted_cost' => 'Rp 12.000',
-                'formatted_etd' => '2-3 hari'
-            ]
-        ];
-
-        return response()->json($shippingOptions);
     }
 
     public function store(Request $request)
     {
+        // Validation
         $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
-            'email' => 'required|email',
+            'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
             'address' => 'required|string',
-            'city_id' => 'required',
-            'province_id' => 'required',
+            'province_id' => 'required|string',
+            'city_id' => 'required|string',
             'postal_code' => 'required|string|max:10',
-            'shipping_method' => 'required|string',
-            'shipping_cost' => 'required|numeric|min:0',
-            'notes' => 'nullable|string|max:500'
+            'shipping_method' => 'nullable|string',
+            'shipping_cost' => 'nullable|numeric|min:0',
         ]);
 
-        $cart = Session::get('cart', []);
-        
-        if (empty($cart)) {
-            return redirect()->route('cart.index')->with('error', 'Your cart is empty!');
-        }
-
-        DB::beginTransaction();
+        // Log request data untuk debugging
+        Log::info('Checkout request data:', $request->all());
 
         try {
-            // Create order
-            $orderNumber = 'ORD-' . date('Ymd') . '-' . strtoupper(Str::random(6));
+            DB::beginTransaction();
+
+            // Get cart dari session
+            $cart = Session::get('cart', []);
+            if (empty($cart)) {
+                return back()->with('error', 'Your cart is empty.');
+            }
+
+            // Get cart items dengan validasi
             $cartItems = $this->getCartItems($cart);
+            if ($cartItems->isEmpty()) {
+                return back()->with('error', 'No valid items in cart.');
+            }
+
+            Log::info('Cart items for checkout:', $cartItems->toArray());
+
+            // Calculate totals
             $subtotal = $cartItems->sum('subtotal');
-            $shippingAmount = $request->shipping_cost;
-            $taxAmount = $subtotal * 0.11; // 11% PPN
+            $shippingAmount = (float) ($request->shipping_cost ?? 0);
+            $taxAmount = $subtotal * 0.11; // 11% tax
             $totalAmount = $subtotal + $shippingAmount + $taxAmount;
 
-            $order = Order::create([
+            // Generate order number
+            $orderNumber = 'SF' . date('Ymd') . strtoupper(Str::random(6));
+
+            // Store origin data (fallback untuk RajaOngkir)
+            $storeOrigin = [
+                'city_name' => 'Jakarta Selatan',
+                'province_name' => 'DKI Jakarta',
+                'postal_code' => '12310',
+                'city_id' => '158' // Jakarta Selatan di RajaOngkir
+            ];
+
+            // Create order dengan explicit data handling
+            $orderData = [
                 'order_number' => $orderNumber,
-                'user_id' => null, // Guest order - no authentication required
-                'customer_name' => $request->first_name . ' ' . $request->last_name,
+                'user_id' => Auth::check() ? Auth::id() : null, // Handle guest checkout
+                'customer_name' => trim($request->first_name . ' ' . $request->last_name),
                 'customer_email' => $request->email,
                 'customer_phone' => $request->phone,
                 'status' => 'pending',
@@ -160,73 +127,378 @@ class CheckoutController extends Controller
                     'postal_code' => $request->postal_code,
                     'phone' => $request->phone
                 ],
-                'payment_method' => 'bank_transfer', // Simple payment method
+                'store_origin' => [
+                    'address' => 'Jl. Bank Exim No.37, RT.6/RW.1, Pd. Pinang, Kec. Kby. Lama',
+                    'city' => $storeOrigin['city_name'],
+                    'province' => $storeOrigin['province_name'],
+                    'postal_code' => $storeOrigin['postal_code'],
+                    'city_id' => $storeOrigin['city_id']
+                ],
+                'payment_method' => 'bank_transfer',
                 'payment_status' => 'pending',
-                'notes' => $request->notes,
-            ]);
+                'notes' => $request->notes ?? '',
+                'shipping_method' => $request->shipping_method ?? 'Standard Shipping',
+            ];
 
-            // Create order items
+            Log::info('Creating order with data:', $orderData);
+
+            // Create order
+            $order = Order::create($orderData);
+
+            Log::info('Order created successfully with ID: ' . $order->id);
+
+            // Create order items dengan validasi ketat
             foreach ($cartItems as $item) {
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'product_id' => $item['id'],
-                    'product_name' => $item['name'],
-                    'product_price' => $item['price'],
-                    'quantity' => $item['quantity'],
-                    'total_price' => $item['subtotal']
-                ]);
+                try {
+                    // Validate product exists and is available
+                    $product = Product::find($item['id']);
+                    if (!$product) {
+                        throw new \Exception("Product with ID {$item['id']} not found");
+                    }
 
-                // Update stock
-                Product::where('id', $item['id'])->decrement('stock_quantity', $item['quantity']);
+                    if (!$product->is_active) {
+                        throw new \Exception("Product {$product->name} is not active");
+                    }
+
+                    if ($product->stock_quantity < $item['quantity']) {
+                        throw new \Exception("Insufficient stock for product {$product->name}. Available: {$product->stock_quantity}, Requested: {$item['quantity']}");
+                    }
+
+                    // Prepare order item data dengan semua field yang required
+                    $orderItemData = [
+                        'order_id' => $order->id,
+                        'product_id' => $item['id'],
+                        'product_name' => $item['name'],
+                        'product_sku' => $item['sku'] ?? '',
+                        'product_price' => (float) $item['price'], // Required field yang sempat missing
+                        'quantity' => (int) $item['quantity'],
+                        'total_price' => (float) $item['subtotal']
+                    ];
+
+                    // Validate numeric values
+                    if ($orderItemData['product_price'] <= 0) {
+                        throw new \Exception("Invalid product price for {$item['name']}: {$orderItemData['product_price']}");
+                    }
+
+                    if ($orderItemData['total_price'] <= 0) {
+                        throw new \Exception("Invalid total price for {$item['name']}: {$orderItemData['total_price']}");
+                    }
+
+                    if ($orderItemData['quantity'] <= 0) {
+                        throw new \Exception("Invalid quantity for {$item['name']}: {$orderItemData['quantity']}");
+                    }
+
+                    Log::info('Creating OrderItem with data:', $orderItemData);
+
+                    // Create order item
+                    OrderItem::create($orderItemData);
+
+                    // Update stock
+                    $product->decrement('stock_quantity', $item['quantity']);
+
+                    Log::info("Stock updated for product {$product->id}: remaining {$product->fresh()->stock_quantity}");
+
+                } catch (\Exception $e) {
+                    Log::error('OrderItem creation error: ' . $e->getMessage(), [
+                        'item' => $item,
+                        'order_id' => $order->id
+                    ]);
+                    throw $e; // Re-throw untuk rollback
+                }
             }
 
             DB::commit();
 
-            // Clear cart
+            // Clear cart setelah order berhasil
             Session::forget('cart');
 
-            // Simple success page (nanti bisa diganti dengan payment gateway)
-            return view('frontend.checkout.success', [
-                'order' => $order
-            ]);
+            Log::info('Checkout completed successfully for order: ' . $order->order_number);
+
+            // Redirect to success page
+            return redirect()->route('checkout.success', ['orderNumber' => $order->order_number])
+                           ->with('success', 'Order placed successfully!');
 
         } catch (\Exception $e) {
             DB::rollback();
+            
+            Log::error('Checkout error: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'cart_data' => Session::get('cart', [])
+            ]);
             
             return back()->withInput()->with('error', 'Failed to process checkout: ' . $e->getMessage());
         }
     }
 
-    public function finish(Request $request)
+    public function getCities(Request $request)
     {
-        $orderId = $request->order_id;
+        $provinceId = $request->get('province_id');
         
-        if ($orderId) {
-            $order = Order::where('order_number', $orderId)->first();
-            
-            if ($order) {
-                return view('frontend.checkout.success', compact('order'));
-            }
+        if (!$provinceId) {
+            return response()->json([]);
         }
 
-        return redirect()->route('home')->with('error', 'Order not found');
+        try {
+            // Try RajaOngkir API first
+            $response = Http::withHeaders([
+                'key' => env('RAJAONGKIR_API_KEY', 'your-api-key-here')
+            ])->get('https://api.rajaongkir.com/starter/city', [
+                'province' => $provinceId
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['rajaongkir']['results'])) {
+                    return response()->json($data['rajaongkir']['results']);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('RajaOngkir API error: ' . $e->getMessage());
+        }
+
+        // Fallback static data
+        $fallbackCities = $this->getFallbackCities($provinceId);
+        return response()->json($fallbackCities);
+    }
+
+    public function calculateShipping(Request $request)
+    {
+        $destinationCity = $request->get('destination_city');
+        $weight = $request->get('weight', 1000); // Default 1kg
+
+        if (!$destinationCity) {
+            return response()->json([]);
+        }
+
+        try {
+            // Try RajaOngkir API first
+            $response = Http::withHeaders([
+                'key' => env('RAJAONGKIR_API_KEY', 'your-api-key-here')
+            ])->post('https://api.rajaongkir.com/starter/cost', [
+                'origin' => '158', // Jakarta Selatan
+                'destination' => $destinationCity,
+                'weight' => $weight,
+                'courier' => 'jne:pos:tiki'
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['rajaongkir']['results'])) {
+                    $shippingOptions = [];
+                    
+                    foreach ($data['rajaongkir']['results'] as $courier) {
+                        foreach ($courier['costs'] as $cost) {
+                            $shippingOptions[] = [
+                                'courier' => strtoupper($courier['code']),
+                                'service' => $cost['service'],
+                                'description' => $cost['description'],
+                                'cost' => $cost['cost'][0]['value'],
+                                'etd' => $cost['cost'][0]['etd'],
+                                'formatted_cost' => 'Rp ' . number_format($cost['cost'][0]['value'], 0, ',', '.'),
+                                'formatted_etd' => $cost['cost'][0]['etd'] . ' hari'
+                            ];
+                        }
+                    }
+
+                    return response()->json($shippingOptions);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('RajaOngkir shipping calculation error: ' . $e->getMessage());
+        }
+
+        // Fallback shipping options
+        $fallbackOptions = [
+            [
+                'courier' => 'JNE',
+                'service' => 'REG',
+                'description' => 'Layanan Reguler',
+                'cost' => 15000,
+                'etd' => '2-3',
+                'formatted_cost' => 'Rp 15.000',
+                'formatted_etd' => '2-3 hari'
+            ],
+            [
+                'courier' => 'POS',
+                'service' => 'Paket Kilat',
+                'description' => 'Pos Kilat Khusus',
+                'cost' => 12000,
+                'etd' => '3-4',
+                'formatted_cost' => 'Rp 12.000',
+                'formatted_etd' => '3-4 hari'
+            ],
+            [
+                'courier' => 'TIKI',
+                'service' => 'ECO',
+                'description' => 'Ekonomi Service',
+                'cost' => 10000,
+                'etd' => '4-5',
+                'formatted_cost' => 'Rp 10.000',
+                'formatted_etd' => '4-5 hari'
+            ]
+        ];
+
+        return response()->json($fallbackOptions);
+    }
+
+    public function success($orderNumber)
+    {
+        $order = Order::with('orderItems.product')
+                     ->where('order_number', $orderNumber)
+                     ->firstOrFail();
+        
+        return view('frontend.checkout.success', compact('order'));
+    }
+
+    public function finish($orderNumber)
+    {
+        $order = Order::where('order_number', $orderNumber)->firstOrFail();
+        
+        // Update payment status if needed
+        $order->update(['payment_status' => 'paid']);
+        
+        return view('frontend.checkout.finish', compact('order'));
+    }
+
+    public function unfinish()
+    {
+        return view('frontend.checkout.unfinish');
+    }
+
+    public function error()
+    {
+        return view('frontend.checkout.error');
+    }
+
+    public function paymentNotification(Request $request)
+    {
+        // Handle payment gateway notification (Midtrans, etc.)
+        Log::info('Payment notification received:', $request->all());
+        
+        // Process notification based on your payment gateway
+        
+        return response()->json(['status' => 'ok']);
     }
 
     private function getCartItems($cart)
     {
         $cartItems = collect();
         
-        foreach ($cart as $id => $details) {
-            $cartItems->push([
-                'id' => $id,
-                'name' => $details['name'],
-                'price' => $details['price'],
-                'quantity' => $details['quantity'],
-                'image' => $details['image'],
-                'subtotal' => $details['price'] * $details['quantity']
-            ]);
+        Log::info("Processing cart data:", $cart);
+        
+        foreach ($cart as $productId => $item) {
+            Log::info("Processing product ID: $productId with item:", $item);
+            
+            // Validate product ID
+            if (!is_numeric($productId)) {
+                Log::warning("Invalid product ID: $productId");
+                continue;
+            }
+
+            $product = Product::where('id', $productId)
+                             ->where('is_active', true)
+                             ->first();
+            
+            if (!$product) {
+                Log::warning("Product not found or inactive for ID: $productId");
+                continue;
+            }
+
+            // Get quantity from item array
+            $quantity = isset($item['quantity']) ? (int) $item['quantity'] : 1;
+            if ($quantity <= 0) {
+                Log::warning("Invalid quantity for product $productId: $quantity");
+                continue;
+            }
+
+            // Calculate price
+            $price = (float) ($product->sale_price ?? $product->price);
+            if ($price <= 0) {
+                Log::warning("Invalid price for product $productId: $price");
+                continue;
+            }
+
+            $subtotal = $price * $quantity;
+
+            $cartItem = [
+                'id' => (int) $product->id,
+                'name' => $product->name,
+                'price' => $price,
+                'quantity' => $quantity,
+                'subtotal' => $subtotal,
+                'image' => $product->featured_image ?? ($product->images[0] ?? null),
+                'slug' => $product->slug,
+                'sku' => $product->sku ?? ''
+            ];
+            
+            Log::info("Cart item processed successfully:", $cartItem);
+            $cartItems->push($cartItem);
         }
         
+        Log::info("Total valid cart items: " . $cartItems->count());
         return $cartItems;
+    }
+
+    private function getProvinces()
+    {
+        try {
+            // Try RajaOngkir API first
+            $response = Http::withHeaders([
+                'key' => env('RAJAONGKIR_API_KEY', 'your-api-key-here')
+            ])->get('https://api.rajaongkir.com/starter/province');
+
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                if (isset($data['rajaongkir']['results'])) {
+                    return $data['rajaongkir']['results'];
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('RajaOngkir provinces API error: ' . $e->getMessage());
+        }
+
+        // Fallback static provinces
+        return [
+            ['province_id' => '6', 'province' => 'DKI Jakarta'],
+            ['province_id' => '9', 'province' => 'Jawa Barat'],
+            ['province_id' => '10', 'province' => 'Jawa Tengah'],
+            ['province_id' => '11', 'province' => 'Jawa Timur'],
+            ['province_id' => '1', 'province' => 'Bali'],
+        ];
+    }
+
+    private function getFallbackCities($provinceId)
+    {
+        $fallbackData = [
+            '6' => [ // DKI Jakarta
+                ['city_id' => '155', 'city_name' => 'Jakarta Pusat'],
+                ['city_id' => '156', 'city_name' => 'Jakarta Utara'],
+                ['city_id' => '157', 'city_name' => 'Jakarta Barat'],
+                ['city_id' => '158', 'city_name' => 'Jakarta Selatan'],
+                ['city_id' => '159', 'city_name' => 'Jakarta Timur']
+            ],
+            '9' => [ // Jawa Barat
+                ['city_id' => '22', 'city_name' => 'Bandung'],
+                ['city_id' => '23', 'city_name' => 'Bogor'],
+                ['city_id' => '151', 'city_name' => 'Bekasi'],
+                ['city_id' => '107', 'city_name' => 'Depok']
+            ],
+            '10' => [ // Jawa Tengah
+                ['city_id' => '162', 'city_name' => 'Semarang'],
+                ['city_id' => '501', 'city_name' => 'Solo']
+            ],
+            '11' => [ // Jawa Timur
+                ['city_id' => '161', 'city_name' => 'Surabaya'],
+                ['city_id' => '444', 'city_name' => 'Malang']
+            ],
+            '1' => [ // Bali
+                ['city_id' => '114', 'city_name' => 'Denpasar']
+            ]
+        ];
+        
+        return $fallbackData[$provinceId] ?? [];
     }
 }

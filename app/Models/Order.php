@@ -1,5 +1,4 @@
 <?php
-// File: app/Models/Order.php - PostgreSQL Optimized
 
 namespace App\Models;
 
@@ -25,6 +24,7 @@ class Order extends Model
         'currency',
         'shipping_address',
         'billing_address',
+        'store_origin',
         'payment_method',
         'payment_status',
         'payment_token',
@@ -36,47 +36,19 @@ class Order extends Model
         'meta_data',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'subtotal' => 'decimal:2',
-            'tax_amount' => 'decimal:2',
-            'shipping_amount' => 'decimal:2',
-            'discount_amount' => 'decimal:2',
-            'total_amount' => 'decimal:2',
-            'shipping_address' => 'array', // PostgreSQL JSON
-            'billing_address' => 'array', // PostgreSQL JSON
-            'meta_data' => 'array', // PostgreSQL JSON
-            'shipped_at' => 'datetime',
-            'delivered_at' => 'datetime',
-        ];
-    }
-
-    // PostgreSQL specific scopes
-    public function scopeByStatus($query, $status)
-    {
-        return $query->where('status', $status);
-    }
-
-    public function scopeByPaymentStatus($query, $status)
-    {
-        return $query->where('payment_status', $status);
-    }
-
-    public function scopeRecent($query)
-    {
-        return $query->orderBy('created_at', 'desc');
-    }
-
-    public function scopeGuest($query)
-    {
-        return $query->whereNull('user_id');
-    }
-
-    public function scopeRegistered($query)
-    {
-        return $query->whereNotNull('user_id');
-    }
+    protected $casts = [
+        'subtotal' => 'decimal:2',
+        'tax_amount' => 'decimal:2',
+        'shipping_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'total_amount' => 'decimal:2',
+        'shipping_address' => 'array',
+        'billing_address' => 'array',
+        'store_origin' => 'array',
+        'meta_data' => 'array',
+        'shipped_at' => 'datetime',
+        'delivered_at' => 'datetime',
+    ];
 
     // Relationships
     public function user()
@@ -89,23 +61,59 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
-    // Accessors
-    public function getIsGuestOrderAttribute()
+    // Helper methods
+    public function calculateTotals()
     {
-        return is_null($this->user_id);
+        $this->subtotal = $this->orderItems->sum('total_price');
+        $this->total_amount = $this->subtotal + $this->tax_amount + $this->shipping_amount - $this->discount_amount;
+        $this->save();
     }
 
-    public function getCustomerDisplayNameAttribute()
+    public function getFormattedTotalAttribute()
     {
-        return $this->is_guest_order 
-            ? $this->customer_name . ' (Guest)'
-            : ($this->user ? $this->user->name : 'Unknown Customer');
+        return 'Rp ' . number_format($this->total_amount, 0, ',', '.');
     }
 
-    public function getContactEmailAttribute()
+    public function getFormattedSubtotalAttribute()
     {
-        return $this->is_guest_order 
-            ? $this->customer_email 
-            : optional($this->user)->email;
+        return 'Rp ' . number_format($this->subtotal, 0, ',', '.');
+    }
+
+    public function getFormattedShippingAttribute()
+    {
+        return 'Rp ' . number_format($this->shipping_amount, 0, ',', '.');
+    }
+
+    public function getFormattedTaxAttribute()
+    {
+        return 'Rp ' . number_format($this->tax_amount, 0, ',', '.');
+    }
+
+    public function getCustomerNameAttribute($value)
+    {
+        // Fallback to user name if customer_name is null
+        return $value ?: ($this->user ? $this->user->name : 'Guest Customer');
+    }
+
+    public function getCustomerEmailAttribute($value)
+    {
+        // Fallback to user email if customer_email is null
+        return $value ?: ($this->user ? $this->user->email : null);
+    }
+
+    // Scopes
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    public function scopePaid($query)
+    {
+        return $query->where('payment_status', 'paid');
+    }
+
+    public function scopeRecent($query)
+    {
+        return $query->orderBy('created_at', 'desc');
     }
 }
