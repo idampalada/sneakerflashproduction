@@ -186,14 +186,6 @@ Route::prefix('api')->group(function() {
 });
 
 // =====================================
-// ADMIN REDIRECT (Temporarily disabled due to Filament config issue)
-// =====================================
-
-// Route::get('/admin', function() {
-//     return redirect('/admin/login');
-// });
-
-// =====================================
 // DEBUG ROUTES (Remove in production)
 // =====================================
 

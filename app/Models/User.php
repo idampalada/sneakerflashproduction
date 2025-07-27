@@ -9,27 +9,22 @@ use Filament\Panel;
 
 class User extends Authenticatable implements FilamentUser
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
      */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'google_id',        // ADD: Google OAuth ID
-        'avatar',           // ADD: Profile picture from Google
+        'google_id',
+        'avatar',
         'email_verified_at',
     ];
 
     /**
      * The attributes that should be hidden for serialization.
-     *
-     * @var array<int, string>
      */
     protected $hidden = [
         'password',
@@ -38,8 +33,6 @@ class User extends Authenticatable implements FilamentUser
 
     /**
      * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
      */
     protected function casts(): array
     {
@@ -54,7 +47,6 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        // Allow access for specific admin emails
         return in_array($this->email, [
             'admin@sneakerflash.com',
             'admin@sneaker.com',

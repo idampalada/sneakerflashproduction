@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Carbon\Carbon;
 
 class CheckoutController extends Controller
 {
@@ -44,25 +47,62 @@ class CheckoutController extends Controller
 
     public function store(Request $request)
     {
-        // Validation
+        // Enhanced validation
         $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
+            // Personal Information
+            'social_title' => 'nullable|in:Mr.,Mrs.',
+            'first_name' => 'required|string|max:255|regex:/^[a-zA-Z.\s]+$/',
+            'last_name' => 'required|string|max:255|regex:/^[a-zA-Z.\s]+$/',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
+            'birthdate' => 'nullable|date|before:today',
+            
+            // Account Creation (Optional)
+            'create_account' => 'nullable|boolean',
+            'password' => 'nullable|required_if:create_account,1|min:8|max:72|confirmed',
+            'newsletter_subscribe' => 'nullable|boolean',
+            'privacy_accepted' => 'required|accepted',
+            
+            // Address Information
             'address' => 'required|string',
             'province_id' => 'required|string',
             'city_id' => 'required|string',
             'postal_code' => 'required|string|max:10',
+            
+            // Shipping & Payment
             'shipping_method' => 'nullable|string',
             'shipping_cost' => 'nullable|numeric|min:0',
+            'payment_method' => 'required|in:bank_transfer,credit_card,cod,ewallet',
         ]);
 
-        // Log request data untuk debugging
-        Log::info('Checkout request data:', $request->all());
+        Log::info('Enhanced checkout request data:', $request->all());
 
         try {
             DB::beginTransaction();
+
+            // Handle user creation if requested
+            $user = null;
+            if ($request->create_account && !Auth::check()) {
+                // Check if email already exists
+                if (User::where('email', $request->email)->exists()) {
+                    return back()->withErrors(['email' => 'Email already exists. Please login or use different email.'])->withInput();
+                }
+
+                // Create new user account
+                $userData = [
+                    'name' => trim($request->first_name . ' ' . $request->last_name),
+                    'email' => $request->email,
+                    'password' => Hash::make($request->password),
+                    'email_verified_at' => now(),
+                ];
+
+                $user = User::create($userData);
+                Auth::login($user);
+                
+                Log::info('New user account created during checkout:', ['user_id' => $user->id, 'email' => $user->email]);
+            } elseif (Auth::check()) {
+                $user = Auth::user();
+            }
 
             // Get cart dari session
             $cart = Session::get('cart', []);
@@ -87,19 +127,22 @@ class CheckoutController extends Controller
             // Generate order number
             $orderNumber = 'SF' . date('Ymd') . strtoupper(Str::random(6));
 
-            // Store origin data (fallback untuk RajaOngkir)
+            // Store origin data
             $storeOrigin = [
                 'city_name' => 'Jakarta Selatan',
                 'province_name' => 'DKI Jakarta',
                 'postal_code' => '12310',
-                'city_id' => '158' // Jakarta Selatan di RajaOngkir
+                'city_id' => '158'
             ];
 
-            // Create order dengan explicit data handling
+            // Prepare customer name with social title
+            $customerName = trim(($request->social_title ? $request->social_title . ' ' : '') . $request->first_name . ' ' . $request->last_name);
+
+            // Create order dengan enhanced data
             $orderData = [
                 'order_number' => $orderNumber,
-                'user_id' => Auth::check() ? Auth::id() : null, // Handle guest checkout
-                'customer_name' => trim($request->first_name . ' ' . $request->last_name),
+                'user_id' => $user ? $user->id : null,
+                'customer_name' => $customerName,
                 'customer_email' => $request->email,
                 'customer_phone' => $request->phone,
                 'status' => 'pending',
@@ -110,6 +153,7 @@ class CheckoutController extends Controller
                 'total_amount' => $totalAmount,
                 'currency' => 'IDR',
                 'shipping_address' => [
+                    'social_title' => $request->social_title,
                     'first_name' => $request->first_name,
                     'last_name' => $request->last_name,
                     'address' => $request->address,
@@ -119,6 +163,7 @@ class CheckoutController extends Controller
                     'phone' => $request->phone
                 ],
                 'billing_address' => [
+                    'social_title' => $request->social_title,
                     'first_name' => $request->first_name,
                     'last_name' => $request->last_name,
                     'address' => $request->address,
@@ -134,13 +179,13 @@ class CheckoutController extends Controller
                     'postal_code' => $storeOrigin['postal_code'],
                     'city_id' => $storeOrigin['city_id']
                 ],
-                'payment_method' => 'bank_transfer',
+                'payment_method' => $request->payment_method,
                 'payment_status' => 'pending',
                 'notes' => $request->notes ?? '',
                 'shipping_method' => $request->shipping_method ?? 'Standard Shipping',
             ];
 
-            Log::info('Creating order with data:', $orderData);
+            Log::info('Creating order with enhanced data:', $orderData);
 
             // Create order
             $order = Order::create($orderData);
@@ -164,13 +209,13 @@ class CheckoutController extends Controller
                         throw new \Exception("Insufficient stock for product {$product->name}. Available: {$product->stock_quantity}, Requested: {$item['quantity']}");
                     }
 
-                    // Prepare order item data dengan semua field yang required
+                    // Prepare order item data
                     $orderItemData = [
                         'order_id' => $order->id,
                         'product_id' => $item['id'],
                         'product_name' => $item['name'],
                         'product_sku' => $item['sku'] ?? '',
-                        'product_price' => (float) $item['price'], // Required field yang sempat missing
+                        'product_price' => (float) $item['price'],
                         'quantity' => (int) $item['quantity'],
                         'total_price' => (float) $item['subtotal']
                     ];
@@ -203,7 +248,7 @@ class CheckoutController extends Controller
                         'item' => $item,
                         'order_id' => $order->id
                     ]);
-                    throw $e; // Re-throw untuk rollback
+                    throw $e;
                 }
             }
 
@@ -212,16 +257,16 @@ class CheckoutController extends Controller
             // Clear cart setelah order berhasil
             Session::forget('cart');
 
-            Log::info('Checkout completed successfully for order: ' . $order->order_number);
+            Log::info('Enhanced checkout completed successfully for order: ' . $order->order_number);
 
             // Redirect to success page
             return redirect()->route('checkout.success', ['orderNumber' => $order->order_number])
-                           ->with('success', 'Order placed successfully!');
+                           ->with('success', 'Order placed successfully!' . ($user && $request->create_account ? ' Your account has been created.' : ''));
 
         } catch (\Exception $e) {
             DB::rollback();
             
-            Log::error('Checkout error: ' . $e->getMessage(), [
+            Log::error('Enhanced checkout error: ' . $e->getMessage(), [
                 'request_data' => $request->all(),
                 'cart_data' => Session::get('cart', [])
             ]);
