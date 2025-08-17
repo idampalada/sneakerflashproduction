@@ -1,12 +1,12 @@
 <?php
-// File: app/Models/Product.php - UPDATED VERSION
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class Product extends Model
 {
@@ -20,6 +20,7 @@ class Product extends Model
         'price',
         'sale_price',
         'sku',
+        'sku_parent',
         'category_id',
         'brand',
         'images',
@@ -27,95 +28,194 @@ class Product extends Model
         'specifications',
         'is_active',
         'is_featured',
+        'is_featured_sale',
         'stock_quantity',
         'min_stock_level',
         'weight',
+        'length',
+        'width',
+        'height',
         'dimensions',
         'published_at',
         'meta_data',
+        'gender_target',
+        'product_type',
+        'search_keywords',
+        'sale_start_date',
+        'sale_end_date',
+        'available_sizes',
+        'available_colors',
+        'meta_title',
+        'meta_description',
+        'meta_keywords',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'price' => 'decimal:2',
-            'sale_price' => 'decimal:2',
-            'weight' => 'decimal:2',
-            'is_active' => 'boolean',
-            'is_featured' => 'boolean',
-            'images' => 'array',
-            'features' => 'array',
-            'specifications' => 'array',
-            'dimensions' => 'array',
-            'meta_data' => 'array',
-            'published_at' => 'datetime',
-        ];
-    }
+    protected $casts = [
+        'is_active' => 'boolean',
+        'is_featured' => 'boolean',
+        'is_featured_sale' => 'boolean',
+        'price' => 'decimal:2',
+        'sale_price' => 'decimal:2',
+        'weight' => 'decimal:2',
+        'length' => 'decimal:2',
+        'width' => 'decimal:2',
+        'height' => 'decimal:2',
+        'published_at' => 'datetime',
+        'sale_start_date' => 'date',
+        'sale_end_date' => 'date',
+        'images' => 'array',
+        'features' => 'array',
+        'specifications' => 'array',
+        'dimensions' => 'array',
+        'meta_data' => 'array',
+        'gender_target' => 'array',
+        'search_keywords' => 'array',
+        'available_sizes' => 'array',
+        'available_colors' => 'array',
+        'meta_keywords' => 'array',
+    ];
 
-    // AUTO GENERATE SKU JIKA KOSONG
+    protected $attributes = [
+        'is_active' => true,
+        'is_featured' => false,
+        'is_featured_sale' => false,
+        'stock_quantity' => 0,
+        'min_stock_level' => 5,
+    ];
+
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($product) {
-            // Auto-generate SKU if not provided
-            if (empty($product->sku)) {
-                $product->sku = static::generateSKU($product);
-            }
-
-            // Auto-generate slug if not provided
             if (empty($product->slug)) {
-                $product->slug = Str::slug($product->name);
-            }
-
-            // Set default published_at if not provided
-            if (empty($product->published_at)) {
-                $product->published_at = now();
+                $product->slug = static::generateUniqueSlug($product->name);
             }
         });
 
         static::updating(function ($product) {
-            // Update slug if name changed
             if ($product->isDirty('name') && empty($product->getOriginal('slug'))) {
-                $product->slug = Str::slug($product->name);
+                $product->slug = static::generateUniqueSlug($product->name);
             }
         });
     }
 
-    // GENERATE SKU OTOMATIS
-    public static function generateSKU($product)
+    public static function generateUniqueSlug($name)
     {
-        // Format: BRAND-CATEGORY-RANDOM (e.g., NIKE-RUN-1234)
-        $brand = $product->brand ? strtoupper(substr($product->brand, 0, 4)) : 'PROD';
-        
-        $category = 'GEN';
-        if ($product->category_id) {
-            $categoryModel = \App\Models\Category::find($product->category_id);
-            if ($categoryModel) {
-                $category = strtoupper(substr($categoryModel->name, 0, 3));
-            }
-        }
-
-        $random = strtoupper(Str::random(4));
-        $sku = "{$brand}-{$category}-{$random}";
-
-        // Ensure uniqueness
+        $slug = Str::slug($name);
+        $originalSlug = $slug;
         $counter = 1;
-        $originalSku = $sku;
-        while (static::where('sku', $sku)->exists()) {
-            $sku = $originalSku . '-' . $counter;
+
+        while (static::where('slug', $slug)->exists()) {
+            $slug = $originalSlug . '-' . $counter;
             $counter++;
         }
 
-        return $sku;
+        return $slug;
     }
 
-    // PostgreSQL specific scopes
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    // ⭐ FIXED: Safe accessors for array attributes
+    public function getImagesAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    public function getAvailableSizesAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            // Handle JSON string
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+            // Handle single string value
+            return [$value];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    public function getAvailableColorsAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+            return [$value];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    public function getFeaturesAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    public function getGenderTargetAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    public function getSearchKeywordsAttribute($value)
+    {
+        if (is_null($value)) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return is_array($value) ? $value : [];
+    }
+
+    // Scopes
     public function scopeActive($query)
     {
-        return $query->where('is_active', true)
-                    ->whereNotNull('published_at')
-                    ->where('published_at', '<=', now());
+        return $query->where('is_active', true);
     }
 
     public function scopeFeatured($query)
@@ -123,82 +223,326 @@ class Product extends Model
         return $query->where('is_featured', true);
     }
 
+    public function scopeFeaturedSale($query)
+    {
+        return $query->where('is_featured_sale', true);
+    }
+
+    public function scopeOnSale($query)
+    {
+        return $query->whereNotNull('sale_price')->whereRaw('sale_price < price');
+    }
+
     public function scopeInStock($query)
     {
         return $query->where('stock_quantity', '>', 0);
     }
 
-    public function scopeLowStock($query)
+    public function scopeForGender($query, string $gender)
     {
-        return $query->whereColumn('stock_quantity', '<=', 'min_stock_level');
+        if (!in_array($gender, ['mens', 'womens', 'unisex'])) {
+            return $query->whereRaw('1 = 0');
+        }
+        
+        return $query->whereRaw("gender_target ? ?", [$gender]);
     }
 
-    public function scopeByCategory($query, $categoryId)
+    public function scopeOfType($query, string $type)
     {
-        return $query->where('category_id', $categoryId);
+        return $query->where('product_type', $type);
     }
 
-    public function scopeByBrand($query, $brand)
+    public function scopeRunning($query)
     {
-        return $query->where('brand', 'ILIKE', "%{$brand}%");
+        return $query->where('product_type', 'running');
     }
 
-    // PostgreSQL full-text search
-    public function scopeSearch($query, $search)
+    public function scopeBasketball($query)
     {
-        return $query->where(function ($q) use ($search) {
-            $q->where('name', 'ILIKE', "%{$search}%")
-              ->orWhere('description', 'ILIKE', "%{$search}%")
-              ->orWhere('short_description', 'ILIKE', "%{$search}%")
-              ->orWhere('brand', 'ILIKE', "%{$search}%")
-              ->orWhere('sku', 'ILIKE', "%{$search}%");
-        });
+        return $query->where('product_type', 'basketball');
     }
 
-    // Relationships
-    public function category()
+    public function scopeTennis($query)
     {
-        return $this->belongsTo(Category::class);
+        return $query->where('product_type', 'tennis');
     }
 
-    public function orderItems()
+    public function scopeBadminton($query)
     {
-        return $this->hasMany(OrderItem::class);
+        return $query->where('product_type', 'badminton');
     }
 
-    public function cartItems()
+    public function scopeLifestyle($query)
     {
-        return $this->hasMany(ShoppingCart::class);
+        return $query->where('product_type', 'lifestyle_casual');
     }
 
-    public function wishlistItems()
+    public function scopeApparel($query)
     {
-        return $this->hasMany(Wishlist::class);
+        return $query->where('product_type', 'apparel');
+    }
+
+    public function scopeCaps($query)
+    {
+        return $query->where('product_type', 'caps');
+    }
+
+    public function scopeBags($query)
+    {
+        return $query->where('product_type', 'bags');
+    }
+
+    public function scopeAccessories($query)
+    {
+        return $query->where('product_type', 'accessories');
+    }
+
+    public function scopeWithSkuParent($query, string $skuParent)
+    {
+        return $query->where('sku_parent', $skuParent);
+    }
+
+    public function scopeHasSkuParent($query)
+    {
+        return $query->whereNotNull('sku_parent');
+    }
+
+    public function scopeWithDimensions($query)
+    {
+        return $query->whereNotNull('length')
+                    ->whereNotNull('width')
+                    ->whereNotNull('height');
     }
 
     // Accessors
-    public function getCurrentPriceAttribute()
+    public function getFormattedDimensionsAttribute(): string
     {
-        return $this->sale_price ?: $this->price;
+        if ($this->length && $this->width && $this->height) {
+            return "{$this->length} × {$this->width} × {$this->height} cm";
+        }
+        return 'Not specified';
+    }
+
+    public function getVolumeAttribute(): ?float
+    {
+        if ($this->length && $this->width && $this->height) {
+            return $this->length * $this->width * $this->height;
+        }
+        return null;
+    }
+
+    public function getIsSaleActiveAttribute(): bool
+    {
+        if (!$this->sale_price) {
+            return false;
+        }
+
+        $now = now()->toDateString();
+        
+        if (!$this->sale_start_date && !$this->sale_end_date) {
+            return true;
+        }
+        
+        $afterStart = !$this->sale_start_date || $now >= $this->sale_start_date->toDateString();
+        $beforeEnd = !$this->sale_end_date || $now <= $this->sale_end_date->toDateString();
+        
+        return $afterStart && $beforeEnd;
+    }
+
+    public function getSizeVariantsAttribute()
+    {
+        if (!$this->sku_parent) {
+            return collect([]);
+        }
+
+        return static::where('sku_parent', $this->sku_parent)
+                    ->where('id', '!=', $this->id)
+                    ->get(['id', 'name', 'sku', 'available_sizes', 'stock_quantity']);
+    }
+
+    public function getTotalSkuParentStockAttribute(): int
+    {
+        if (!$this->sku_parent) {
+            return $this->stock_quantity;
+        }
+
+        return static::where('sku_parent', $this->sku_parent)->sum('stock_quantity');
+    }
+
+    public function getProductTypeLabelAttribute(): string
+    {
+        return match($this->product_type) {
+            'running' => '🏃 Running',
+            'basketball' => '🏀 Basketball',
+            'tennis' => '🎾 Tennis',
+            'badminton' => '🏸 Badminton',
+            'lifestyle_casual' => '🚶 Lifestyle/Casual',
+            'sneakers' => '👟 Sneakers',
+            'training' => '💪 Training',
+            'formal' => '👔 Formal',
+            'sandals' => '🩴 Sandals',
+            'boots' => '🥾 Boots',
+            'apparel' => '👕 Apparel',
+            'caps' => '🧢 Caps & Hats',
+            'bags' => '👜 Bags',
+            'accessories' => '🎒 Accessories',
+            default => ucfirst(str_replace('_', ' ', $this->product_type ?? 'Unknown'))
+        };
+    }
+
+    public function getIsFootwearAttribute(): bool
+    {
+        return in_array($this->product_type, [
+            'running',
+            'basketball',
+            'tennis',
+            'badminton',
+            'lifestyle_casual',
+            'sneakers',
+            'training',
+            'formal',
+            'sandals',
+            'boots'
+        ]);
+    }
+
+    public function getIsApparelAttribute(): bool
+    {
+        return $this->product_type === 'apparel';
+    }
+
+    public function getIsAccessoryAttribute(): bool
+    {
+        return in_array($this->product_type, [
+            'caps',
+            'bags',
+            'accessories'
+        ]);
+    }
+
+    // ⭐ FIXED: Safe image methods
+    private function generateStorageUrl(string $path): string
+    {
+        $baseUrl = config('app.url');
+        $storagePath = '/storage/' . ltrim($path, '/');
+        return $baseUrl . $storagePath;
+    }
+
+    private function fileExistsInStorage(string $path): bool
+    {
+        try {
+            $disk = Storage::disk('public');
+            return $disk->exists($path);
+        } catch (\Exception $e) {
+            Log::warning('Storage check failed', [
+                'path' => $path,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    private function resolveImagePath(?string $imagePath): string
+    {
+        if (!$imagePath) {
+            return asset('images/default-product.png');
+        }
+
+        if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
+            return $imagePath;
+        }
+
+        if (str_starts_with($imagePath, '/storage/')) {
+            return config('app.url') . $imagePath;
+        }
+
+        if (str_starts_with($imagePath, 'assets/') || str_starts_with($imagePath, 'images/')) {
+            return asset($imagePath);
+        }
+
+        if (str_starts_with($imagePath, 'public/')) {
+            $imagePath = substr($imagePath, 7);
+        }
+
+        if (str_starts_with($imagePath, 'products/')) {
+            if ($this->fileExistsInStorage($imagePath)) {
+                return $this->generateStorageUrl($imagePath);
+            }
+        }
+
+        if (!str_contains($imagePath, '/')) {
+            $fullPath = 'products/' . $imagePath;
+            if ($this->fileExistsInStorage($fullPath)) {
+                return $this->generateStorageUrl($fullPath);
+            }
+        }
+
+        if ($this->fileExistsInStorage($imagePath)) {
+            return $this->generateStorageUrl($imagePath);
+        }
+
+        $pathWithoutExt = pathinfo($imagePath, PATHINFO_FILENAME);
+        $directory = pathinfo($imagePath, PATHINFO_DIRNAME);
+        $directory = $directory === '.' ? 'products' : $directory;
+        
+        $commonExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        foreach ($commonExtensions as $ext) {
+            $testPath = $directory . '/' . $pathWithoutExt . '.' . $ext;
+            if ($this->fileExistsInStorage($testPath)) {
+                return $this->generateStorageUrl($testPath);
+            }
+        }
+
+        return asset('images/default-product.png');
+    }
+
+    public function getFeaturedImageAttribute(): string
+    {
+        $images = $this->images;
+        
+        if (!is_array($images) || empty($images)) {
+            return asset('images/default-product.png');
+        }
+        
+        return $this->resolveImagePath($images[0]);
+    }
+
+    public function getFeaturedImageUrlAttribute(): string
+    {
+        return $this->getFeaturedImageAttribute();
+    }
+
+    public function getImageUrlsAttribute(): array
+    {
+        $images = $this->images;
+        
+        if (!is_array($images) || empty($images)) {
+            return [];
+        }
+        
+        $urls = [];
+        foreach ($images as $imagePath) {
+            $resolvedUrl = $this->resolveImagePath($imagePath);
+            if ($resolvedUrl) {
+                $urls[] = $resolvedUrl;
+            }
+        }
+        
+        return $urls;
+    }
+
+    // Helper methods
+    public function getDiscountPercentageAttribute()
+    {
+        if ($this->sale_price && $this->price > 0) {
+            return round((($this->price - $this->sale_price) / $this->price) * 100);
+        }
+        return 0;
     }
 
     public function getIsOnSaleAttribute()
     {
-        return !is_null($this->sale_price) && $this->sale_price < $this->price;
-    }
-
-    public function getDiscountPercentageAttribute()
-    {
-        if (!$this->is_on_sale) {
-            return 0;
-        }
-        
-        return round((($this->price - $this->sale_price) / $this->price) * 100);
-    }
-
-    public function getMainImageAttribute()
-    {
-        return $this->images && count($this->images) > 0 ? $this->images[0] : null;
+        return $this->sale_price && $this->sale_price < $this->price;
     }
 
     public function getFormattedPriceAttribute()
@@ -208,21 +552,73 @@ class Product extends Model
 
     public function getFormattedSalePriceAttribute()
     {
-        return $this->sale_price ? 'Rp ' . number_format($this->sale_price, 0, ',', '.') : null;
+        if ($this->sale_price) {
+            return 'Rp ' . number_format($this->sale_price, 0, ',', '.');
+        }
+        return null;
     }
 
-    public function getStockStatusAttribute()
+    // ⭐ FIXED: Safe gender checking
+    public function isForGender(string $gender): bool
+    {
+        if (!in_array($gender, ['mens', 'womens', 'unisex'])) {
+            return false;
+        }
+        
+        $genderTarget = $this->gender_target;
+        return is_array($genderTarget) && in_array($gender, $genderTarget);
+    }
+
+    public function getGenderLabelsAttribute(): array
+    {
+        $genderTarget = $this->gender_target;
+        if (!is_array($genderTarget)) return [];
+        
+        $labels = [];
+        foreach ($genderTarget as $gender) {
+            if (in_array($gender, ['mens', 'womens', 'unisex'])) {
+                $labels[] = match($gender) {
+                    'mens' => "Men's",
+                    'womens' => "Women's",
+                    'unisex' => 'Unisex',
+                    default => $gender
+                };
+            }
+        }
+        return $labels;
+    }
+
+    public function getGenderBadgesAttribute(): string
+    {
+        $genderTarget = $this->gender_target;
+        if (!is_array($genderTarget)) return '';
+        
+        $badges = [];
+        foreach ($genderTarget as $gender) {
+            if (in_array($gender, ['mens', 'womens', 'unisex'])) {
+                $badges[] = match($gender) {
+                    'mens' => '👨 Men\'s',
+                    'womens' => '👩 Women\'s',
+                    'unisex' => '🌐 Unisex',
+                    default => $gender
+                };
+            }
+        }
+        return implode(', ', $badges);
+    }
+
+    public function getStockStatusAttribute(): string
     {
         if ($this->stock_quantity <= 0) {
             return 'out_of_stock';
-        } elseif ($this->stock_quantity <= $this->min_stock_level) {
+        } elseif ($this->stock_quantity < 10) {
             return 'low_stock';
         } else {
             return 'in_stock';
         }
     }
 
-    public function getStockStatusLabelAttribute()
+    public function getStockStatusLabelAttribute(): string
     {
         return match($this->stock_status) {
             'out_of_stock' => 'Out of Stock',
@@ -232,31 +628,353 @@ class Product extends Model
         };
     }
 
-    // Helper Methods
-    public function isAvailable()
+    // Static methods
+    public static function getForMenu(string $menuType)
     {
-        return $this->is_active && 
-               $this->stock_quantity > 0 && 
-               $this->published_at && 
-               $this->published_at <= now();
-    }
-
-    public function canBePurchased($quantity = 1)
-    {
-        return $this->isAvailable() && $this->stock_quantity >= $quantity;
-    }
-
-    public function decrementStock($quantity)
-    {
-        if ($this->stock_quantity >= $quantity) {
-            $this->decrement('stock_quantity', $quantity);
-            return true;
+        if (!in_array($menuType, ['mens', 'womens', 'unisex'])) {
+            return static::active()->inStock()->with('category')->whereRaw('1 = 0');
         }
-        return false;
+        
+        return static::active()
+                    ->inStock()
+                    ->forGender($menuType)
+                    ->with('category')
+                    ->orderBy('is_featured', 'desc')
+                    ->orderBy('created_at', 'desc');
     }
 
-    public function incrementStock($quantity)
+    public static function getFeaturedProducts()
     {
-        $this->increment('stock_quantity', $quantity);
+        return static::active()
+                    ->featured()
+                    ->inStock()
+                    ->with('category')
+                    ->limit(8)
+                    ->get();
+    }
+
+    public static function getLatestProducts()
+    {
+        return static::active()
+                    ->inStock()
+                    ->with('category')
+                    ->latest('created_at')
+                    ->limit(12)
+                    ->get();
+    }
+
+    public static function getSaleProducts()
+    {
+        return static::active()
+                    ->onSale()
+                    ->inStock()
+                    ->with('category')
+                    ->get();
+    }
+
+    public static function getFeaturedSaleProducts()
+    {
+        return static::active()
+                    ->featuredSale()
+                    ->onSale()
+                    ->inStock()
+                    ->with('category')
+                    ->get();
+    }
+
+    public static function getByType(string $type)
+    {
+        return static::active()
+                    ->inStock()
+                    ->ofType($type)
+                    ->with('category')
+                    ->orderBy('is_featured', 'desc')
+                    ->orderBy('created_at', 'desc');
+    }
+
+    public static function getFootwearProducts()
+    {
+        return static::active()
+                    ->inStock()
+                    ->whereIn('product_type', [
+                        'running', 'basketball', 'tennis', 'badminton',
+                        'lifestyle_casual', 'sneakers', 'training',
+                        'formal', 'sandals', 'boots'
+                    ])
+                    ->with('category')
+                    ->orderBy('is_featured', 'desc')
+                    ->orderBy('created_at', 'desc');
+    }
+
+    public static function getApparelProducts()
+    {
+        return static::active()
+                    ->inStock()
+                    ->apparel()
+                    ->with('category')
+                    ->orderBy('is_featured', 'desc')
+                    ->orderBy('created_at', 'desc');
+    }
+
+    public static function getAccessoriesProducts()
+    {
+        return static::active()
+                    ->inStock()
+                    ->whereIn('product_type', ['caps', 'bags', 'accessories'])
+                    ->with('category')
+                    ->orderBy('is_featured', 'desc')
+                    ->orderBy('created_at', 'desc');
+    }
+
+    public function scopeSearch($query, $search)
+    {
+        return $query->where(function ($q) use ($search) {
+            $q->where('name', 'ilike', "%{$search}%")
+              ->orWhere('description', 'ilike', "%{$search}%")
+              ->orWhere('short_description', 'ilike', "%{$search}%")
+              ->orWhere('brand', 'ilike', "%{$search}%")
+              ->orWhere('sku', 'ilike', "%{$search}%")
+              ->orWhere('sku_parent', 'ilike', "%{$search}%")
+              ->orWhereHas('category', function ($cat) use ($search) {
+                  $cat->where('name', 'ilike', "%{$search}%");
+              });
+        });
+    }
+
+    // ⭐ FIXED: Safe size and color checking
+    public function hasSize(string $size): bool
+    {
+        $availableSizes = $this->available_sizes;
+        return is_array($availableSizes) && in_array($size, $availableSizes);
+    }
+
+    public function hasColor(string $color): bool
+    {
+        $availableColors = $this->available_colors;
+        if (!is_array($availableColors)) {
+            return false;
+        }
+        
+        return in_array(strtolower($color), array_map('strtolower', $availableColors));
+    }
+
+    public function hasFeature(string $feature): bool
+    {
+        $features = $this->features;
+        return is_array($features) && in_array($feature, $features);
+    }
+
+    public function getMetaTitleAttribute($value)
+    {
+        return $value ?: $this->name . ' - SneakerFlash';
+    }
+
+    public function getMetaDescriptionAttribute($value)
+    {
+        return $value ?: Str::limit(strip_tags($this->description ?: $this->short_description), 160);
+    }
+
+    public function getIsCompleteAttribute(): bool
+    {
+        $genderTarget = $this->gender_target;
+        $hasValidGender = is_array($genderTarget) && 
+                         count(array_intersect($genderTarget, ['mens', 'womens', 'unisex'])) > 0;
+
+        return !empty($this->name) &&
+               !empty($this->brand) &&
+               !empty($this->sku) &&
+               !empty($this->sku_parent) &&
+               $this->price > 0 &&
+               $hasValidGender &&
+               !empty($this->product_type);
+    }
+
+    public function scopeComplete($query)
+    {
+        return $query->whereNotNull('name')
+                    ->whereNotNull('brand')
+                    ->whereNotNull('sku')
+                    ->whereNotNull('sku_parent')
+                    ->where('price', '>', 0)
+                    ->whereNotNull('gender_target')
+                    ->whereNotNull('product_type')
+                    ->where(function ($q) {
+                        $q->whereRaw('gender_target ? ?', ['mens'])
+                          ->orWhereRaw('gender_target ? ?', ['womens'])
+                          ->orWhereRaw('gender_target ? ?', ['unisex']);
+                    });
+    }
+
+    public function scopeIncomplete($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('name')
+              ->orWhereNull('brand')
+              ->orWhereNull('sku')
+              ->orWhereNull('sku_parent')
+              ->orWhere('price', '<=', 0)
+              ->orWhereNull('gender_target')
+              ->orWhereNull('product_type')
+              ->orWhere(function ($subQ) {
+                  $subQ->whereRaw('NOT (gender_target ? ? OR gender_target ? ? OR gender_target ? ?)', 
+                                 ['mens', 'womens', 'unisex']);
+              });
+        });
+    }
+
+    public function getOptimizedImagesAttribute(): array
+    {
+        $images = $this->image_urls;
+        
+        if (empty($images)) {
+            return [
+                'primary' => asset('images/default-product.png'),
+                'secondary' => [],
+                'thumbnails' => [],
+                'total_count' => 0,
+                'loading_strategy' => 'immediate'
+            ];
+        }
+
+        return [
+            'primary' => $images[0] ?? asset('images/default-product.png'),
+            'secondary' => array_slice($images, 1, 2),
+            'lazy_load' => array_slice($images, 3),
+            'thumbnails' => array_map(function($url) {
+                return str_replace('/products/', '/products/thumbs/', $url);
+            }, $images),
+            'total_count' => count($images),
+            'loading_strategy' => count($images) > 3 ? 'progressive' : 'immediate'
+        ];
+    }
+
+    public function getImageLoadingDataAttribute(): array
+    {
+        return [
+            'product_id' => $this->id,
+            'product_name' => $this->name,
+            'images' => $this->optimized_images,
+            'fallback_image' => asset('images/default-product.png')
+        ];
+    }
+
+    public function validateImageUrls(): array
+    {
+        $images = $this->images ?? [];
+        $validated = [];
+        
+        foreach ($images as $index => $imageUrl) {
+            $isValid = true;
+            
+            if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                $isValid = false;
+            }
+            
+            $validated[] = [
+                'index' => $index,
+                'url' => $imageUrl,
+                'is_valid' => $isValid,
+                'is_external' => !str_contains($imageUrl, config('app.url'))
+            ];
+        }
+        
+        return $validated;
+    }
+
+    public function getImagePriorityAttribute(): string
+    {
+        if ($this->is_featured || $this->is_featured_sale) {
+            return 'high';
+        }
+        
+        if ($this->stock_quantity > 0) {
+            return 'normal';
+        }
+        
+        return 'low';
+    }
+
+    public function getGenderDebugInfoAttribute(): array
+    {
+        $genderTarget = $this->gender_target;
+        
+        return [
+            'raw_gender_target' => $this->attributes['gender_target'] ?? null,
+            'cast_gender_target' => $genderTarget,
+            'is_valid_gender' => is_array($genderTarget) && 
+                               count(array_intersect($genderTarget, ['mens', 'womens', 'unisex'])) > 0,
+            'valid_genders_found' => is_array($genderTarget) ? 
+                                   array_intersect($genderTarget, ['mens', 'womens', 'unisex']) : [],
+            'invalid_genders_found' => is_array($genderTarget) ? 
+                                     array_diff($genderTarget, ['mens', 'womens', 'unisex']) : []
+        ];
+    }
+
+    public function cleanGenderData(): bool
+    {
+        $genderTarget = $this->gender_target;
+        if (!is_array($genderTarget)) {
+            return false;
+        }
+
+        $validGenders = ['mens', 'womens', 'unisex'];
+        $cleanedGenders = array_intersect($genderTarget, $validGenders);
+        
+        if (count($cleanedGenders) !== count($genderTarget)) {
+            $this->gender_target = array_values($cleanedGenders);
+            return $this->save();
+        }
+        
+        return true;
+    }
+
+    public static function countByGender(): array
+    {
+        $counts = [
+            'mens' => static::whereRaw('gender_target ? ?', ['mens'])->count(),
+            'womens' => static::whereRaw('gender_target ? ?', ['womens'])->count(),
+            'unisex' => static::whereRaw('gender_target ? ?', ['unisex'])->count(),
+            'empty_gender' => static::whereNull('gender_target')->count(),
+            'total' => static::count()
+        ];
+        
+        return $counts;
+    }
+
+    // ⭐ NEW: Safe array conversion methods
+    public function ensureArrayAttribute($attribute): array
+    {
+        $value = $this->attributes[$attribute] ?? null;
+        
+        if (is_null($value)) {
+            return [];
+        }
+        
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        
+        return is_array($value) ? $value : [];
+    }
+
+    public function toArraySafe(): array
+    {
+        $array = $this->toArray();
+        
+        // Ensure array fields are properly formatted
+        $arrayFields = [
+            'images', 'features', 'specifications', 'dimensions',
+            'gender_target', 'search_keywords', 'available_sizes',
+            'available_colors', 'meta_keywords', 'meta_data'
+        ];
+        
+        foreach ($arrayFields as $field) {
+            if (isset($array[$field])) {
+                $array[$field] = $this->ensureArrayAttribute($field);
+            }
+        }
+        
+        return $array;
     }
 }
