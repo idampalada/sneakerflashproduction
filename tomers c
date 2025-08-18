@@ -1,0 +1,324 @@
+       table_name        |        column_name         |          data_type          
+-------------------------+----------------------------+-----------------------------
+ cache                   | key                        | character varying
+ cache                   | value                      | text
+ cache                   | expiration                 | integer
+ cache_locks             | key                        | character varying
+ cache_locks             | owner                      | character varying
+ cache_locks             | expiration                 | integer
+ categories              | id                         | bigint
+ categories              | name                       | character varying
+ categories              | slug                       | character varying
+ categories              | description                | text
+ categories              | image                      | character varying
+ categories              | is_active                  | boolean
+ categories              | sort_order                 | integer
+ categories              | menu_placement             | character varying
+ categories              | secondary_menus            | json
+ categories              | show_in_menu               | boolean
+ categories              | is_featured                | boolean
+ categories              | category_keywords          | json
+ categories              | meta_title                 | character varying
+ categories              | meta_description           | text
+ categories              | meta_keywords              | json
+ categories              | brand_color                | character varying
+ categories              | meta_data                  | json
+ categories              | created_at                 | timestamp without time zone
+ categories              | updated_at                 | timestamp without time zone
+ coupon_usages           | id                         | bigint
+ coupon_usages           | user_id                    | bigint
+ coupon_usages           | coupon_id                  | bigint
+ coupon_usages           | order_id                   | bigint
+ coupon_usages           | discount_amount            | numeric
+ coupon_usages           | used_at                    | timestamp without time zone
+ coupon_usages           | created_at                 | timestamp without time zone
+ coupon_usages           | updated_at                 | timestamp without time zone
+ coupons                 | id                         | bigint
+ coupons                 | code                       | character varying
+ coupons                 | name                       | character varying
+ coupons                 | description                | text
+ coupons                 | type                       | character varying
+ coupons                 | value                      | numeric
+ coupons                 | minimum_amount             | numeric
+ coupons                 | maximum_discount           | numeric
+ coupons                 | usage_limit                | integer
+ coupons                 | used_count                 | integer
+ coupons                 | is_active                  | boolean
+ coupons                 | starts_at                  | timestamp without time zone
+ coupons                 | expires_at                 | timestamp without time zone
+ coupons                 | applicable_categories      | json
+ coupons                 | applicable_products        | json
+ coupons                 | created_at                 | timestamp without time zone
+ coupons                 | updated_at                 | timestamp without time zone
+ failed_jobs             | id                         | bigint
+ failed_jobs             | uuid                       | character varying
+ failed_jobs             | connection                 | text
+ failed_jobs             | queue                      | text
+ failed_jobs             | payload                    | text
+ failed_jobs             | exception                  | text
+ failed_jobs             | failed_at                  | timestamp without time zone
+ google_sheets_sync_logs | id                         | bigint
+ google_sheets_sync_logs | sync_id                    | character varying
+ google_sheets_sync_logs | spreadsheet_id             | character varying
+ google_sheets_sync_logs | sheet_name                 | character varying
+ google_sheets_sync_logs | initiated_by               | character varying
+ google_sheets_sync_logs | started_at                 | timestamp without time zone
+ google_sheets_sync_logs | completed_at               | timestamp without time zone
+ google_sheets_sync_logs | status                     | character varying
+ google_sheets_sync_logs | total_rows                 | integer
+ google_sheets_sync_logs | processed_rows             | integer
+ google_sheets_sync_logs | created_products           | integer
+ google_sheets_sync_logs | updated_products           | integer
+ google_sheets_sync_logs | deleted_products           | integer
+ google_sheets_sync_logs | skipped_rows               | integer
+ google_sheets_sync_logs | error_count                | integer
+ google_sheets_sync_logs | unique_sku_parents         | integer
+ google_sheets_sync_logs | unique_skus                | integer
+ google_sheets_sync_logs | products_with_variants     | integer
+ google_sheets_sync_logs | sync_results               | json
+ google_sheets_sync_logs | error_details              | json
+ google_sheets_sync_logs | sync_options               | json
+ google_sheets_sync_logs | sku_mapping                | json
+ google_sheets_sync_logs | duration_seconds           | integer
+ google_sheets_sync_logs | summary                    | text
+ google_sheets_sync_logs | error_message              | text
+ google_sheets_sync_logs | sync_strategy              | character varying
+ google_sheets_sync_logs | clean_old_data             | boolean
+ google_sheets_sync_logs | created_at                 | timestamp without time zone
+ google_sheets_sync_logs | updated_at                 | timestamp without time zone
+ job_batches             | id                         | character varying
+ job_batches             | name                       | character varying
+ job_batches             | total_jobs                 | integer
+ job_batches             | pending_jobs               | integer
+ job_batches             | failed_jobs                | integer
+ job_batches             | failed_job_ids             | text
+ job_batches             | options                    | text
+ job_batches             | cancelled_at               | integer
+ job_batches             | created_at                 | integer
+ job_batches             | finished_at                | integer
+ jobs                    | id                         | bigint
+ jobs                    | queue                      | character varying
+ jobs                    | payload                    | text
+ jobs                    | attempts                   | smallint
+ jobs                    | reserved_at                | integer
+ jobs                    | available_at               | integer
+ jobs                    | created_at                 | integer
+ menu_navigation         | id                         | bigint
+ menu_navigation         | name                       | character varying
+ menu_navigation         | slug                       | character varying
+ menu_navigation         | url                        | character varying
+ menu_navigation         | route_name                 | character varying
+ menu_navigation         | icon                       | character varying
+ menu_navigation         | description                | text
+ menu_navigation         | sort_order                 | integer
+ menu_navigation         | is_active                  | boolean
+ menu_navigation         | is_external                | boolean
+ menu_navigation         | target                     | character varying
+ menu_navigation         | parent_id                  | bigint
+ menu_navigation         | permissions                | json
+ menu_navigation         | meta_data                  | json
+ menu_navigation         | created_at                 | timestamp without time zone
+ menu_navigation         | updated_at                 | timestamp without time zone
+ migrations              | id                         | integer
+ migrations              | migration                  | character varying
+ migrations              | batch                      | integer
+ order_items             | id                         | bigint
+ order_items             | order_id                   | bigint
+ order_items             | product_id                 | bigint
+ order_items             | product_name               | character varying
+ order_items             | product_sku                | character varying
+ order_items             | product_price              | numeric
+ order_items             | quantity                   | integer
+ order_items             | total_price                | numeric
+ order_items             | product_snapshot           | json
+ order_items             | created_at                 | timestamp without time zone
+ order_items             | updated_at                 | timestamp without time zone
+ orders                  | id                         | bigint
+ orders                  | order_number               | character varying
+ orders                  | user_id                    | bigint
+ orders                  | customer_name              | character varying
+ orders                  | customer_email             | character varying
+ orders                  | customer_phone             | character varying
+ orders                  | status                     | character varying
+ orders                  | subtotal                   | numeric
+ orders                  | tax_amount                 | numeric
+ orders                  | shipping_cost              | numeric
+ orders                  | discount_amount            | numeric
+ orders                  | total_amount               | numeric
+ orders                  | currency                   | character
+ orders                  | shipping_address           | json
+ orders                  | billing_address            | json
+ orders                  | store_origin               | json
+ orders                  | payment_method             | character varying
+ orders                  | payment_status             | character varying
+ orders                  | payment_token              | text
+ orders                  | payment_url                | character varying
+ orders                  | tracking_number            | character varying
+ orders                  | shipped_at                 | timestamp without time zone
+ orders                  | delivered_at               | timestamp without time zone
+ orders                  | notes                      | text
+ orders                  | meta_data                  | json
+ orders                  | created_at                 | timestamp without time zone
+ orders                  | updated_at                 | timestamp without time zone
+ orders                  | shipping_destination_id    | character varying
+ orders                  | shipping_destination_label | text
+ orders                  | shipping_postal_code       | character varying
+ orders                  | snap_token                 | text
+ orders                  | payment_response           | jsonb
+ orders                  | coupon_id                  | bigint
+ orders                  | coupon_code                | character varying
+ orders                  | points_used                | integer
+ orders                  | points_discount            | numeric
+ password_reset_tokens   | email                      | character varying
+ password_reset_tokens   | token                      | character varying
+ password_reset_tokens   | created_at                 | timestamp without time zone
+ points_transactions     | id                         | bigint
+ points_transactions     | user_id                    | bigint
+ points_transactions     | order_id                   | bigint
+ points_transactions     | type                       | character varying
+ points_transactions     | amount                     | numeric
+ points_transactions     | description                | text
+ points_transactions     | reference                  | character varying
+ points_transactions     | balance_before             | numeric
+ points_transactions     | balance_after              | numeric
+ points_transactions     | created_at                 | timestamp without time zone
+ points_transactions     | updated_at                 | timestamp without time zone
+ products                | id                         | bigint
+ products                | name                       | character varying
+ products                | slug                       | character varying
+ products                | short_description          | text
+ products                | description                | text
+ products                | category_id                | bigint
+ products                | brand                      | character varying
+ products                | sku                        | character varying
+ products                | gender_target              | jsonb
+ products                | product_type               | character varying
+ products                | price                      | numeric
+ products                | sale_price                 | numeric
+ products                | stock_quantity             | integer
+ products                | min_stock_level            | integer
+ products                | weight                     | numeric
+ products                | images                     | json
+ products                | features                   | json
+ products                | specifications             | json
+ products                | available_sizes            | json
+ products                | available_colors           | json
+ products                | is_active                  | boolean
+ products                | is_featured                | boolean
+ products                | is_featured_sale           | boolean
+ products                | published_at               | timestamp without time zone
+ products                | sale_start_date            | date
+ products                | sale_end_date              | date
+ products                | search_keywords            | json
+ products                | meta_title                 | character varying
+ products                | meta_description           | text
+ products                | meta_keywords              | json
+ products                | dimensions                 | json
+ products                | meta_data                  | json
+ products                | created_at                 | timestamp without time zone
+ products                | updated_at                 | timestamp without time zone
+ products                | sku_parent                 | character varying
+ products                | length                     | numeric
+ products                | width                      | numeric
+ products                | height                     | numeric
+ sessions                | id                         | character varying
+ sessions                | user_id                    | bigint
+ sessions                | ip_address                 | character varying
+ sessions                | user_agent                 | text
+ sessions                | payload                    | text
+ sessions                | last_activity              | integer
+ shopping_cart           | id                         | bigint
+ shopping_cart           | user_id                    | bigint
+ shopping_cart           | session_id                 | character varying
+ shopping_cart           | product_id                 | bigint
+ shopping_cart           | quantity                   | integer
+ shopping_cart           | product_options            | json
+ shopping_cart           | created_at                 | timestamp without time zone
+ shopping_cart           | updated_at                 | timestamp without time zone
+ user_addresses          | id                         | bigint
+ user_addresses          | user_id                    | bigint
+ user_addresses          | label                      | character varying
+ user_addresses          | recipient_name             | character varying
+ user_addresses          | phone_recipient            | character varying
+ user_addresses          | province_name              | character varying
+ user_addresses          | city_name                  | character varying
+ user_addresses          | subdistrict_name           | character varying
+ user_addresses          | postal_code                | character varying
+ user_addresses          | destination_id             | character varying
+ user_addresses          | street_address             | text
+ user_addresses          | notes                      | text
+ user_addresses          | is_primary                 | boolean
+ user_addresses          | is_active                  | boolean
+ user_addresses          | created_at                 | timestamp without time zone
+ user_addresses          | updated_at                 | timestamp without time zone
+ users                   | id                         | bigint
+ users                   | name                       | character varying
+ users                   | email                      | character varying
+ users                   | email_verified_at          | timestamp without time zone
+ users                   | password                   | character varying
+ users                   | remember_token             | character varying
+ users                   | created_at                 | timestamp without time zone
+ users                   | updated_at                 | timestamp without time zone
+ users                   | google_id                  | character varying
+ users                   | avatar                     | text
+ users                   | total_spent                | numeric
+ users                   | total_orders               | integer
+ users                   | spending_updated_at        | timestamp without time zone
+ users                   | customer_tier              | character varying
+ users                   | phone                      | character varying
+ users                   | gender                     | character varying
+ users                   | birthdate                  | date
+ users                   | zodiac                     | character varying
+ users                   | spending_6_months          | numeric
+ users                   | tier_period_start          | timestamp without time zone
+ users                   | last_tier_evaluation       | timestamp without time zone
+ users                   | points_balance             | numeric
+ users                   | total_points_earned        | numeric
+ users                   | total_points_redeemed      | numeric
+ voucher_sync_log        | id                         | uuid
+ voucher_sync_log        | sync_type                  | character varying
+ voucher_sync_log        | status                     | character varying
+ voucher_sync_log        | records_processed          | integer
+ voucher_sync_log        | errors_count               | integer
+ voucher_sync_log        | error_details              | text
+ voucher_sync_log        | synced_at                  | timestamp without time zone
+ voucher_sync_log        | execution_time_ms          | integer
+ voucher_sync_log        | created_at                 | timestamp without time zone
+ voucher_sync_log        | updated_at                 | timestamp without time zone
+ voucher_usage           | id                         | uuid
+ voucher_usage           | voucher_id                 | uuid
+ voucher_usage           | customer_id                | character varying
+ voucher_usage           | customer_email             | character varying
+ voucher_usage           | order_id                   | character varying
+ voucher_usage           | discount_amount            | numeric
+ voucher_usage           | order_total                | numeric
+ voucher_usage           | used_at                    | timestamp without time zone
+ voucher_usage           | created_at                 | timestamp without time zone
+ voucher_usage           | updated_at                 | timestamp without time zone
+ vouchers                | id                         | uuid
+ vouchers                | created_at                 | timestamp without time zone
+ vouchers                | updated_at                 | timestamp without time zone
+ vouchers                | sync_status                | character varying
+ vouchers                | spreadsheet_row_id         | integer
+ vouchers                | code_product               | character varying
+ vouchers                | voucher_code               | character varying
+ vouchers                | name_voucher               | character varying
+ vouchers                | start_date                 | timestamp without time zone
+ vouchers                | end_date                   | timestamp without time zone
+ vouchers                | min_purchase               | numeric
+ vouchers                | quota                      | integer
+ vouchers                | claim_per_customer         | integer
+ vouchers                | voucher_type               | character varying
+ vouchers                | value                      | character varying
+ vouchers                | discount_max               | numeric
+ vouchers                | category_customer          | character varying
+ vouchers                | is_active                  | boolean
+ vouchers                | total_used                 | integer
+ vouchers                | remaining_quota            | integer
+ wishlists               | id                         | bigint
+ wishlists               | user_id                    | bigint
+ wishlists               | product_id                 | bigint
+ wishlists               | created_at                 | timestamp without time zone
+ wishlists               | updated_at                 | timestamp without time zone
+(320 rows)
+

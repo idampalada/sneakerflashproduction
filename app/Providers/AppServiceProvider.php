@@ -14,6 +14,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(\App\Services\GineeClient::class, function () {
+        return new \App\Services\GineeClient(); // config diambil dari config/services.php
+    });
         //
     }
 
