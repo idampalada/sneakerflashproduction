@@ -462,7 +462,7 @@ class GineeClient
         $results['warehouse_inventory'] = $this->getWarehouseInventory(['page' => 0, 'size' => 3]);
         
         // Test 4: Stock update (with real SKU that exists)
-        $testStockUpdate = $this->createStockUpdate('BOX', 1600);
+        $testStockUpdate = $this->createStockUpdate('BOX', 1308);
         $results['stock_update'] = $this->updateStock([$testStockUpdate]);
         
         // Analyze results
@@ -498,7 +498,7 @@ class GineeClient
         $results['warehouse_inventory'] = $this->getWarehouseInventory(['page' => 0, 'size' => 3]);
         
         // Test stock update with sample data
-        $testStockUpdate = $this->createStockUpdate('BOX', 1600);
+        $testStockUpdate = $this->createStockUpdate('BOX', 1308);
         $results['stock_update'] = $this->updateStock([$testStockUpdate]);
         
         return [

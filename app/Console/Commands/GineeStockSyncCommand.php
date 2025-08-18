@@ -2,184 +2,291 @@
 
 namespace App\Console\Commands;
 
-use App\Services\GineeClient;
-use App\Http\Controllers\Frontend\GineeStockSyncController;
+use App\Services\GineeStockSyncService;
 use Illuminate\Console\Command;
 
 class GineeStockSyncCommand extends Command
 {
-    protected $signature = 'ginee:stock-sync 
-                            {action : Action to perform (pull, push, test, status)}
-                            {--batch-size=50 : Batch size for processing}
-                            {--warehouse-id= : Specific warehouse ID}
-                            {--force : Force update all items}
-                            {--skus=* : Specific SKUs to sync}';
+    protected $signature = 'ginee:sync-stock 
+                            {action=sync : Action to perform (sync, push, both)}
+                            {--sku= : Sync/push specific SKU only}
+                            {--batch-size=50 : Number of SKUs to process per batch}
+                            {--dry-run : Preview changes without updating database/Ginee}
+                            {--only-active : Only sync/push active products (default: true)}
+                            {--force : Force update all products (ignore last sync timestamp)}';
 
-    protected $description = 'Synchronize stock between Laravel and Ginee';
+    protected $description = 'Sync stock between local database and Ginee (sync=Ginee→Local, push=Local→Ginee, both=bidirectional)';
 
     public function handle()
     {
+        $this->info('🔄 Ginee Stock Synchronization');
+        $this->newLine();
+
         $action = $this->argument('action');
-        
-        $this->info("🔄 Starting Ginee stock sync: {$action}");
+        $sku = $this->option('sku');
+        $batchSize = (int) $this->option('batch-size');
+        $dryRun = $this->option('dry-run');
+        $onlyActive = $this->option('only-active') !== false;
+        $force = $this->option('force');
+
+        if (!in_array($action, ['sync', 'push', 'both'])) {
+            $this->error('❌ Invalid action. Use: sync, push, or both');
+            return 1;
+        }
+
+        if ($dryRun) {
+            $this->warn('🧪 DRY RUN MODE - No actual updates will be made');
+            $this->newLine();
+        }
+
+        $this->table(['Setting', 'Value'], [
+            ['Action', $action],
+            ['Mode', $dryRun ? 'DRY RUN' : 'LIVE UPDATE'],
+            ['Batch Size', $batchSize],
+            ['Only Active Products', $onlyActive ? 'Yes' : 'No'],
+            ['Force Update', $force ? 'Yes' : 'No'],
+            ['Specific SKU', $sku ?: 'All SKUs'],
+        ]);
+
         $this->newLine();
 
         try {
-            switch ($action) {
-                case 'pull':
-                    return $this->pullProducts();
-                
-                case 'push':
-                    return $this->pushStock();
-                
-                case 'test':
-                    return $this->testEndpoints();
-                
-                case 'status':
-                    return $this->showStatus();
-                    
-                default:
-                    $this->error("Unknown action: {$action}");
-                    $this->line('Available actions: pull, push, test, status');
-                    return 1;
+            $syncService = new GineeStockSyncService();
+
+            if ($sku) {
+                // Single SKU operation
+                $this->handleSingleSku($syncService, $sku, $action, $dryRun);
+            } else {
+                // Bulk operation
+                $this->handleBulkOperation($syncService, $action, $batchSize, $dryRun, $onlyActive, $force);
             }
 
         } catch (\Exception $e) {
-            $this->error('❌ Command failed: ' . $e->getMessage());
+            $this->error('❌ Exception: ' . $e->getMessage());
             return 1;
         }
+
+        return 0;
     }
 
-    private function pullProducts()
+    private function handleSingleSku(GineeStockSyncService $syncService, string $sku, string $action, bool $dryRun)
     {
-        $this->info('📥 Pulling products from Ginee...');
-        
-        $ginee = new GineeClient();
-        $batchSize = (int)$this->option('batch-size');
-        
-        $result = $ginee->pullAllProducts($batchSize);
-        
-        if (($result['code'] ?? null) === 'SUCCESS') {
-            $data = $result['data'];
-            $this->line("✅ Successfully pulled {$data['total_count']} products");
-            $this->line("📄 Fetched in {$data['pages_fetched']} pages");
-            
-            // Show sample products
-            $products = array_slice($data['products'], 0, 5);
-            if (!empty($products)) {
+        switch ($action) {
+            case 'sync':
+                $this->info("📥 Syncing single SKU from Ginee: {$sku}");
+                $this->syncSingleSku($syncService, $sku, $dryRun);
+                break;
+                
+            case 'push':
+                $this->info("📤 Pushing single SKU to Ginee: {$sku}");
+                $this->pushSingleSku($syncService, $sku, $dryRun);
+                break;
+                
+            case 'both':
+                $this->info("🔄 Syncing and pushing single SKU: {$sku}");
+                $this->syncSingleSku($syncService, $sku, $dryRun);
                 $this->newLine();
-                $this->line('📦 Sample products:');
-                foreach ($products as $i => $product) {
-                    $name = $product['productName'] ?? 'Unknown';
-                    $sku = $product['masterSku'] ?? 'No SKU';
-                    $this->line("   " . ($i+1) . ". {$name} ({$sku})");
-                }
+                $this->pushSingleSku($syncService, $sku, $dryRun);
+                break;
+        }
+    }
+
+    private function handleBulkOperation(GineeStockSyncService $syncService, string $action, int $batchSize, bool $dryRun, bool $onlyActive, bool $force)
+    {
+        switch ($action) {
+            case 'sync':
+                $this->info('📥 Starting bulk stock sync from Ginee...');
+                $this->syncAllSkus($syncService, $batchSize, $dryRun, $onlyActive);
+                break;
+                
+            case 'push':
+                $this->info('📤 Starting bulk stock push to Ginee...');
+                $this->pushAllSkus($syncService, $batchSize, $dryRun, $onlyActive, $force);
+                break;
+                
+            case 'both':
+                $this->info('🔄 Starting bidirectional stock sync...');
+                $this->syncAllSkus($syncService, $batchSize, $dryRun, $onlyActive);
+                $this->newLine();
+                $this->info('📤 Now pushing local changes to Ginee...');
+                $this->pushAllSkus($syncService, $batchSize, $dryRun, $onlyActive, $force);
+                break;
+        }
+    }
+
+    private function syncSingleSku(GineeStockSyncService $syncService, string $sku, bool $dryRun)
+    {
+        $result = $syncService->syncSingleSku($sku, $dryRun);
+        
+        if ($result['success']) {
+            $this->info('✅ ' . $result['message']);
+            
+            if (isset($result['data']['ginee_stock'])) {
+                $stock = $result['data']['ginee_stock'];
+                $this->table(['Field', 'Value'], [
+                    ['SKU', $stock['sku']],
+                    ['Product Name', $stock['product_name']],
+                    ['Warehouse Stock', $stock['warehouse_stock']],
+                    ['Available Stock', $stock['available_stock']],
+                    ['Spare Stock', $stock['spare_stock']],
+                    ['Locked Stock', $stock['locked_stock']],
+                    ['Bound Shops', $stock['bound_shops']],
+                    ['Product Status', $stock['product_status']],
+                ]);
             }
         } else {
-            $this->error('❌ Failed to pull products: ' . ($result['message'] ?? 'Unknown error'));
-            return 1;
+            $this->error('❌ ' . $result['message']);
         }
-        
-        return 0;
     }
 
-    private function pushStock()
+    private function pushSingleSku(GineeStockSyncService $syncService, string $sku, bool $dryRun)
     {
-        $this->info('📤 Pushing stock to Ginee...');
+        $result = $syncService->pushSingleSkuToGinee($sku, $dryRun);
         
-        // This would integrate with the controller logic
-        $this->line('💡 Use the web interface or API endpoint for stock push');
-        $this->line('   POST /integrations/ginee/push-stock');
-        
-        return 0;
-    }
-
-    private function testEndpoints()
-    {
-        $this->info('🧪 Testing Ginee stock sync endpoints...');
-        
-        $ginee = new GineeClient();
-        $result = $ginee->testStockSyncEndpoints();
-        
-        if (($result['code'] ?? null) === 'SUCCESS') {
-            $summary = $result['data']['summary'];
+        if ($result['success']) {
+            $this->info('✅ ' . $result['message']);
             
-            $tableData = [];
-            foreach ($summary as $endpoint => $status) {
-                $statusIcon = $status['success'] ? '✅' : '❌';
-                $tableData[] = [
-                    ucfirst(str_replace('_', ' ', $endpoint)),
-                    $statusIcon . ' ' . ($status['success'] ? 'Success' : 'Failed'),
-                    $status['message'],
-                    $status['transaction_id'] ?? 'N/A'
-                ];
-            }
-            
-            $this->table(['Endpoint', 'Status', 'Message', 'Transaction ID'], $tableData);
-            
-            $successCount = count(array_filter($summary, fn($s) => $s['success']));
-            $totalCount = count($summary);
-            
-            $this->newLine();
-            if ($successCount === $totalCount) {
-                $this->info("🎉 ALL ENDPOINTS WORKING! ({$successCount}/{$totalCount})");
-            } else {
-                $this->line("⚠️  {$successCount}/{$totalCount} endpoints working");
+            if (isset($result['data']['ginee_response'])) {
+                $gineeData = $result['data']['ginee_response'];
+                $this->table(['Field', 'Value'], [
+                    ['SKU', $gineeData['masterSku'] ?? 'N/A'],
+                    ['Product Name', $gineeData['masterProductName'] ?? 'N/A'],
+                    ['New Warehouse Stock', $gineeData['warehouseStock'] ?? 'N/A'],
+                    ['New Available Stock', $gineeData['availableStock'] ?? 'N/A'],
+                    ['Pushed Stock', $result['data']['local_stock'] ?? 'N/A'],
+                    ['Transaction ID', $result['data']['transaction_id'] ?? 'N/A'],
+                    ['Updated At', $gineeData['updateDatetime'] ?? 'N/A'],
+                ]);
             }
         } else {
-            $this->error('❌ Endpoint test failed');
-            return 1;
+            $this->error('❌ ' . $result['message']);
         }
-        
-        return 0;
     }
 
-    private function showStatus()
+    private function syncAllSkus(GineeStockSyncService $syncService, int $batchSize, bool $dryRun, bool $onlyActive)
     {
-        $this->info('📊 Ginee Stock Sync Status');
-        
-        // Get local database stats
-        $stats = [
-            'total_products' => \App\Models\Product::count(),
-            'products_with_sku' => \App\Models\Product::whereNotNull('sku')->count(),
-            'synced_products' => \App\Models\Product::whereNotNull('ginee_last_sync')->count(),
-            'pending_sync' => \App\Models\Product::where(function ($q) {
-                $q->whereNull('ginee_last_sync')
-                  ->orWhere('ginee_sync_status', '!=', 'synced')
-                  ->orWhere('updated_at', '>', \DB::raw('ginee_last_sync'));
-            })->count(),
-            'last_sync' => \App\Models\Product::max('ginee_last_sync'),
-        ];
-        
-        $this->table(['Metric', 'Value'], [
-            ['Total Products', number_format($stats['total_products'])],
-            ['Products with SKU', number_format($stats['products_with_sku'])],
-            ['Synced Products', number_format($stats['synced_products'])],
-            ['Pending Sync', number_format($stats['pending_sync'])],
-            ['Last Sync', $stats['last_sync'] ? $stats['last_sync']->format('Y-m-d H:i:s') : 'Never'],
+        $result = $syncService->syncStockFromGinee([
+            'batch_size' => $batchSize,
+            'dry_run' => $dryRun,
+            'only_active' => $onlyActive
         ]);
         
-        return 0;
+        if ($result['success']) {
+            $data = $result['data'];
+            
+            $this->newLine();
+            $this->info('✅ Stock synchronization completed!');
+            $this->newLine();
+            
+            // Summary table
+            $this->table(['Metric', 'Count'], [
+                ['Total Processed', $data['total_processed']],
+                ['Successful Updates', $data['successful_updates']],
+                ['Failed Updates', $data['failed_updates']],
+                ['Not Found in Ginee', $data['not_found_in_ginee']],
+            ]);
+
+            // Show sample of updated products
+            if (!empty($data['updated_products']) && count($data['updated_products']) > 0) {
+                $this->newLine();
+                $this->line('📦 Sample of updated products:');
+                
+                $sampleUpdates = array_slice($data['updated_products'], 0, 5);
+                $updateTable = [];
+                
+                foreach ($sampleUpdates as $update) {
+                    $updateTable[] = [
+                        $update['sku'],
+                        $update['old_stock'] ?? 'N/A',
+                        $update['new_stock'] ?? 'N/A',
+                        ($update['new_stock'] ?? 0) - ($update['old_stock'] ?? 0)
+                    ];
+                }
+                
+                $this->table(['SKU', 'Old Stock', 'New Stock', 'Change'], $updateTable);
+            }
+
+            // Show failed products if any
+            if (!empty($data['failed_products'])) {
+                $this->newLine();
+                $this->warn('⚠️  Failed products:');
+                foreach (array_slice($data['failed_products'], 0, 5) as $failed) {
+                    $this->line("   - {$failed['sku']}: {$failed['error']}");
+                }
+            }
+
+            // Show not found SKUs if any
+            if (!empty($data['not_found_skus'])) {
+                $this->newLine();
+                $this->warn('🔍 SKUs not found in Ginee:');
+                foreach (array_slice($data['not_found_skus'], 0, 10) as $notFound) {
+                    $this->line("   - {$notFound}");
+                }
+                
+                if (count($data['not_found_skus']) > 10) {
+                    $remaining = count($data['not_found_skus']) - 10;
+                    $this->line("   ... and {$remaining} more");
+                }
+            }
+
+        } else {
+            $this->error('❌ ' . $result['message']);
+        }
+    }
+
+    private function pushAllSkus(GineeStockSyncService $syncService, int $batchSize, bool $dryRun, bool $onlyActive, bool $force)
+    {
+        $result = $syncService->pushStockToGinee([
+            'batch_size' => $batchSize,
+            'dry_run' => $dryRun,
+            'only_active' => $onlyActive,
+            'force_update' => $force
+        ]);
+        
+        if ($result['success']) {
+            $data = $result['data'];
+            
+            $this->newLine();
+            $this->info('✅ Stock push completed!');
+            $this->newLine();
+            
+            // Summary table
+            $this->table(['Metric', 'Count'], [
+                ['Total Processed', $data['total_processed']],
+                ['Successful Updates', $data['successful_updates']],
+                ['Failed Updates', $data['failed_updates']],
+            ]);
+
+            // Show sample of updated products
+            if (!empty($data['updated_products']) && count($data['updated_products']) > 0) {
+                $this->newLine();
+                $this->line('📤 Sample of pushed products:');
+                
+                $sampleUpdates = array_slice($data['updated_products'], 0, 5);
+                $updateTable = [];
+                
+                foreach ($sampleUpdates as $update) {
+                    $updateTable[] = [
+                        $update['sku'],
+                        $update['stock'] ?? 'N/A',
+                        $update['pushed_at'] ?? 'N/A'
+                    ];
+                }
+                
+                $this->table(['SKU', 'Pushed Stock', 'Pushed At'], $updateTable);
+            }
+
+            // Show failed products if any
+            if (!empty($data['failed_products'])) {
+                $this->newLine();
+                $this->warn('⚠️  Failed products:');
+                foreach (array_slice($data['failed_products'], 0, 5) as $failed) {
+                    $this->line("   - {$failed['sku']}: {$failed['error']}");
+                }
+            }
+
+        } else {
+            $this->error('❌ ' . $result['message']);
+        }
     }
 }
-
-// =============================================================================
-// File: routes/web.php (add these routes to existing ginee section)
-// =============================================================================
-
-/*
-// Add to existing Ginee routes section
-Route::middleware(['auth'])->prefix('integrations/ginee')->name('ginee.')->group(function () {
-    // Existing routes...
-    
-    // Stock Synchronization Routes
-    Route::post('/pull-products', [GineeStockSyncController::class, 'pullProducts'])->name('pull.products');
-    Route::post('/push-stock', [GineeStockSyncController::class, 'pushStock'])->name('push.stock');
-    Route::get('/ginee-stock', [GineeStockSyncController::class, 'getGineeStock'])->name('ginee.stock');
-    Route::get('/test-endpoints', [GineeStockSyncController::class, 'testEndpoints'])->name('test.endpoints');
-    
-    // Sync status and monitoring
-    Route::get('/sync-status', [GineeStockSyncController::class, 'getSyncStatus'])->name('sync.status');
-});
-*/
-

@@ -701,408 +701,708 @@ class ProductResource extends Resource
                         });
                     }),
             ])
-            ->headerActions([
-                // 🧠 SMART SYNC - Primary sync method
-                Tables\Actions\Action::make('smart_sync_google_sheets')
-                    ->label('🧠 Smart Sync Google Sheets')
-                    ->icon('heroicon-o-cloud-arrow-down')
-                    ->color('success')
-                    ->requiresConfirmation()
-                    ->modalHeading('Smart Sync Products from Google Sheets')
-                    ->modalDescription('This will intelligently sync products: update existing, create new, and DELETE products not in spreadsheet anymore.')
-                    ->modalSubmitActionLabel('Start Smart Sync')
-                    ->form([
-                        Forms\Components\Placeholder::make('warning')
-                            ->label('⚠️ Important Warning')
-                            ->content(function () {
-                                $currentCount = Product::count();
-                                return "Current products in database: {$currentCount}. This smart sync will DELETE products that are no longer in the Google Sheets.";
-                            }),
+->headerActions([
+    
+    // 📊 GOOGLE SHEETS SYNC GROUP
+    Tables\Actions\ActionGroup::make([
+        
+        // 🧠 SMART SYNC - Primary sync method
+        Tables\Actions\Action::make('smart_sync_google_sheets')
+            ->label('🧠 Smart Sync')
+            ->icon('heroicon-o-cloud-arrow-down')
+            ->color('success')
+            ->requiresConfirmation()
+            ->modalHeading('Smart Sync Products from Google Sheets')
+            ->modalDescription('This will intelligently sync products: update existing, create new, and DELETE products not in spreadsheet anymore.')
+            ->modalSubmitActionLabel('Start Smart Sync')
+            ->form([
+                Forms\Components\Placeholder::make('warning')
+                    ->label('⚠️ Important Warning')
+                    ->content(function () {
+                        $currentCount = Product::count();
+                        return "Current products in database: {$currentCount}. This smart sync will DELETE products that are no longer in the Google Sheets.";
+                    }),
 
-                        Forms\Components\Placeholder::make('excel_columns_info')
-                            ->label('📋 Excel Columns Being Synced')
-                            ->content('Main columns: name, brand, sku_parent, sku, price, sale_price, stock_quantity, weight, length, width, height, available_sizes, category→product_type+gender_target, sale_show→is_featured_sale, sale_dates, images_1-5'),
-
-                        Forms\Components\Placeholder::make('spreadsheet_info')
-                            ->label('📊 Spreadsheet Preview')
-                            ->content(function () {
-                                try {
-                                    $service = new GoogleSheetsSync();
-                                    $preview = $service->previewData(3);
-                                    
-                                    if ($preview['success']) {
-                                        $skus = array_unique(array_column($preview['data'], 'sku'));
-                                        $skuParents = array_unique(array_column($preview['data'], 'sku_parent'));
-                                        $existingSkus = Product::pluck('sku')->toArray();
-                                        $toDelete = array_diff($existingSkus, $skus);
-                                        $toCreate = array_diff($skus, $existingSkus);
-                                        $toUpdate = array_intersect($existingSkus, $skus);
-                                        
-                                        return "
-                                            <div style='background: #f0f8ff; padding: 15px; border-radius: 8px; border: 1px solid #d1ecf1;'>
-                                                <h4 style='margin: 0 0 10px 0; color: #0c5460;'>📈 Sync Preview</h4>
-                                                <table style='width: 100%; font-size: 13px;'>
-                                                    <tr><td><strong>📊 Total rows in spreadsheet:</strong></td><td>{$preview['total_rows']}</td></tr>
-                                                    <tr><td><strong>🏷️ Unique SKU Parents:</strong></td><td>" . count($skuParents) . "</td></tr>
-                                                    <tr><td><strong>🔢 Individual SKUs (with sizes):</strong></td><td>" . count($skus) . "</td></tr>
-                                                    <tr><td><strong>➕ Products to CREATE:</strong></td><td style='color: green;'>" . count($toCreate) . "</td></tr>
-                                                    <tr><td><strong>🔄 Products to UPDATE:</strong></td><td style='color: blue;'>" . count($toUpdate) . "</td></tr>
-                                                    <tr><td><strong>🗑️ Products to DELETE:</strong></td><td style='color: red;'>" . count($toDelete) . "</td></tr>
-                                                    <tr><td><strong>📊 Final product count:</strong></td><td><strong>" . count($skus) . "</strong></td></tr>
-                                                </table>
-                                            </div>
-                                        ";
-                                    } else {
-                                        return "<div style='color: red; padding: 10px; background: #f8d7da; border-radius: 5px;'>❌ Failed to preview: {$preview['message']}</div>";
-                                    }
-                                } catch (Exception $e) {
-                                    return "<div style='color: red; padding: 10px; background: #f8d7da; border-radius: 5px;'>💥 Error: {$e->getMessage()}</div>";
-                                }
-                            }),
-
-                        Forms\Components\Toggle::make('confirm_delete')
-                            ->label('✅ I understand products will be deleted')
-                            ->helperText('Check this to confirm you understand that products not in spreadsheet will be permanently deleted')
-                            ->required(),
-
-                        Forms\Components\Textarea::make('sync_notes')
-                            ->label('Sync Notes (Optional)')
-                            ->placeholder('Add notes about this smart sync operation...')
-                            ->rows(3),
-                    ])
-                    ->action(function (array $data) {
-                        if (!($data['confirm_delete'] ?? false)) {
-                            Notification::make()
-                                ->title('❌ Confirmation Required')
-                                ->body('You must confirm that you understand products will be deleted.')
-                                ->danger()
-                                ->send();
-                            return;
-                        }
-
+                Forms\Components\Placeholder::make('spreadsheet_info')
+                    ->label('📊 Spreadsheet Preview')
+                    ->content(function () {
                         try {
-                            Log::info('Smart Google Sheets sync started from admin', [
-                                'user_id' => Auth::id(),
-                                'options' => $data
-                            ]);
-
-                            $syncService = new GoogleSheetsSync();
-                            $result = $syncService->syncProducts([
-                                'sync_strategy' => 'smart_individual_sku',
-                                'notes' => $data['sync_notes'] ?? null
-                            ]);
-
-                            if ($result['success']) {
-                                $stats = $result['stats'];
+                            $service = new GoogleSheetsSync();
+                            $preview = $service->previewData(3);
+                            
+                            if ($preview['success']) {
+                                $skus = array_unique(array_column($preview['data'], 'sku'));
+                                $existingSkus = Product::pluck('sku')->toArray();
+                                $toDelete = array_diff($existingSkus, $skus);
+                                $toCreate = array_diff($skus, $existingSkus);
+                                $toUpdate = array_intersect($existingSkus, $skus);
                                 
-                                Notification::make()
-                                    ->title('🎉 Smart Sync Successful!')
-                                    ->body("✅ Created: {$stats['created']}, 🔄 Updated: {$stats['updated']}, 🗑️ Deleted: {$stats['deleted']} products" . 
-                                          ($stats['errors'] > 0 ? ", ❌ Errors: {$stats['errors']}" : ""))
-                                    ->success()
-                                    ->duration(15000)
-                                    ->actions([
-                                        \Filament\Notifications\Actions\Action::make('view_sync_log')
-                                            ->label('View Sync Log')
-                                            ->url('/admin/google-sheets-sync-logs')
-                                            ->openUrlInNewTab(),
-                                    ])
-                                    ->send();
-
-                                if ($stats['deleted'] > 0) {
-                                    Notification::make()
-                                        ->title('🗑️ Products Deleted')
-                                        ->body("Successfully deleted {$stats['deleted']} products that were no longer in the spreadsheet.")
-                                        ->warning()
-                                        ->duration(10000)
-                                        ->send();
-                                }
-
-                                if ($stats['errors'] > 0) {
-                                    Notification::make()
-                                        ->title('⚠️ Sync Warnings')
-                                        ->body("Sync completed with {$stats['errors']} errors. Check sync logs for details.")
-                                        ->warning()
-                                        ->duration(15000)
-                                        ->send();
-                                }
-                            } else {
-                                Notification::make()
-                                    ->title('❌ Smart Sync Failed')
-                                    ->body($result['message'])
-                                    ->danger()
-                                    ->duration(15000)
-                                    ->send();
+                                return "
+                                    <div style='background: #f0f8ff; padding: 15px; border-radius: 8px;'>
+                                        <h4>📈 Sync Preview</h4>
+                                        <p><strong>➕ To CREATE:</strong> " . count($toCreate) . "</p>
+                                        <p><strong>🔄 To UPDATE:</strong> " . count($toUpdate) . "</p>
+                                        <p><strong>🗑️ To DELETE:</strong> " . count($toDelete) . "</p>
+                                    </div>
+                                ";
                             }
-
+                            return "Failed to preview spreadsheet";
                         } catch (Exception $e) {
-                            Log::error('Smart Google Sheets sync failed from admin', [
-                                'error' => $e->getMessage(),
-                                'user_id' => Auth::id(),
-                                'trace' => $e->getTraceAsString()
-                            ]);
-
-                            Notification::make()
-                                ->title('❌ Smart Sync Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->duration(15000)
-                                ->send();
+                            return "Error: {$e->getMessage()}";
                         }
                     }),
 
-                // 🔄 SAFE MODE SYNC - No delete
-                Tables\Actions\Action::make('safe_sync_google_sheets')
-                    ->label('🔄 Safe Sync (No Delete)')
-                    ->icon('heroicon-o-shield-check')
-                    ->color('primary')
-                    ->requiresConfirmation()
-                    ->modalHeading('Safe Sync - No Products Will Be Deleted')
-                    ->modalDescription('This will only create new and update existing products. No products will be deleted from your database.')
-                    ->modalSubmitActionLabel('Start Safe Sync')
-                    ->form([
-                        Forms\Components\Placeholder::make('info')
-                            ->label('ℹ️ Safe Sync Information')
-                            ->content('This sync method is safe - it will not delete any existing products. It will only create new products and update existing ones based on SKU matching. All Excel columns will be synced.'),
-                    ])
-                    ->action(function () {
-                        try {
-                            $syncService = new GoogleSheetsSync();
-                            $result = $syncService->syncProductsSafeMode(['sync_strategy' => 'safe_mode_no_delete']);
-
-                            if ($result['success']) {
-                                $stats = $result['stats'];
-                                
-                                Notification::make()
-                                    ->title('✅ Safe Sync Successful!')
-                                    ->body("Created: {$stats['created']}, Updated: {$stats['updated']} products. No products deleted.")
-                                    ->success()
-                                    ->duration(10000)
-                                    ->send();
-                            } else {
-                                Notification::make()
-                                    ->title('❌ Safe Sync Failed')
-                                    ->body($result['message'])
-                                    ->danger()
-                                    ->send();
-                            }
-
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('❌ Sync Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                // 🔗 TEST CONNECTION
-                Tables\Actions\Action::make('test_connection')
-                    ->label('🔗 Test Connection')
-                    ->icon('heroicon-o-signal')
-                    ->color('gray')
-                    ->action(function () {
-                        try {
-                            $syncService = new GoogleSheetsSync();
-                            $result = $syncService->testConnection();
-                            
-                            if ($result['success']) {
-                                Notification::make()
-                                    ->title('✅ Connection Successful')
-                                    ->body('Successfully connected to Google Sheets')
-                                    ->success()
-                                    ->send();
-                            } else {
-                                Notification::make()
-                                    ->title('❌ Connection Failed')
-                                    ->body($result['message'])
-                                    ->danger()
-                                    ->send();
-                            }
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('❌ Test Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                // 👁️ PREVIEW DATA
-                Tables\Actions\Action::make('preview_data')
-                    ->label('👁️ Preview Data')
-                    ->icon('heroicon-o-eye')
-                    ->color('gray')
-                    ->action(function () {
-                        try {
-                            $syncService = new GoogleSheetsSync();
-                            $result = $syncService->previewData(5);
-                            
-                            if ($result['success']) {
-                                $message = "Found {$result['total_rows']} total rows. Preview of first {$result['preview_count']} rows:\n\n";
-                                foreach ($result['data'] as $index => $row) {
-                                    $genderStr = empty($row['gender_target']) ? 'No Gender' : implode(',', $row['gender_target']);
-                                    $message .= ($index + 1) . ". {$row['name']} ({$row['brand']})\n";
-                                    $message .= "   Price: Rp " . number_format($row['price']) . " | Size: {$row['size']} | Gender: {$genderStr}\n";
-                                    $message .= "   SKU Parent: {$row['sku_parent']} | SKU: {$row['sku']}\n";
-                                    $message .= "   Stock: {$row['stock']} | Images: {$row['images_count']}\n\n";
-                                }
-                                
-                                Notification::make()
-                                    ->title('📊 Data Preview (All Excel Columns)')
-                                    ->body($message)
-                                    ->info()
-                                    ->duration(20000)
-                                    ->send();
-                            } else {
-                                Notification::make()
-                                    ->title('❌ Preview Failed')
-                                    ->body($result['message'])
-                                    ->danger()
-                                    ->send();
-                            }
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('❌ Preview Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                // ⚡ ANALYZE SKU PATTERNS
-                Tables\Actions\Action::make('analyze_sku_patterns')
-                    ->label('⚡ Analyze SKU Patterns')
-                    ->icon('heroicon-o-chart-bar')
-                    ->color('info')
-                    ->action(function () {
-                        try {
-                            $skuParentCounts = Product::selectRaw('sku_parent, COUNT(*) as count')
-                                ->whereNotNull('sku_parent')
-                                ->groupBy('sku_parent')
-                                ->orderBy('count', 'desc')
-                                ->limit(10)
-                                ->get();
-                                
-                            $message = "SKU Parent Analysis (Top 10):\n\n";
-                            foreach ($skuParentCounts as $item) {
-                                $message .= "• {$item->sku_parent}: {$item->count} variants\n";
-                            }
-                            
-                            $totalSkuParents = Product::whereNotNull('sku_parent')->distinct('sku_parent')->count();
-                            $totalProducts = Product::count();
-                            $message .= "\nSummary:\n";
-                            $message .= "• Total SKU Parents: {$totalSkuParents}\n";
-                            $message .= "• Total Individual Products: {$totalProducts}\n";
-                            $message .= "• Average variants per SKU Parent: " . round($totalProducts / max($totalSkuParents, 1), 1);
-                            
-                            Notification::make()
-                                ->title('📊 SKU Pattern Analysis')
-                                ->body($message)
-                                ->info()
-                                ->duration(15000)
-                                ->send();
-                                
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('❌ Analysis Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                // 🔍 ANALYZE PRODUCT TYPES  
-                Tables\Actions\Action::make('analyze_product_types')
-                    ->label('🔍 Analyze Product Types')
-                    ->icon('heroicon-o-document-magnifying-glass')
-                    ->color('warning')
-                    ->action(function () {
-                        try {
-                            $syncService = new GoogleSheetsSync();
-                            
-                            // Check if method exists
-                            if (!method_exists($syncService, 'analyzeProductTypes')) {
-                                Notification::make()
-                                    ->title('❌ Method Not Found')
-                                    ->body('analyzeProductTypes method not found in GoogleSheetsSync. Please update the file.')
-                                    ->danger()
-                                    ->send();
-                                return;
-                            }
-                            
-                            $analysis = $syncService->analyzeProductTypes();
-                            
-                            if ($analysis['success']) {
-                                $message = "Product Type Analysis (Parsed from Excel):\n\n";
-                                $message .= "📊 Total rows: {$analysis['total_rows']}\n";
-                                $message .= "🔢 Unique product types: {$analysis['unique_product_types']}\n\n";
-                                
-                                $message .= "🏷️ Product Type Distribution (from last part):\n";
-                                foreach ($analysis['product_type_distribution'] as $type => $count) {
-                                    $emoji = match($type) {
-                                        'running' => '🏃',
-                                        'basketball' => '🏀',
-                                        'tennis' => '🎾',
-                                        'badminton' => '🏸',
-                                        'training' => '💪',
-                                        'lifestyle_casual' => '🚶',
-                                        'sneakers' => '👟',
-                                        'apparel' => '👕',
-                                        'caps' => '🧢',
-                                        'bags' => '👜',
-                                        'accessories' => '🎒',
-                                        default => '•'
-                                    };
-                                    $message .= "  {$emoji} {$type}: {$count}\n";
-                                }
-                                
-                                $message .= "\n👥 Gender Distribution (from first part):\n";
-                                foreach ($analysis['gender_distribution'] as $gender => $count) {
-                                    $emoji = match($gender) {
-                                        'mens' => '👨',
-                                        'womens' => '👩',
-                                        'kids' => '👶',
-                                        'unisex' => '🌐',
-                                        'none' => '❓',
-                                        default => '•'
-                                    };
-                                    $message .= "  {$emoji} {$gender}: {$count}\n";
-                                }
-                                
-                                // Show raw formats
-                                if (!empty($analysis['raw_formats'])) {
-                                    $message .= "\n📋 Raw Formats (Top 5):\n";
-                                    $count = 0;
-                                    foreach ($analysis['raw_formats'] as $format => $freq) {
-                                        if ($count >= 5) break;
-                                        $message .= "  • \"{$format}\" ({$freq}x)\n";
-                                        $count++;
-                                    }
-                                }
-                                
-                                Notification::make()
-                                    ->title('🔍 Product Type Analysis Complete')
-                                    ->body($message)
-                                    ->info()
-                                    ->duration(25000)
-                                    ->send();
-                            } else {
-                                Notification::make()
-                                    ->title('❌ Analysis Failed')
-                                    ->body($analysis['message'])
-                                    ->danger()
-                                    ->send();
-                            }
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('❌ Analysis Failed')
-                                ->body('Error: ' . $e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                Forms\Components\Toggle::make('confirm_delete')
+                    ->label('✅ I understand products will be deleted')
+                    ->required(),
             ])
+            ->action(function (array $data) {
+                if (!($data['confirm_delete'] ?? false)) {
+                    Notification::make()
+                        ->title('❌ Confirmation Required')
+                        ->body('You must confirm that you understand products will be deleted.')
+                        ->danger()
+                        ->send();
+                    return;
+                }
+
+                try {
+                    $syncService = new GoogleSheetsSync();
+                    $result = $syncService->syncProducts([
+                        'sync_strategy' => 'smart_individual_sku',
+                    ]);
+
+                    if ($result['success']) {
+                        $stats = $result['stats'];
+                        Notification::make()
+                            ->title('🎉 Smart Sync Successful!')
+                            ->body("✅ Created: {$stats['created']}, 🔄 Updated: {$stats['updated']}, 🗑️ Deleted: {$stats['deleted']}")
+                            ->success()
+                            ->duration(15000)
+                            ->send();
+                    } else {
+                        throw new Exception($result['message']);
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Smart Sync Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+        // 🔄 SAFE MODE SYNC - No delete
+        Tables\Actions\Action::make('safe_sync_google_sheets')
+            ->label('🛡️ Safe Sync (No Delete)')
+            ->icon('heroicon-o-shield-check')
+            ->color('primary')
+            ->requiresConfirmation()
+            ->modalHeading('Safe Sync - No Products Will Be Deleted')
+            ->modalDescription('This will only create new and update existing products. No products will be deleted.')
+            ->form([
+                Forms\Components\Placeholder::make('info')
+                    ->label('ℹ️ Safe Sync Information')
+                    ->content('This sync method is safe - it will not delete any existing products. It will only create new products and update existing ones based on SKU matching.'),
+            ])
+            ->action(function () {
+                try {
+                    $syncService = new GoogleSheetsSync();
+                    $result = $syncService->syncProductsSafeMode(['sync_strategy' => 'safe_mode_no_delete']);
+
+                    if ($result['success']) {
+                        $stats = $result['stats'];
+                        Notification::make()
+                            ->title('✅ Safe Sync Successful!')
+                            ->body("Created: {$stats['created']}, Updated: {$stats['updated']} products. No products deleted.")
+                            ->success()
+                            ->send();
+                    } else {
+                        throw new Exception($result['message']);
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Safe Sync Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+        // 👁️ PREVIEW DATA
+        Tables\Actions\Action::make('preview_data')
+            ->label('👁️ Preview Data')
+            ->icon('heroicon-o-eye')
+            ->color('gray')
+            ->action(function () {
+                try {
+                    $syncService = new GoogleSheetsSync();
+                    $result = $syncService->previewData(5);
+                    
+                    if ($result['success']) {
+                        $message = "Found {$result['total_rows']} total rows. Preview:\n\n";
+                        foreach ($result['data'] as $index => $row) {
+                            $message .= ($index + 1) . ". {$row['name']} ({$row['brand']})\n";
+                            $message .= "   SKU: {$row['sku']} | Price: Rp " . number_format($row['price']) . "\n\n";
+                        }
+                        
+                        Notification::make()
+                            ->title('📊 Data Preview')
+                            ->body($message)
+                            ->info()
+                            ->duration(20000)
+                            ->send();
+                    } else {
+                        throw new Exception($result['message']);
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Preview Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+    ])->label('📊 Google Sheets')
+      ->icon('heroicon-o-table-cells')
+      ->color('success')
+      ->button(),
+    
+    // 🔄 GINEE SYNC GROUP
+    Tables\Actions\ActionGroup::make([
+        
+        // 📥 SYNC STOCK FROM GINEE
+        Tables\Actions\Action::make('sync_stock_from_ginee')
+            ->label('📥 Sync from Ginee')
+            ->icon('heroicon-o-arrow-down-circle')
+            ->color('info')
+            ->requiresConfirmation()
+            ->modalHeading('Sync Stock from Ginee to Local Database')
+            ->modalDescription('This will update local stock quantities with current stock from Ginee. All operations will be logged.')
+            ->form([
+                Forms\Components\Placeholder::make('sync_info')
+                    ->label('📊 Stock Sync Information')
+                    ->content('This will fetch current stock from Ginee Master Products API (READ-ONLY) and update your local database.'),
+                Forms\Components\Toggle::make('dry_run')
+                    ->label('Dry Run (Preview Only)')
+                    ->default(true),
+                Forms\Components\TextInput::make('batch_size')
+                    ->label('Batch Size')
+                    ->numeric()
+                    ->default(20),
+            ])
+            ->action(function (array $data) {
+                try {
+                    $dryRun = $data['dry_run'] ?? true;
+                    $batchSize = $data['batch_size'] ?? 20;
+                    $sessionId = \App\Models\GineeSyncLog::generateSessionId();
+                    
+                    $products = \App\Models\Product::whereNotNull('sku')
+                        ->where('sku', '!=', '')
+                        ->limit($batchSize)
+                        ->get();
+                    
+                    if ($products->isEmpty()) {
+                        Notification::make()
+                            ->title('ℹ️ No Products Found')
+                            ->body('No products with SKU found to sync.')
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    $ginee = new \App\Services\GineeClient();
+                    $successCount = 0;
+                    $failCount = 0;
+                    
+                    foreach ($products as $product) {
+                        $oldStock = $product->stock_quantity ?? 0;
+                        
+                        $result = $ginee->getMasterProducts([
+                            'page' => 0,
+                            'size' => 5,
+                            'sku' => $product->sku
+                        ]);
+                        
+                        if (($result['code'] ?? null) === 'SUCCESS') {
+                            $items = $result['data']['content'] ?? [];
+                            
+                            foreach ($items as $item) {
+                                $variations = $item['variationBriefs'] ?? [];
+                                
+                                foreach ($variations as $variation) {
+                                    if (($variation['sku'] ?? null) === $product->sku) {
+                                        $stock = $variation['stock'] ?? [];
+                                        $availableStock = $stock['availableStock'] ?? 0;
+                                        
+                                        if (!$dryRun) {
+                                            $product->stock_quantity = $availableStock;
+                                            $product->warehouse_stock = $stock['warehouseStock'] ?? 0;
+                                            $product->ginee_last_stock_sync = now();
+                                            $product->save();
+                                        }
+                                        
+                                        // Log the operation
+                                        \App\Models\GineeSyncLog::logSync([
+                                            'sku' => $product->sku,
+                                            'product_name' => $item['name'] ?? 'Unknown',
+                                            'status' => $dryRun ? 'skipped' : 'success',
+                                            'old_stock' => $oldStock,
+                                            'new_stock' => $availableStock,
+                                            'message' => $dryRun ? "Dry run - would update from {$oldStock} to {$availableStock}" : "Updated from {$oldStock} to {$availableStock}",
+                                            'dry_run' => $dryRun,
+                                            'session_id' => $sessionId,
+                                        ]);
+                                        
+                                        $successCount++;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        } else {
+                            $failCount++;
+                        }
+                        
+                        usleep(200000); // 0.2 second delay
+                    }
+                    
+                    $mode = $dryRun ? 'DRY RUN - ' : '';
+                    Notification::make()
+                        ->title("✅ {$mode}Stock Sync Completed!")
+                        ->body("Success: {$successCount}, Failed: {$failCount}. Check Ginee Sync Logs for details.")
+                        ->success()
+                        ->duration(10000)
+                        ->send();
+
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Stock Sync Error')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+            
+        // 📤 PUSH STOCK TO GINEE
+        Tables\Actions\Action::make('push_stock_to_ginee')
+            ->label('📤 Push to Ginee')
+            ->icon('heroicon-o-arrow-up-circle')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Push Local Stock to Ginee')
+            ->modalDescription('This will update Ginee stock with your local stock quantities. All operations will be logged.')
+            ->form([
+                Forms\Components\Placeholder::make('push_info')
+                    ->label('📤 Stock Push Information')
+                    ->content('This will send your local stock quantities to Ginee using direct GineeClient updateStock method.'),
+                Forms\Components\Toggle::make('dry_run')
+                    ->label('Dry Run (Preview Only)')
+                    ->default(false),
+                Forms\Components\Toggle::make('force_update')
+                    ->label('Force Update All Products')
+                    ->default(false),
+                Forms\Components\TextInput::make('batch_size')
+                    ->label('Batch Size')
+                    ->numeric()
+                    ->default(10),
+            ])
+            ->action(function (array $data) {
+                try {
+                    $dryRun = $data['dry_run'] ?? false;
+                    $forceUpdate = $data['force_update'] ?? false;
+                    $batchSize = $data['batch_size'] ?? 10;
+                    $sessionId = \App\Models\GineeSyncLog::generateSessionId();
+                    
+                    $query = \App\Models\Product::whereNotNull('sku')->where('sku', '!=', '');
+                    
+                    if (!$forceUpdate) {
+                        $query->where('updated_at', '>', now()->subHours(24));
+                    }
+                    
+                    $products = $query->limit($batchSize)->get();
+                    
+                    if ($products->isEmpty()) {
+                        Notification::make()
+                            ->title('ℹ️ No Products to Push')
+                            ->body('No products found that need stock updates.')
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    if ($dryRun) {
+                        foreach ($products as $product) {
+                            \App\Models\GineeSyncLog::logPush([
+                                'sku' => $product->sku,
+                                'product_name' => $product->name ?? 'Unknown',
+                                'status' => 'skipped',
+                                'old_stock' => $product->stock_quantity,
+                                'new_stock' => $product->stock_quantity,
+                                'message' => 'Dry run - no actual push performed',
+                                'dry_run' => true,
+                                'session_id' => $sessionId,
+                            ]);
+                        }
+                        
+                        Notification::make()
+                            ->title('🧪 DRY RUN - Operations Logged')
+                            ->body("Preview logged for {$products->count()} products. Check Ginee Sync Logs.")
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    $successCount = 0;
+                    $failCount = 0;
+                    $ginee = new \App\Services\GineeClient();
+                    
+                    foreach ($products->chunk(5) as $batch) {
+                        $stockUpdates = [];
+                        
+                        foreach ($batch as $product) {
+                            $stockUpdates[] = [
+                                'masterSku' => $product->sku,
+                                'quantity' => $product->stock_quantity ?? 0
+                            ];
+                        }
+                        
+                        $result = $ginee->updateStock($stockUpdates);
+                        
+                        if (($result['code'] ?? null) === 'SUCCESS') {
+                            $successCount += count($batch);
+                            
+                            foreach ($batch as $product) {
+                                \App\Models\GineeSyncLog::logPush([
+                                    'sku' => $product->sku,
+                                    'product_name' => $product->name ?? 'Unknown',
+                                    'status' => 'success',
+                                    'old_stock' => $product->stock_quantity,
+                                    'new_stock' => $product->stock_quantity,
+                                    'message' => 'Successfully pushed to Ginee',
+                                    'ginee_response' => $result,
+                                    'dry_run' => false,
+                                    'session_id' => $sessionId,
+                                ]);
+                                
+                                if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'ginee_last_stock_push')) {
+                                    $product->ginee_last_stock_push = now();
+                                    $product->save();
+                                }
+                            }
+                        } else {
+                            $failCount += count($batch);
+                            
+                            foreach ($batch as $product) {
+                                \App\Models\GineeSyncLog::logPush([
+                                    'sku' => $product->sku,
+                                    'product_name' => $product->name ?? 'Unknown',
+                                    'status' => 'failed',
+                                    'old_stock' => $product->stock_quantity,
+                                    'message' => 'Failed to push: ' . ($result['message'] ?? 'Unknown error'),
+                                    'ginee_response' => $result,
+                                    'dry_run' => false,
+                                    'session_id' => $sessionId,
+                                ]);
+                            }
+                        }
+                        
+                        usleep(500000); // 0.5 second delay
+                    }
+                    
+                    Notification::make()
+                        ->title('✅ Stock Push Completed!')
+                        ->body("Success: {$successCount}, Failed: {$failCount}. Check Ginee Sync Logs for details.")
+                        ->success()
+                        ->send();
+
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Stock Push Error')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+            
+        // 📋 VIEW GINEE LOGS
+        Tables\Actions\Action::make('view_ginee_logs')
+            ->label('📋 View Sync Logs')
+            ->icon('heroicon-o-document-text')
+            ->color('gray')
+            ->url('/admin/ginee-sync-logs')
+            ->openUrlInNewTab(),
+            
+    ])->label('🔄 Ginee Sync')
+      ->icon('heroicon-o-arrow-path-rounded-square')
+      ->color('warning')
+      ->button(),
+    
+    // 🚀 WORKFLOWS GROUP
+    Tables\Actions\ActionGroup::make([
+        
+        // 🚀 COMPLETE WORKFLOW
+        Tables\Actions\Action::make('complete_safe_workflow')
+            ->label('🚀 Complete Workflow')
+            ->icon('heroicon-o-cog-6-tooth')
+            ->color('success')
+            ->requiresConfirmation()
+            ->modalHeading('Safe Complete Sync: Products + Stock')
+            ->modalDescription('This will run: 1) Safe sync products from Google Sheets, 2) Safe sync stock from Ginee (READ-ONLY).')
+            ->form([
+                Forms\Components\Placeholder::make('workflow_info')
+                    ->label('🔄 Safe Workflow Steps')
+                    ->content('1. Safe sync products from Google Sheets (no delete)\n2. Safe sync stock from Ginee (READ-ONLY Master Products API)\n\nCompletely safe - no risk to existing data.'),
+                Forms\Components\Toggle::make('dry_run')
+                    ->label('Dry Run (Preview Only)')
+                    ->default(true),
+            ])
+            ->action(function (array $data) {
+                try {
+                    $dryRun = $data['dry_run'] ?? true;
+                    $mode = $dryRun ? 'DRY RUN - ' : '';
+                    
+                    // Step 1: Safe sync products from Google Sheets
+                    $googleSyncService = new GoogleSheetsSync();
+                    $productResult = $googleSyncService->syncProductsSafeMode([
+                        'sync_strategy' => 'safe_mode_no_delete',
+                        'dry_run' => $dryRun
+                    ]);
+
+                    if (!$productResult['success']) {
+                        throw new Exception('Product sync failed: ' . $productResult['message']);
+                    }
+
+                    // Step 2: Safe sync stock from Ginee (limited for testing)
+                    $products = \App\Models\Product::whereNotNull('sku')
+                        ->where('sku', '!=', '')
+                        ->limit(5)
+                        ->get();
+                    
+                    $stockSyncCount = 0;
+                    $ginee = new \App\Services\GineeClient();
+                    
+                    foreach ($products as $product) {
+                        $result = $ginee->getMasterProducts([
+                            'page' => 0,
+                            'size' => 5,
+                            'sku' => $product->sku
+                        ]);
+                        
+                        if (($result['code'] ?? null) === 'SUCCESS') {
+                            $stockSyncCount++;
+                        }
+                    }
+
+                    $productStats = $productResult['stats'];
+                    
+                    Notification::make()
+                        ->title("✅ {$mode}Safe Workflow Completed!")
+                        ->body("Products - Created: {$productStats['created']}, Updated: {$productStats['updated']}\nStock - Checked: {$stockSyncCount} products safely")
+                        ->success()
+                        ->duration(15000)
+                        ->send();
+
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Safe Workflow Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+            
+        // ⚙️ ADVANCED SETTINGS
+        Tables\Actions\Action::make('advanced_settings')
+            ->label('⚙️ Advanced Settings')
+            ->icon('heroicon-o-adjustments-horizontal')
+            ->color('gray')
+            ->modalHeading('Advanced Sync Settings')
+            ->modalDescription('Configure advanced synchronization options')
+            ->form([
+                Forms\Components\Section::make('Sync Configuration')
+                    ->schema([
+                        Forms\Components\Toggle::make('auto_sync_enabled')
+                            ->label('Enable Auto Sync')
+                            ->helperText('Automatically sync when products are updated'),
+                        Forms\Components\TextInput::make('sync_interval')
+                            ->label('Sync Interval (minutes)')
+                            ->numeric()
+                            ->default(30),
+                        Forms\Components\Select::make('default_batch_size')
+                            ->label('Default Batch Size')
+                            ->options([
+                                '5' => '5 products',
+                                '10' => '10 products',
+                                '20' => '20 products',
+                                '50' => '50 products',
+                            ])
+                            ->default('10'),
+                        Forms\Components\Toggle::make('enable_logging')
+                            ->label('Enable Detailed Logging')
+                            ->default(true),
+                    ]),
+                Forms\Components\Section::make('Notification Settings')
+                    ->schema([
+                        Forms\Components\Toggle::make('notify_on_success')
+                            ->label('Notify on Successful Syncs')
+                            ->default(true),
+                        Forms\Components\Toggle::make('notify_on_errors')
+                            ->label('Notify on Errors')
+                            ->default(true),
+                    ]),
+            ])
+            ->action(function (array $data) {
+                // Save settings to cache
+                cache()->put('ginee_sync_settings', $data, now()->addDays(30));
+                
+                Notification::make()
+                    ->title('⚙️ Settings Saved')
+                    ->body('Advanced sync settings have been updated successfully')
+                    ->success()
+                    ->send();
+            }),
+            
+    ])->label('🚀 Workflows')
+      ->icon('heroicon-o-cog-6-tooth')
+      ->color('primary')
+      ->button(),
+    
+    // 🔧 TOOLS GROUP
+    Tables\Actions\ActionGroup::make([
+        
+        // 🔗 TEST CONNECTION
+        Tables\Actions\Action::make('test_connection')
+            ->label('🔗 Test Connection')
+            ->icon('heroicon-o-signal')
+            ->color('gray')
+            ->action(function () {
+                try {
+                    $syncService = new GoogleSheetsSync();
+                    $result = $syncService->testConnection();
+                    
+                    if ($result['success']) {
+                        Notification::make()
+                            ->title('✅ Connection Successful')
+                            ->body('Successfully connected to Google Sheets')
+                            ->success()
+                            ->send();
+                    } else {
+                        throw new Exception($result['message']);
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Test Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+        // ⚡ ANALYZE SKU PATTERNS
+        Tables\Actions\Action::make('analyze_sku_patterns')
+            ->label('⚡ Analyze SKU Patterns')
+            ->icon('heroicon-o-chart-bar')
+            ->color('info')
+            ->action(function () {
+                try {
+                    $skuParentCounts = Product::selectRaw('sku_parent, COUNT(*) as count')
+                        ->whereNotNull('sku_parent')
+                        ->groupBy('sku_parent')
+                        ->orderBy('count', 'desc')
+                        ->limit(10)
+                        ->get();
+                        
+                    $message = "SKU Parent Analysis (Top 10):\n\n";
+                    foreach ($skuParentCounts as $item) {
+                        $message .= "• {$item->sku_parent}: {$item->count} variants\n";
+                    }
+                    
+                    $totalSkuParents = Product::whereNotNull('sku_parent')->distinct('sku_parent')->count();
+                    $totalProducts = Product::count();
+                    $message .= "\nSummary:\n";
+                    $message .= "• Total SKU Parents: {$totalSkuParents}\n";
+                    $message .= "• Total Products: {$totalProducts}\n";
+                    $message .= "• Avg variants per SKU: " . round($totalProducts / max($totalSkuParents, 1), 1);
+                    
+                    Notification::make()
+                        ->title('📊 SKU Pattern Analysis')
+                        ->body($message)
+                        ->info()
+                        ->duration(15000)
+                        ->send();
+                        
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Analysis Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+        // 🔍 ANALYZE PRODUCT TYPES  
+        Tables\Actions\Action::make('analyze_product_types')
+            ->label('🔍 Analyze Product Types')
+            ->icon('heroicon-o-document-magnifying-glass')
+            ->color('warning')
+            ->action(function () {
+                try {
+                    $syncService = new GoogleSheetsSync();
+                    
+                    if (!method_exists($syncService, 'analyzeProductTypes')) {
+                        Notification::make()
+                            ->title('❌ Method Not Found')
+                            ->body('analyzeProductTypes method not found. Please update GoogleSheetsSync.')
+                            ->danger()
+                            ->send();
+                        return;
+                    }
+                    
+                    $analysis = $syncService->analyzeProductTypes();
+                    
+                    if ($analysis['success']) {
+                        $message = "Product Type Analysis:\n\n";
+                        $message .= "📊 Total rows: {$analysis['total_rows']}\n";
+                        $message .= "🔢 Unique types: {$analysis['unique_product_types']}\n\n";
+                        
+                        $message .= "🏷️ Distribution:\n";
+                        foreach ($analysis['product_type_distribution'] as $type => $count) {
+                            $emoji = match($type) {
+                                'running' => '🏃',
+                                'basketball' => '🏀',
+                                'tennis' => '🎾',
+                                'badminton' => '🏸',
+                                'training' => '💪',
+                                default => '•'
+                            };
+                            $message .= "  {$emoji} {$type}: {$count}\n";
+                        }
+                        
+                        Notification::make()
+                            ->title('🔍 Product Type Analysis')
+                            ->body($message)
+                            ->info()
+                            ->duration(20000)
+                            ->send();
+                    } else {
+                        throw new Exception($analysis['message']);
+                    }
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Analysis Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+            
+    ])->label('🔧 Tools')
+      ->icon('heroicon-o-wrench-screwdriver')
+      ->color('gray')
+      ->button(),
+
+])
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->color('info'),
