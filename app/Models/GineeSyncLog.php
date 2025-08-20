@@ -11,10 +11,27 @@ class GineeSyncLog extends Model
     use HasFactory;
 
     protected $fillable = [
+        // Kolom yang WAJIB ada di tabel (dari migration asli)
+        'type',                    // enum: product_pull, stock_push, webhook, manual
+        'status',                  // enum: started, completed, failed, cancelled
+        'items_processed',
+        'items_successful',
+        'items_failed',
+        'items_skipped',
+        'parameters',
+        'summary',
+        'errors',
+        'error_message',
+        'started_at',
+        'completed_at',
+        'duration_seconds',
+        'triggered_by',
+        'batch_id',
+        
+        // Kolom yang ditambahkan untuk individual tracking
         'operation_type',
         'sku',
         'product_name',
-        'status',
         'old_stock',
         'old_warehouse_stock',
         'new_stock',
@@ -23,15 +40,20 @@ class GineeSyncLog extends Model
         'ginee_response',
         'transaction_id',
         'method_used',
-        'initiated_by',
+        'initiated_by_user',
         'dry_run',
         'batch_size',
         'session_id',
     ];
 
     protected $casts = [
+        'parameters' => 'array',
+        'summary' => 'array',
+        'errors' => 'array',
         'ginee_response' => 'array',
         'dry_run' => 'boolean',
+        'started_at' => 'datetime',
+        'completed_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -55,12 +77,12 @@ class GineeSyncLog extends Model
 
     public function scopeSuccess($query)
     {
-        return $query->where('status', 'success');
+        return $query->whereIn('status', ['success', 'completed']);
     }
 
     public function scopeFailed($query)
     {
-        return $query->where('status', 'failed');
+        return $query->whereIn('status', ['failed', 'error']);
     }
 
     public function scopeRecent($query)
@@ -91,9 +113,11 @@ class GineeSyncLog extends Model
     public function getStatusBadgeAttribute(): string
     {
         return match($this->status) {
-            'success' => '✅ Success',
-            'failed' => '❌ Failed',
+            'success', 'completed' => '✅ Success',
+            'failed', 'error' => '❌ Failed',
             'skipped' => '⏭️ Skipped',
+            'started' => '🔄 Running',
+            'cancelled' => '⏹️ Cancelled',
             default => $this->status
         };
     }
@@ -102,6 +126,7 @@ class GineeSyncLog extends Model
     public static function logSync(array $data): self
     {
         return self::create(array_merge($data, [
+            'type' => 'stock_push', // Mapping ke enum yang ada
             'operation_type' => 'sync',
             'session_id' => $data['session_id'] ?? self::generateSessionId(),
         ]));
@@ -110,6 +135,7 @@ class GineeSyncLog extends Model
     public static function logPush(array $data): self
     {
         return self::create(array_merge($data, [
+            'type' => 'stock_push', // Mapping ke enum yang ada
             'operation_type' => 'push',
             'session_id' => $data['session_id'] ?? self::generateSessionId(),
         ]));
@@ -123,12 +149,12 @@ class GineeSyncLog extends Model
     // Helper methods
     public function isSuccess(): bool
     {
-        return $this->status === 'success';
+        return in_array($this->status, ['success', 'completed']);
     }
 
     public function isFailed(): bool
     {
-        return $this->status === 'failed';
+        return in_array($this->status, ['failed', 'error']);
     }
 
     public function hasStockChange(): bool

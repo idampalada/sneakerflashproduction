@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\MidtransService;
+use App\Services\RajaOngkirService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -361,145 +362,540 @@ public function getCurrentPoints(Request $request)
 
     // Keep all location and shipping methods exactly the same...
     public function searchDestinations(Request $request)
-    {
-        $search = $request->get('search');
-        $limit = $request->get('limit', 10);
-        
-        Log::info('Searching destinations via RajaOngkir V2', ['search' => $search]);
-        
-        if (!$search || strlen($search) < 2) {
-            return response()->json(['error' => 'Search term must be at least 2 characters'], 400);
-        }
+{
+    $search = $request->get('search');
+    
+    if (!$search || strlen($search) < 2) {
+        return response()->json([
+            'success' => true,
+            'total' => 0,
+            'data' => []
+        ]);
+    }
 
-        try {
+    try {
+        // Coba beberapa variasi pencarian untuk hasil yang lebih akurat
+        $searchTerms = $this->generateSearchVariations($search);
+        $allResults = [];
+        
+        foreach ($searchTerms as $term) {
             $response = Http::timeout(10)->withHeaders([
                 'key' => $this->rajaOngkirApiKey
             ])->get($this->rajaOngkirBaseUrl . '/destination/domestic-destination', [
-                'search' => $search,
-                'limit' => $limit,
+                'search' => $term,
+                'limit' => 15, // Increase limit untuk dapat lebih banyak hasil
                 'offset' => 0
             ]);
 
             if ($response->successful()) {
                 $data = $response->json();
-                
                 if (isset($data['data']) && is_array($data['data'])) {
-                    $destinations = array_map(function($dest) {
-                        return [
-                            'location_id' => $dest['id'],
-                            'subdistrict_name' => $dest['subdistrict_name'],
-                            'district_name' => $dest['district_name'],
-                            'city_name' => $dest['city_name'],
-                            'province_name' => $dest['province_name'],
-                            'zip_code' => $dest['zip_code'],
-                            'label' => $dest['label'],
-                            'display_name' => $dest['subdistrict_name'] . ', ' . $dest['district_name'] . ', ' . $dest['city_name'],
-                            'full_address' => $dest['label']
-                        ];
-                    }, $data['data']);
-                    
-                    Log::info('Found ' . count($destinations) . ' destinations for search: ' . $search);
-                    
-                    return response()->json([
-                        'success' => true,
-                        'total' => count($destinations),
-                        'data' => $destinations
-                    ]);
+                    $allResults = array_merge($allResults, $data['data']);
                 }
-            } else {
-                Log::warning('API search failed, returning mock data', [
-                    'status' => $response->status(),
-                    'search' => $search
-                ]);
-                
-                return $this->getMockDestinations($search);
             }
+        }
+        
+        // Remove duplicates dan filter hasil yang paling relevan
+        $filteredResults = $this->filterAndSortResults($allResults, $search);
+        
+        return response()->json([
+            'success' => true,
+            'total' => count($filteredResults),
+            'data' => array_slice($filteredResults, 0, 10) // Limit ke 10 hasil teratas
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('RajaOngkir search error: ' . $e->getMessage());
+        return $this->getMockDestinations($search);
+    }
+}
 
-            return response()->json(['error' => 'No destinations found'], 404);
+private function generateSearchVariations($search)
+{
+    $searchLower = strtolower(trim($search));
+    $variations = [$searchLower];
+    
+    // Tambahkan variasi untuk kelurahan
+    $variations[] = $searchLower . ' jakarta';
+    $variations[] = $searchLower . ' selatan';
+    $variations[] = $searchLower . ' utara';
+    $variations[] = $searchLower . ' barat';
+    $variations[] = $searchLower . ' timur';
+    $variations[] = $searchLower . ' pusat';
+    
+    // Jika input sudah lengkap (mengandung koma), coba pisahkan
+    if (strpos($searchLower, ',') !== false) {
+        $parts = array_map('trim', explode(',', $searchLower));
+        $variations = array_merge($variations, $parts);
+    }
+    
+    // Tambahkan variasi dengan spasi dan tanpa spasi
+    if (strpos($searchLower, ' ') !== false) {
+        $variations[] = str_replace(' ', '', $searchLower);
+    }
+    
+    return array_unique($variations);
+}
 
-        } catch (\Exception $e) {
-            Log::error('RajaOngkir V2 search error: ' . $e->getMessage());
-            return $this->getMockDestinations($search);
+private function filterAndSortResults($results, $originalSearch)
+{
+    if (empty($results)) {
+        return [];
+    }
+    
+    $searchLower = strtolower(trim($originalSearch));
+    $scored = [];
+    
+    foreach ($results as $result) {
+        $score = 0;
+        $displayText = strtolower($result['subdistrict_name'] . ' ' . 
+                                 $result['district_name'] . ' ' . 
+                                 $result['city_name']);
+        
+        // Exact match di subdistrict name (kelurahan) = highest score
+        if (strtolower($result['subdistrict_name']) === $searchLower) {
+            $score += 100;
+        }
+        
+        // Partial match di subdistrict name
+        if (strpos(strtolower($result['subdistrict_name']), $searchLower) !== false) {
+            $score += 80;
+        }
+        
+        // Match di district name (kecamatan)
+        if (strpos(strtolower($result['district_name']), $searchLower) !== false) {
+            $score += 60;
+        }
+        
+        // Match di city name
+        if (strpos(strtolower($result['city_name']), $searchLower) !== false) {
+            $score += 40;
+        }
+        
+        // Match di anywhere in display text
+        if (strpos($displayText, $searchLower) !== false) {
+            $score += 20;
+        }
+        
+        if ($score > 0) {
+            $scored[] = [
+                'data' => $result,
+                'score' => $score
+            ];
         }
     }
+    
+    // Sort by score descending
+    usort($scored, function($a, $b) {
+        return $b['score'] <=> $a['score'];
+    });
+    
+    // Remove duplicates berdasarkan ID
+    $unique = [];
+    $seen = [];
+    
+    foreach ($scored as $item) {
+        $id = $item['data']['id'];
+        if (!in_array($id, $seen)) {
+            $unique[] = $item['data'];
+            $seen[] = $id;
+        }
+    }
+    
+    return $unique;
+}
 
-    public function calculateShipping(Request $request)
-    {
-        $destinationId = $request->get('destination_id');
-        $destinationLabel = $request->get('destination_label', '');
-        $weight = $request->get('weight', 1000);
 
-        Log::info('Calculating JNE shipping via RajaOngkir V2', [
+
+public function calculateShipping(Request $request)
+{
+    try {
+        $destinationId = $request->input('destination_id');
+        $destinationLabel = $request->input('destination_label', '');
+        $weight = $request->input('weight', 1000);
+
+        Log::info('📦 JNE API-only shipping calculation', [
             'destination_id' => $destinationId,
             'destination_label' => $destinationLabel,
             'weight' => $weight,
-            'store_origin_city' => env('STORE_ORIGIN_CITY_NAME', 'Not configured'),
-            'courier' => 'JNE only'
+            'mode' => 'API_ONLY_NO_MOCK'
         ]);
 
+        // Validate required data
         if (!$destinationId) {
-            return response()->json(['error' => 'Destination ID is required'], 400);
+            Log::warning('❌ No destination_id provided');
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Destination ID is required',
+                'message' => 'Please select your delivery location first'
+            ], 400);
         }
 
-        try {
-            $originId = $this->getOriginIdFromEnv();
-            
-            Log::info('Using origin configuration for JNE shipping', [
-                'origin_id' => $originId,
-                'origin_city_name' => env('STORE_ORIGIN_CITY_NAME'),
-                'origin_city_id_fallback' => env('STORE_ORIGIN_CITY_ID'),
-                'courier' => 'JNE only'
+        // Get origin from environment
+        $originId = $this->getOriginIdFromEnv();
+        
+        Log::info('🏭 API-only setup', [
+            'origin_id' => $originId,
+            'destination_id' => $destinationId,
+            'api_endpoint' => '/calculate/domestic-cost'
+        ]);
+
+        // DIRECT API CALL - NO SERVICE LAYER
+        $apiKey = $this->rajaOngkirApiKey;
+        $baseUrl = $this->rajaOngkirBaseUrl;
+
+        $response = \Illuminate\Support\Facades\Http::timeout(15)
+            ->withHeaders([
+                'accept' => 'application/json',
+                'content-type' => 'application/x-www-form-urlencoded',
+                'key' => $apiKey
+            ])
+            ->asForm()
+            ->post($baseUrl . '/calculate/domestic-cost', [
+                'origin' => (string) $originId,
+                'destination' => (string) $destinationId,
+                'weight' => max(1000, (int) $weight),
+                'courier' => 'jne'
             ]);
 
-            $shippingOptions = $this->calculateRealShipping($originId, $destinationId, $weight);
-            
-            if (empty($shippingOptions)) {
-                Log::info('No real JNE shipping options found, using mock JNE data');
-                $shippingOptions = $this->getMockShippingOptions($weight, $destinationLabel);
-            }
+        Log::info("📡 Direct API call result", [
+            'status' => $response->status(),
+            'successful' => $response->successful(),
+            'response_size' => strlen($response->body())
+        ]);
 
-            if (!empty($shippingOptions)) {
-                $shippingOptions = $this->autoSortShippingOptions($shippingOptions);
-                
-                Log::info('Successfully calculated ' . count($shippingOptions) . ' JNE shipping options');
+        if ($response->successful()) {
+            $data = $response->json();
+            
+            Log::info("✅ Raw API response received", [
+                'has_data' => isset($data['data']),
+                'response_keys' => array_keys($data ?? []),
+                'raw_response' => json_encode($data)
+            ]);
+
+            // Parse response directly
+            $jneOptions = $this->parseDirectAPIResponse($data);
+            
+            if (!empty($jneOptions)) {
+                Log::info('🎯 Successfully parsed JNE options from API', [
+                    'options_count' => count($jneOptions),
+                    'services' => array_map(function($opt) {
+                        return $opt['service'] . ' - Rp ' . number_format($opt['cost']);
+                    }, $jneOptions)
+                ]);
                 
                 return response()->json([
                     'success' => true,
-                    'total_options' => count($shippingOptions),
+                    'options' => $jneOptions,
                     'origin_id' => $originId,
-                    'origin_city_name' => env('STORE_ORIGIN_CITY_NAME'),
                     'destination_id' => $destinationId,
-                    'destination_label' => $destinationLabel,
-                    'weight' => $weight,
-                    'courier' => 'JNE only',
-                    'api_version' => 'v2_jne_only_with_address_integration',
-                    'options' => $shippingOptions
+                    'method' => 'direct_api_success',
+                    'message' => 'Real JNE shipping costs from API'
                 ]);
             } else {
-                Log::warning('No JNE shipping options available');
-                return response()->json(['error' => 'No JNE shipping options available for this route'], 404);
+                Log::error('❌ API returned data but no JNE options could be parsed', [
+                    'raw_data' => json_encode($data)
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No JNE shipping options available',
+                    'message' => 'API returned data but no valid shipping options found',
+                    'debug_data' => $data
+                ], 404);
             }
-
-        } catch (\Exception $e) {
-            Log::error('JNE shipping calculation error: ' . $e->getMessage());
-            
-            $mockOptions = $this->getMockShippingOptions($weight, $destinationLabel);
+        } else {
+            Log::error('❌ API request failed', [
+                'status' => $response->status(),
+                'response' => $response->body()
+            ]);
             
             return response()->json([
-                'success' => true,
-                'total_options' => count($mockOptions),
-                'origin_id' => $this->getOriginIdFromEnv(),
-                'origin_city_name' => env('STORE_ORIGIN_CITY_NAME'),
-                'destination_id' => $destinationId,
-                'destination_label' => $destinationLabel,
-                'weight' => $weight,
-                'courier' => 'JNE only',
-                'api_version' => 'v2_jne_only_emergency_fallback',
-                'options' => $mockOptions,
-                'note' => 'Using fallback JNE shipping options due to API error'
+                'success' => false,
+                'error' => 'Shipping API failed',
+                'message' => 'Unable to calculate shipping costs from API',
+                'api_status' => $response->status(),
+                'api_response' => $response->body()
+            ], $response->status());
+        }
+
+    } catch (\Exception $e) {
+        Log::error('❌ Direct API shipping calculation exception', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'request_data' => $request->all()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'error' => 'Shipping calculation failed',
+            'message' => 'An error occurred while calculating shipping costs',
+            'exception' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Parse API response directly without service layer
+ * API ONLY - NO MOCK
+ */
+private function parseDirectAPIResponse($data)
+{
+    $jneOptions = [];
+    
+    try {
+        Log::info('🔍 Parsing direct API response', [
+            'data_type' => gettype($data),
+            'data_keys' => is_array($data) ? array_keys($data) : 'not_array'
+        ]);
+
+        // Handle different response formats
+        if (isset($data['rajaongkir']['results'])) {
+            // Standard RajaOngkir format
+            Log::info('📋 Processing standard RajaOngkir format');
+            $results = $data['rajaongkir']['results'];
+            
+            foreach ($results as $result) {
+                if (strtolower($result['code'] ?? '') === 'jne' && isset($result['costs'])) {
+                    Log::info('✅ Found JNE result with costs', [
+                        'costs_count' => count($result['costs'])
+                    ]);
+                    
+                    foreach ($result['costs'] as $cost) {
+                        $costValue = $cost['cost'][0]['value'] ?? 0;
+                        $etd = $cost['cost'][0]['etd'] ?? '2-3';
+                        
+                        $jneOptions[] = [
+                            'courier' => 'JNE',
+                            'courier_name' => 'JNE',
+                            'service' => $cost['service'] ?? 'REG',
+                            'description' => $cost['description'] ?? 'JNE Service',
+                            'cost' => (int) $costValue,
+                            'formatted_cost' => 'Rp ' . number_format($costValue, 0, ',', '.'),
+                            'etd' => $etd,
+                            'formatted_etd' => $etd . ' hari',
+                            'recommended' => ($cost['service'] ?? '') === 'REG',
+                            'type' => 'api',
+                            'is_mock' => false
+                        ];
+                        
+                        Log::info('➕ Added JNE option', [
+                            'service' => $cost['service'] ?? 'REG',
+                            'cost' => $costValue,
+                            'etd' => $etd
+                        ]);
+                    }
+                }
+            }
+        }
+        elseif (isset($data['data']) && is_array($data['data'])) {
+            // Komerce custom format
+            Log::info('📋 Processing Komerce custom format');
+            
+            foreach ($data['data'] as $result) {
+                if (strtolower($result['courier'] ?? '') === 'jne') {
+                    $costValue = $result['cost'] ?? 0;
+                    $etd = $result['etd'] ?? '2-3';
+                    
+                    $jneOptions[] = [
+                        'courier' => 'JNE',
+                        'courier_name' => 'JNE',
+                        'service' => $result['service'] ?? 'REG',
+                        'description' => $result['description'] ?? 'JNE Service',
+                        'cost' => (int) $costValue,
+                        'formatted_cost' => 'Rp ' . number_format($costValue, 0, ',', '.'),
+                        'etd' => $etd,
+                        'formatted_etd' => $etd . ' hari',
+                        'recommended' => ($result['service'] ?? '') === 'REG',
+                        'type' => 'api',
+                        'is_mock' => false
+                    ];
+                    
+                    Log::info('➕ Added JNE option from Komerce format', [
+                        'service' => $result['service'] ?? 'REG',
+                        'cost' => $costValue
+                    ]);
+                }
+            }
+        }
+        else {
+            Log::warning('⚠️ Unknown API response format', [
+                'data_structure' => json_encode($data)
             ]);
         }
+        
+        // Sort by service priority: REG first, then by cost
+        if (!empty($jneOptions)) {
+            usort($jneOptions, function($a, $b) {
+                if ($a['service'] === 'REG' && $b['service'] !== 'REG') return -1;
+                if ($b['service'] === 'REG' && $a['service'] !== 'REG') return 1;
+                return $a['cost'] <=> $b['cost'];
+            });
+        }
+        
+    } catch (\Exception $e) {
+        Log::error('❌ Error parsing direct API response', [
+            'error' => $e->getMessage(),
+            'data_sample' => json_encode(array_slice($data, 0, 3))
+        ]);
     }
+    
+    return $jneOptions;
+}
+private function generateRealisticMockShippingOptions($weight, $destinationLabel = '')
+{
+    // Base shipping rates untuk berbagai daerah (dalam Rupiah)
+    $shippingRates = [
+        // Jakarta area
+        'jakarta' => ['base' => 8000, 'per_kg' => 2000],
+        'bekasi' => ['base' => 12000, 'per_kg' => 3000],
+        'tangerang' => ['base' => 10000, 'per_kg' => 2500],
+        'depok' => ['base' => 11000, 'per_kg' => 2800],
+        'bogor' => ['base' => 15000, 'per_kg' => 4000],
+        
+        // Jawa
+        'bandung' => ['base' => 18000, 'per_kg' => 5000],
+        'surabaya' => ['base' => 25000, 'per_kg' => 7000],
+        'yogyakarta' => ['base' => 20000, 'per_kg' => 5500],
+        'semarang' => ['base' => 22000, 'per_kg' => 6000],
+        
+        // Luar Jawa
+        'medan' => ['base' => 35000, 'per_kg' => 10000],
+        'makassar' => ['base' => 40000, 'per_kg' => 12000],
+        'denpasar' => ['base' => 30000, 'per_kg' => 8000],
+        
+        // Default untuk daerah tidak dikenal
+        'default' => ['base' => 15000, 'per_kg' => 4000]
+    ];
+    
+    // Determine rate berdasarkan destination
+    $rate = $shippingRates['default'];
+    $destinationLower = strtolower($destinationLabel);
+    
+    foreach ($shippingRates as $city => $cityRate) {
+        if (strpos($destinationLower, $city) !== false) {
+            $rate = $cityRate;
+            break;
+        }
+    }
+    
+    // Calculate weight multiplier
+    $weightKg = max(1, $weight / 1000);
+    $additionalCost = ($weightKg - 1) * $rate['per_kg'];
+    
+    // Generate courier options
+    $basePrice = $rate['base'] + $additionalCost;
+    
+    return [
+        [
+            'courier' => 'JNE',
+            'courier_name' => 'JNE',
+            'service' => 'REG',
+            'description' => 'Layanan Reguler',
+            'cost' => (int) $basePrice,
+            'formatted_cost' => 'Rp ' . number_format($basePrice, 0, ',', '.'),
+            'etd' => '2-3 days',
+            'formatted_etd' => '2-3 hari',
+            'recommended' => true,
+            'type' => 'mock',
+            'is_mock' => true
+        ],
+        [
+            'courier' => 'JNE',
+            'courier_name' => 'JNE',
+            'service' => 'YES',
+            'description' => 'Yakin Esok Sampai',
+            'cost' => (int) ($basePrice * 1.6),
+            'formatted_cost' => 'Rp ' . number_format($basePrice * 1.6, 0, ',', '.'),
+            'etd' => '1-2 days',
+            'formatted_etd' => '1-2 hari',
+            'recommended' => false,
+            'type' => 'mock',
+            'is_mock' => true
+        ],
+        [
+            'courier' => 'TIKI',
+            'courier_name' => 'TIKI',
+            'service' => 'REG',
+            'description' => 'Regular Service',
+            'cost' => (int) ($basePrice * 0.85),
+            'formatted_cost' => 'Rp ' . number_format($basePrice * 0.85, 0, ',', '.'),
+            'etd' => '2-4 days',
+            'formatted_etd' => '2-4 hari',
+            'recommended' => false,
+            'type' => 'mock',
+            'is_mock' => true
+        ]
+    ];
+}
+
+private function generateMockShippingOptions($weight, $destinationLabel = '')
+{
+    // Generate realistic shipping options based on weight and destination
+    $baseShippingCost = max(8000, $weight * 0.008); // Minimum 8k, or 8 rupiah per gram
+    
+    $options = [
+        [
+            'courier' => 'JNE',
+            'courier_name' => 'JNE',
+            'service' => 'REG',
+            'description' => 'Layanan Reguler',
+            'cost' => (int) $baseShippingCost,
+            'formatted_cost' => 'Rp ' . number_format($baseShippingCost, 0, ',', '.'),
+            'etd' => '2-3 days',
+            'formatted_etd' => '2-3 hari',
+            'recommended' => true,
+            'type' => 'mock',
+            'is_mock' => true
+        ],
+        [
+            'courier' => 'JNE',
+            'courier_name' => 'JNE', 
+            'service' => 'YES',
+            'description' => 'Yakin Esok Sampai',
+            'cost' => (int) ($baseShippingCost * 1.5),
+            'formatted_cost' => 'Rp ' . number_format($baseShippingCost * 1.5, 0, ',', '.'),
+            'etd' => '1-2 days',
+            'formatted_etd' => '1-2 hari',
+            'recommended' => false,
+            'type' => 'mock',
+            'is_mock' => true
+        ],
+        [
+            'courier' => 'TIKI',
+            'courier_name' => 'TIKI',
+            'service' => 'REG',
+            'description' => 'Regular Service',
+            'cost' => (int) ($baseShippingCost * 0.9),
+            'formatted_cost' => 'Rp ' . number_format($baseShippingCost * 0.9, 0, ',', '.'),
+            'etd' => '2-4 days',
+            'formatted_etd' => '2-4 hari',
+            'recommended' => false,
+            'type' => 'mock',
+            'is_mock' => true
+        ]
+    ];
+
+    // Add destination-specific adjustments
+    if (stripos($destinationLabel, 'jakarta') !== false) {
+        // Jakarta - cheaper and faster
+        foreach ($options as &$option) {
+            $option['cost'] = (int) ($option['cost'] * 0.8);
+            $option['formatted_cost'] = 'Rp ' . number_format($option['cost'], 0, ',', '.');
+        }
+    } elseif (stripos($destinationLabel, 'papua') !== false || stripos($destinationLabel, 'maluku') !== false) {
+        // Eastern Indonesia - more expensive
+        foreach ($options as &$option) {
+            $option['cost'] = (int) ($option['cost'] * 1.8);
+            $option['formatted_cost'] = 'Rp ' . number_format($option['cost'], 0, ',', '.');
+            $option['etd'] = str_replace(['1-2', '2-3', '2-4'], ['3-4', '4-5', '5-7'], $option['etd']);
+            $option['formatted_etd'] = str_replace(['1-2', '2-3', '2-4'], ['3-4', '4-5', '5-7'], $option['formatted_etd']);
+        }
+    }
+
+    return $options;
+}
 
     /**
      * CRITICAL FIX: Store method with VOUCHER integration that works
@@ -1257,6 +1653,24 @@ public function getCurrentPoints(Request $request)
         
         return null;
     }
+}
+private function getEmergencyShippingOptions()
+{
+    return [
+        [
+            'courier' => 'JNE',
+            'courier_name' => 'JNE',
+            'service' => 'REG',
+            'description' => 'Layanan Reguler',
+            'cost' => 15000,
+            'formatted_cost' => 'Rp 15.000',
+            'etd' => '2-3 days',
+            'formatted_etd' => '2-3 hari',
+            'recommended' => true,
+            'type' => 'emergency',
+            'is_mock' => true
+        ]
+    ];
 }
 
     // Keep ALL other methods exactly the same as working version

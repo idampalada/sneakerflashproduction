@@ -948,61 +948,204 @@ function displayLocationResults(locations) {
 function selectLocation(location) {
     console.log("📍 Location selected:", location);
 
-    // Fill location fields
-    fillFieldIfEmpty("province_name", location.province_name || "");
-    fillFieldIfEmpty("city_name", location.city_name || "");
-    fillFieldIfEmpty("subdistrict_name", location.subdistrict_name || "");
-    fillFieldIfEmpty(
-        "postal_code",
-        location.zip_code || location.postal_code || ""
-    );
-    fillFieldIfEmpty(
-        "destination_id",
-        location.location_id || location.destination_id || ""
-    );
+    // CRITICAL FIX: Pastikan destination_id selalu ada
+    const locationId = location.id || location.location_id || location.destination_id;
+    
+    if (!locationId) {
+        console.error("❌ No valid location ID found in:", location);
+        alert("Error: Invalid location data. Please try selecting again.");
+        return;
+    }
+
+    console.log("✅ Using location ID:", locationId);
+
+    // Fill location fields dengan pengecekan yang lebih robust
+    const provinceField = document.getElementById("province_name");
+    const cityField = document.getElementById("city_name");
+    const subdistrictField = document.getElementById("subdistrict_name");
+    const postalField = document.getElementById("postal_code");
+    const destinationField = document.getElementById("destination_id");
+
+    if (provinceField) provinceField.value = location.province_name || "";
+    if (cityField) cityField.value = location.city_name || "";
+    if (subdistrictField) subdistrictField.value = location.subdistrict_name || "";
+    if (postalField) postalField.value = location.zip_code || location.postal_code || "";
+    
+    // CRITICAL: Pastikan destination_id field ada dan terisi
+    if (destinationField) {
+        destinationField.value = locationId;
+        console.log("✅ destination_id field updated:", locationId);
+    } else {
+        console.error("❌ destination_id field not found!");
+        // Buat field hidden jika tidak ada
+        const hiddenField = document.createElement("input");
+        hiddenField.type = "hidden";
+        hiddenField.id = "destination_id";
+        hiddenField.name = "destination_id";
+        hiddenField.value = locationId;
+        document.getElementById("checkout-form").appendChild(hiddenField);
+        console.log("✅ Created destination_id hidden field:", locationId);
+    }
 
     // Fill legacy fields for backward compatibility
-    fillFieldIfEmpty(
-        "legacy_address",
-        location.full_address || location.label || ""
-    );
-    fillFieldIfEmpty(
-        "legacy_destination_label",
-        location.full_address || location.label || ""
-    );
+    const fullAddress = location.full_address || location.label || 
+                       `${location.subdistrict_name}, ${location.city_name}, ${location.province_name}`;
+    
+    const legacyAddress = document.getElementById("legacy_address");
+    const legacyDestinationLabel = document.getElementById("legacy_destination_label");
+    
+    if (legacyAddress) legacyAddress.value = fullAddress;
+    if (legacyDestinationLabel) legacyDestinationLabel.value = fullAddress;
 
-    // Update selectedDestination for shipping calculation
-    selectedDestination = location;
+    // PERBAIKAN: Update selectedDestination dengan format yang konsisten
+    selectedDestination = {
+        id: locationId,
+        location_id: locationId,
+        destination_id: locationId,
+        subdistrict_name: location.subdistrict_name || "",
+        district_name: location.district_name || "",
+        city_name: location.city_name || "",
+        province_name: location.province_name || "",
+        zip_code: location.zip_code || location.postal_code || "",
+        label: location.label || fullAddress,
+        full_address: fullAddress,
+        display_name: location.display_name || `${location.subdistrict_name}, ${location.city_name}`
+    };
+
+    console.log("✅ selectedDestination updated:", selectedDestination);
 
     // Display selected location
-    const selectedLocation = document.getElementById("selected-location");
-    const selectedLocationText = document.getElementById(
-        "selected-location-text"
-    );
+    const selectedLocationDiv = document.getElementById("selected-location");
+    const selectedLocationText = document.getElementById("selected-location-text");
 
-    if (selectedLocation && selectedLocationText) {
-        selectedLocationText.textContent =
-            location.full_address ||
-            location.label ||
-            location.subdistrict_name +
-                ", " +
-                location.city_name +
-                ", " +
-                location.province_name;
-        selectedLocation.classList.remove("hidden");
+    if (selectedLocationDiv && selectedLocationText) {
+        selectedLocationText.textContent = fullAddress;
+        selectedLocationDiv.classList.remove("hidden");
     }
 
     // Hide search results
-    document.getElementById("location-results").classList.add("hidden");
+    const locationResults = document.getElementById("location-results");
+    if (locationResults) {
+        locationResults.classList.add("hidden");
+    }
 
     // Clear search input
-    document.getElementById("location_search").value = "";
+    const locationSearch = document.getElementById("location_search");
+    if (locationSearch) {
+        locationSearch.value = "";
+    }
 
-    // Trigger shipping calculation if we're on step 3
+    // TRIGGER shipping calculation dengan delay untuk memastikan field sudah terisi
     if (currentStep >= 3) {
-        setTimeout(() => calculateShipping(), 500);
+        console.log("🚚 Triggering shipping calculation with destination_id:", locationId);
+        setTimeout(() => {
+            // Double-check destination_id sebelum calculate
+            const finalDestinationId = document.getElementById("destination_id")?.value;
+            console.log("🔍 Final destination_id before calculation:", finalDestinationId);
+            
+            if (finalDestinationId) {
+                calculateShipping();
+            } else {
+                console.error("❌ destination_id still empty, cannot calculate shipping");
+                displayShippingError("Please select location again");
+            }
+        }, 500);
     }
 }
+
+// TAMBAHAN: Function untuk memverifikasi field destination_id
+function verifyDestinationId() {
+    const destinationId = document.getElementById("destination_id")?.value;
+    console.log("🔍 Current destination_id:", destinationId);
+    
+    if (!destinationId) {
+        console.warn("⚠️ destination_id is empty!");
+        return false;
+    }
+    
+    console.log("✅ destination_id verified:", destinationId);
+    return true;
+}
+
+// PERBAIKAN untuk showNewAddressForm function
+function showNewAddressForm() {
+    console.log("📝 Showing new address form");
+
+    const newAddressForm = document.getElementById("new-address-form");
+    if (newAddressForm) {
+        newAddressForm.classList.remove("hidden");
+    }
+
+    // FIXED: Get user data from meta tags and pre-fill
+    const authenticatedUserName =
+        document.querySelector('meta[name="authenticated-user-name"]')?.content || "";
+    const authenticatedUserPhone =
+        document.querySelector('meta[name="authenticated-user-phone"]')?.content || "";
+
+    // Pre-fill with user data
+    fillFieldIfEmpty("recipient_name", authenticatedUserName);
+    fillFieldIfEmpty("phone_recipient", authenticatedUserPhone);
+
+    // Clear other fields dengan pengecekan yang lebih robust
+    const streetAddressField = document.getElementById("street_address");
+    const provinceField = document.getElementById("province_name");
+    const cityField = document.getElementById("city_name");
+    const subdistrictField = document.getElementById("subdistrict_name");
+    const postalField = document.getElementById("postal_code");
+    const destinationField = document.getElementById("destination_id");
+
+    if (streetAddressField) streetAddressField.value = "";
+    if (provinceField) provinceField.value = "";
+    if (cityField) cityField.value = "";
+    if (subdistrictField) subdistrictField.value = "";
+    if (postalField) postalField.value = "";
+    if (destinationField) destinationField.value = "";
+
+    // Clear legacy fields
+    const legacyAddress = document.getElementById("legacy_address");
+    const legacyDestinationLabel = document.getElementById("legacy_destination_label");
+    if (legacyAddress) legacyAddress.value = "";
+    if (legacyDestinationLabel) legacyDestinationLabel.value = "";
+
+    // Hide selected location
+    const selectedLocation = document.getElementById("selected-location");
+    if (selectedLocation) {
+        selectedLocation.classList.add("hidden");
+    }
+
+    // Reset selectedDestination
+    selectedDestination = null;
+
+    // Reset address label to default
+    const rumahOption = document.querySelector('input[name="address_label"][value="Rumah"]');
+    if (rumahOption) {
+        rumahOption.checked = true;
+        updateAddressLabelStyles();
+    }
+
+    // Enable save options
+    const saveCheckbox = document.querySelector('input[name="save_address"]');
+    if (saveCheckbox) saveCheckbox.checked = true;
+
+    console.log("✅ New address form shown and cleared");
+}
+
+// TAMBAHAN: Debug function untuk troubleshooting
+window.debugDestinationId = function() {
+    const destinationId = document.getElementById("destination_id")?.value;
+    const selectedDest = selectedDestination;
+    
+    console.log("🔍 DEBUG DESTINATION ID:");
+    console.log("  Field value:", destinationId);
+    console.log("  selectedDestination:", selectedDest);
+    console.log("  Field exists:", !!document.getElementById("destination_id"));
+    
+    return {
+        fieldValue: destinationId,
+        selectedDestination: selectedDest,
+        fieldExists: !!document.getElementById("destination_id")
+    };
+};
 
 function clearLocation() {
     console.log("🗑️ Clearing location");

@@ -127,24 +127,42 @@ class ProductResource extends Resource
                 ->description('Upload high-quality product images. First image becomes the featured image.')
                 ->schema([
                     Forms\Components\FileUpload::make('images')
-                        ->label('Product Images')
-                        ->multiple()
-                        ->image()
-                        ->imageEditor()
-                        ->imageEditorAspectRatios([
-                            '1:1',
-                            '4:3', 
-                            '16:9',
-                        ])
-                        ->directory('products')
-                        ->visibility('public')
-                        ->maxFiles(10)
-                        ->reorderable()
-                        ->appendFiles()
-                        ->imagePreviewHeight('250')
-                        ->uploadingMessage('Uploading images...')
-                        ->helperText('Upload up to 10 images. First image will be the main featured image.')
-                        ->columnSpanFull(),
+    ->label('Product Images')
+    ->multiple()
+    ->image()
+    ->imageEditor()
+    ->imageEditorAspectRatios([
+        '1:1',
+        '4:3', 
+        '16:9',
+    ])
+    ->directory('products')
+    ->visibility('public')
+    ->maxFiles(10)
+    ->reorderable()
+    // 🔥 CRITICAL FIXES:
+    ->preserveFilenames()
+    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+    ->loadStateFromRelationshipsUsing(function ($component, $state, $record) {
+        // 🎯 PRESERVE existing images saat edit
+        if ($record && $record->exists) {
+            $existingImages = $record->images ?? [];
+            if (!empty($existingImages) && is_array($existingImages)) {
+                $component->state($existingImages);
+            }
+        }
+        return $state;
+    })
+    ->saveUploadedFileUsing(function ($component, $file, $record) {
+        // 🎯 CUSTOM upload handling
+        $filename = 'product_' . time() . '_' . $file->getClientOriginalName();
+        $path = $file->storeAs('products', $filename, 'public');
+        return $path;
+    })
+    ->imagePreviewHeight('250')
+    ->uploadingMessage('Uploading images...')
+    ->helperText('Upload up to 10 images. First image will be the main featured image. Existing images will be preserved when editing.')
+    ->columnSpanFull(),
                 ]),
 
             // Product Description Section
@@ -872,6 +890,273 @@ class ProductResource extends Resource
     // 🔄 GINEE SYNC GROUP
     Tables\Actions\ActionGroup::make([
         
+        Tables\Actions\Action::make('individual_stock_update')
+    ->label('🎯 Update Stock (Individual)')
+    ->icon('heroicon-o-pencil-square')
+    ->color('warning')
+    ->requiresConfirmation()
+    ->modalHeading('Update Individual Product Stock')
+    ->modalDescription('Select a product and update its stock quantity for pushing to Ginee.')
+    ->form([
+        Forms\Components\Section::make('Product Selection')
+            ->schema([
+                Forms\Components\Select::make('selected_product_id')
+                    ->label('Select Product')
+                    ->placeholder('Choose a product to update...')
+                    ->searchable()
+                    ->preload()
+                    ->required()
+                    ->options(function () {
+                        return \App\Models\Product::whereNotNull('sku')
+                            ->where('sku', '!=', '')
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->map(function ($name, $id) {
+                                $product = \App\Models\Product::find($id);
+                                return "{$name} (SKU: {$product->sku}) - Stock: {$product->stock_quantity}";
+                            });
+                    })
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        if ($state) {
+                            $product = \App\Models\Product::find($state);
+                            if ($product) {
+                                $set('current_stock', $product->stock_quantity ?? 0);
+                                $set('current_sku', $product->sku);
+                                $set('current_name', $product->name);
+                            }
+                        }
+                    }),
+            ]),
+            
+        Forms\Components\Section::make('Current Product Information')
+            ->schema([
+                Forms\Components\Placeholder::make('product_info')
+                    ->label('Product Details')
+                    ->content(function (callable $get) {
+                        $productId = $get('selected_product_id');
+                        if (!$productId) {
+                            return 'Please select a product first.';
+                        }
+                        
+                        $product = \App\Models\Product::find($productId);
+                        if (!$product) {
+                            return 'Product not found.';
+                        }
+                        
+                        return "📦 **{$product->name}**\n" .
+                               "🏷️ SKU: `{$product->sku}`\n" .
+                               "📊 Current Stock: **{$product->stock_quantity}**\n" .
+                               "💰 Price: Rp " . number_format($product->price ?? 0) . "\n" .
+                               "🔄 Last Ginee Sync: " . ($product->ginee_last_sync ? $product->ginee_last_sync->format('d/m/Y H:i') : 'Never');
+                    }),
+                    
+                Forms\Components\Hidden::make('current_stock'),
+                Forms\Components\Hidden::make('current_sku'),
+                Forms\Components\Hidden::make('current_name'),
+            ])
+            ->visible(fn (callable $get) => $get('selected_product_id')),
+            
+        Forms\Components\Section::make('Stock Update')
+            ->schema([
+                Forms\Components\TextInput::make('new_stock_quantity')
+                    ->label('New Stock Quantity')
+                    ->numeric()
+                    ->required()
+                    ->minValue(0)
+                    ->placeholder('Enter new stock quantity...')
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $get, callable $set) {
+                        $currentStock = $get('current_stock') ?? 0;
+                        $newStock = (int) $state;
+                        $difference = $newStock - $currentStock;
+                        $set('stock_difference', $difference);
+                    }),
+                    
+                Forms\Components\Placeholder::make('stock_change_preview')
+                    ->label('Stock Change Preview')
+                    ->content(function (callable $get) {
+                        $currentStock = $get('current_stock') ?? 0;
+                        $newStock = $get('new_stock_quantity');
+                        
+                        if ($newStock === null || $newStock === '') {
+                            return 'Enter new stock quantity to see preview.';
+                        }
+                        
+                        $difference = (int) $newStock - $currentStock;
+                        $changeText = $difference > 0 ? "+{$difference}" : (string) $difference;
+                        $emoji = $difference > 0 ? '📈' : ($difference < 0 ? '📉' : '➖');
+                        
+                        return "{$emoji} **{$currentStock}** → **{$newStock}** ({$changeText})";
+                    })
+                    ->visible(fn (callable $get) => $get('new_stock_quantity') !== null),
+                    
+                Forms\Components\Hidden::make('stock_difference'),
+            ])
+            ->visible(fn (callable $get) => $get('selected_product_id')),
+            
+        Forms\Components\Section::make('Push Options')
+            ->schema([
+                Forms\Components\Toggle::make('dry_run')
+                    ->label('🧪 Dry Run (Preview Only)')
+                    ->helperText('Enable to preview changes without actually updating')
+                    ->default(false),
+                    
+                Forms\Components\Toggle::make('update_local_first')
+                    ->label('💾 Update Local Database First')
+                    ->helperText('Update local stock before pushing to Ginee')
+                    ->default(true),
+                    
+                Forms\Components\Toggle::make('force_push')
+                    ->label('🚀 Force Push to Ginee')
+                    ->helperText('Push to Ginee even if stock quantity is the same')
+                    ->default(false),
+            ])
+            ->visible(fn (callable $get) => $get('selected_product_id')),
+    ])
+    ->action(function (array $data) {
+        try {
+            $productId = $data['selected_product_id'];
+            $newStockQuantity = (int) $data['new_stock_quantity'];
+            $dryRun = $data['dry_run'] ?? false;
+            $updateLocalFirst = $data['update_local_first'] ?? true;
+            $forcePush = $data['force_push'] ?? false;
+            
+            $product = \App\Models\Product::findOrFail($productId);
+            $oldStock = $product->stock_quantity ?? 0;
+            $sessionId = \App\Models\GineeSyncLog::generateSessionId();
+            
+            // Validasi: cek apakah stock berubah
+            if (!$forcePush && $oldStock == $newStockQuantity) {
+                Notification::make()
+                    ->title('ℹ️ No Changes Detected')
+                    ->body("Stock quantity is already {$newStockQuantity}. Use 'Force Push' option if you want to push anyway.")
+                    ->info()
+                    ->send();
+                return;
+            }
+            
+            $mode = $dryRun ? 'DRY RUN - ' : '';
+            
+            // Step 1: Update local database first (jika diaktifkan)
+            if ($updateLocalFirst && !$dryRun) {
+                $product->stock_quantity = $newStockQuantity;
+                $product->save();
+                
+                \App\Models\GineeSyncLog::create([
+                    'type' => 'stock_push',
+                    'status' => 'success',
+                    'operation_type' => 'local_update',
+                    'sku' => $product->sku,
+                    'product_name' => $product->name,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStockQuantity,
+                    'message' => "Local stock updated from {$oldStock} to {$newStockQuantity}",
+                    'dry_run' => false,
+                    'session_id' => $sessionId,
+                ]);
+            }
+            
+            // Step 2: Push to Ginee
+            $gineeClient = new \App\Services\GineeClient();
+            $stockUpdate = $gineeClient->createStockUpdate($product->sku, $newStockQuantity);
+            
+            if ($dryRun) {
+                // Dry run - hanya log preview
+                \App\Models\GineeSyncLog::create([
+                    'type' => 'stock_push',
+                    'status' => 'skipped',
+                    'operation_type' => 'ginee_push',
+                    'sku' => $product->sku,
+                    'product_name' => $product->name,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStockQuantity,
+                    'message' => "DRY RUN - Would push stock {$newStockQuantity} to Ginee",
+                    'dry_run' => true,
+                    'session_id' => $sessionId,
+                ]);
+                
+                Notification::make()
+                    ->title('🧪 Dry Run Complete')
+                    ->body("Preview: Would update {$product->name} stock from {$oldStock} to {$newStockQuantity} and push to Ginee.")
+                    ->info()
+                    ->duration(8000)
+                    ->send();
+                    
+            } else {
+                // Actual push to Ginee
+                $result = $gineeClient->updateStock([$stockUpdate]);
+                
+                if (($result['code'] ?? null) === 'SUCCESS') {
+                    // Update last push timestamp
+                    if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'ginee_last_stock_push')) {
+                        $product->ginee_last_stock_push = now();
+                        $product->save();
+                    }
+                    
+                    \App\Models\GineeSyncLog::create([
+                        'type' => 'stock_push',
+                        'status' => 'success',
+                        'operation_type' => 'ginee_push',
+                        'sku' => $product->sku,
+                        'product_name' => $product->name,
+                        'old_stock' => $oldStock,
+                        'new_stock' => $newStockQuantity,
+                        'message' => "Successfully pushed stock {$newStockQuantity} to Ginee",
+                        'ginee_response' => $result,
+                        'dry_run' => false,
+                        'session_id' => $sessionId,
+                    ]);
+                    
+                    Notification::make()
+                        ->title('✅ Stock Update Successful!')
+                        ->body("Updated {$product->name} stock from {$oldStock} to {$newStockQuantity} and pushed to Ginee.")
+                        ->success()
+                        ->duration(8000)
+                        ->send();
+                        
+                } else {
+                    \App\Models\GineeSyncLog::create([
+                        'type' => 'stock_push',
+                        'status' => 'failed',
+                        'operation_type' => 'ginee_push',
+                        'sku' => $product->sku,
+                        'product_name' => $product->name,
+                        'old_stock' => $oldStock,
+                        'new_stock' => $newStockQuantity,
+                        'message' => 'Failed to push to Ginee: ' . ($result['message'] ?? 'Unknown error'),
+                        'ginee_response' => $result,
+                        'dry_run' => false,
+                        'session_id' => $sessionId,
+                    ]);
+                    
+                    throw new Exception('Ginee push failed: ' . ($result['message'] ?? 'Unknown error'));
+                }
+            }
+            
+        } catch (Exception $e) {
+            Notification::make()
+                ->title('❌ Stock Update Failed')
+                ->body('Error: ' . $e->getMessage())
+                ->danger()
+                ->duration(10000)
+                ->send();
+                
+            // Log error jika belum di-log
+            if (isset($product) && isset($sessionId)) {
+                \App\Models\GineeSyncLog::create([
+                    'type' => 'stock_push',
+                    'status' => 'failed',
+                    'operation_type' => 'error',
+                    'sku' => $product->sku ?? 'unknown',
+                    'product_name' => $product->name ?? 'Unknown',
+                    'message' => 'Exception: ' . $e->getMessage(),
+                    'dry_run' => $dryRun ?? false,
+                    'session_id' => $sessionId,
+                ]);
+            }
+        }
+    }),
         // 📥 SYNC STOCK FROM GINEE
         Tables\Actions\Action::make('sync_stock_from_ginee')
             ->label('📥 Sync from Ginee')
@@ -1733,4 +2018,6 @@ class ProductResource extends Resource
             default => 'danger'
         };
     }
+    
+    
 }

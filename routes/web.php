@@ -546,4 +546,5 @@ Route::withoutMiddleware(['web'])
             ->name('webhooks.ginee.global');
     });
 
-    
+        // Checkout routes
+Route::post('/checkout/calculate-shipping', [CheckoutController::class, 'calculateShipping']);

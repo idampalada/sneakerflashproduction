@@ -98,6 +98,26 @@ class Product extends Model
                 $product->slug = static::generateUniqueSlug($product->name);
             }
         });
+
+        // 🔥 FIX: Add logging for images changes
+        static::saving(function ($product) {
+            if ($product->isDirty('images')) {
+                Log::info('Product: Images being updated', [
+                    'product_id' => $product->id ?? 'new',
+                    'old_images' => $product->getOriginal('images'),
+                    'new_images' => $product->images
+                ]);
+            }
+        });
+        
+        static::saved(function ($product) {
+            $savedImages = $product->fresh()->images ?? [];
+            Log::info('Product: Images after save', [
+                'product_id' => $product->id,
+                'images_count' => count($savedImages),
+                'images' => $savedImages
+            ]);
+        });
     }
 
     public static function generateUniqueSlug($name)
@@ -119,19 +139,128 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    // 🔥 CRITICAL FIX: Custom mutator untuk images agar tidak hilang saat save
+    public function setImagesAttribute($value): void
+{
+    // 🔥 CRITICAL: Get existing images FIRST
+    $existingImages = [];
+    if ($this->exists && $this->id) {
+        $existingImages = $this->getOriginal('images');
+        if (is_string($existingImages)) {
+            $decoded = json_decode($existingImages, true);
+            $existingImages = is_array($decoded) ? $decoded : [];
+        } elseif (!is_array($existingImages)) {
+            $existingImages = [];
+        }
+    }
+
+    Log::info('🔥 Product: MUTATOR CALLED', [
+        'product_id' => $this->id ?? 'new',
+        'existing_images_count' => count($existingImages),
+        'existing_images' => $existingImages,
+        'new_value_type' => gettype($value),
+        'new_value' => $value
+    ]);
+
+    // 🚨 DECISION LOGIC: PRESERVE vs UPDATE
+    if (is_null($value) || (is_array($value) && empty($value))) {
+        // JIKA VALUE NULL/EMPTY
+        if (!empty($existingImages) && $this->exists) {
+            // DAN ADA EXISTING IMAGES -> PRESERVE!
+            Log::warning('🛡️ Product: Preserving existing images (new value empty)', [
+                'product_id' => $this->id,
+                'preserving_count' => count($existingImages)
+            ]);
+            $this->attributes['images'] = json_encode($existingImages);
+            return;
+        } else {
+            // TIDAK ADA EXISTING -> SET EMPTY
+            Log::info('📝 Product: Setting empty images (no existing)', [
+                'product_id' => $this->id ?? 'new'
+            ]);
+            $this->attributes['images'] = json_encode([]);
+            return;
+        }
+    }
+
+    // JIKA VALUE ADA -> PROCESS
+    if (is_string($value)) {
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $value = $decoded;
+        } else {
+            $value = !empty($value) ? [$value] : [];
+        }
+    }
+
+    if (is_array($value)) {
+        $cleanImages = array_filter($value, function($image) {
+            return !empty($image) && is_string($image);
+        });
+        $cleanImages = array_values($cleanImages);
+        
+        if (empty($cleanImages) && !empty($existingImages) && $this->exists) {
+            // JIKA CLEAN RESULT EMPTY TAPI ADA EXISTING -> PRESERVE!
+            Log::warning('🛡️ Product: Preserving existing (cleaned result empty)', [
+                'product_id' => $this->id,
+                'preserving_count' => count($existingImages)
+            ]);
+            $this->attributes['images'] = json_encode($existingImages);
+        } else {
+            // GUNAKAN CLEAN RESULT
+            Log::info('✅ Product: Using new images', [
+                'product_id' => $this->id ?? 'new',
+                'new_images_count' => count($cleanImages),
+                'new_images' => $cleanImages
+            ]);
+            $this->attributes['images'] = json_encode($cleanImages);
+        }
+    } else {
+        // INVALID TYPE -> PRESERVE EXISTING JIKA ADA
+        if (!empty($existingImages) && $this->exists) {
+            Log::warning('🛡️ Product: Preserving existing (invalid type)', [
+                'product_id' => $this->id,
+                'invalid_type' => gettype($value)
+            ]);
+            $this->attributes['images'] = json_encode($existingImages);
+        } else {
+            Log::warning('📝 Product: Setting empty (invalid type, no existing)', [
+                'product_id' => $this->id ?? 'new'
+            ]);
+            $this->attributes['images'] = json_encode([]);
+        }
+    }
+}
+
     // ⭐ FIXED: Safe accessors for array attributes
     public function getImagesAttribute($value)
     {
-        if (is_null($value)) {
+        if (is_null($value) || $value === '') {
             return [];
         }
 
         if (is_string($value)) {
             $decoded = json_decode($value, true);
-            return is_array($decoded) ? $decoded : [];
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                // Filter out empty values
+                $filtered = array_filter($decoded, function($image) {
+                    return !empty($image) && is_string($image);
+                });
+                
+                return array_values($filtered);
+            }
         }
 
-        return is_array($value) ? $value : [];
+        if (is_array($value)) {
+            // Filter out empty values
+            $filtered = array_filter($value, function($image) {
+                return !empty($image) && is_string($image);
+            });
+            
+            return array_values($filtered);
+        }
+
+        return [];
     }
 
     public function getAvailableSizesAttribute($value)
@@ -420,21 +549,30 @@ class Product extends Model
         ]);
     }
 
-    // ⭐ FIXED: Safe image methods
+    // ⭐ FIXED: Safe image methods with improved error handling
     private function generateStorageUrl(string $path): string
     {
-        $baseUrl = config('app.url');
-        $storagePath = '/storage/' . ltrim($path, '/');
-        return $baseUrl . $storagePath;
+        try {
+            // Pastikan path tidak dimulai dengan slash
+            $cleanPath = ltrim($path, '/');
+            
+            // Generate URL menggunakan asset() untuk storage link
+            return asset('storage/' . $cleanPath);
+        } catch (\Exception $e) {
+            Log::warning('Product: Error generating storage URL', [
+                'path' => $path,
+                'error' => $e->getMessage()
+            ]);
+            return asset('images/default-product.png');
+        }
     }
 
     private function fileExistsInStorage(string $path): bool
     {
         try {
-            $disk = Storage::disk('public');
-            return $disk->exists($path);
+            return Storage::disk('public')->exists($path);
         } catch (\Exception $e) {
-            Log::warning('Storage check failed', [
+            Log::warning('Product: Storage check failed', [
                 'path' => $path,
                 'error' => $e->getMessage()
             ]);
@@ -448,10 +586,17 @@ class Product extends Model
             return asset('images/default-product.png');
         }
 
+        // Case 1: Full URL (http/https) - return as is
         if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
             return $imagePath;
         }
 
+        // Case 2: URL yang starts dengan http tapi mungkin tidak valid menurut filter_var
+        if (str_starts_with($imagePath, 'http://') || str_starts_with($imagePath, 'https://')) {
+            return $imagePath;
+        }
+
+        // Case 3: Relative path - resolve to storage
         if (str_starts_with($imagePath, '/storage/')) {
             return config('app.url') . $imagePath;
         }
@@ -523,7 +668,7 @@ class Product extends Model
         $urls = [];
         foreach ($images as $imagePath) {
             $resolvedUrl = $this->resolveImagePath($imagePath);
-            if ($resolvedUrl) {
+            if ($resolvedUrl && $resolvedUrl !== asset('images/default-product.png')) {
                 $urls[] = $resolvedUrl;
             }
         }
@@ -858,27 +1003,34 @@ class Product extends Model
         ];
     }
 
+    // 🔥 ADDITIONAL FIX: Validation helper untuk images
     public function validateImageUrls(): array
     {
         $images = $this->images ?? [];
-        $validated = [];
+        $validImages = [];
+        $invalidImages = [];
         
-        foreach ($images as $index => $imageUrl) {
-            $isValid = true;
-            
-            if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-                $isValid = false;
+        foreach ($images as $index => $imagePath) {
+            if (empty($imagePath)) {
+                $invalidImages[] = "Image $index: Empty path";
+                continue;
             }
             
-            $validated[] = [
-                'index' => $index,
-                'url' => $imageUrl,
-                'is_valid' => $isValid,
-                'is_external' => !str_contains($imageUrl, config('app.url'))
-            ];
+            $resolvedUrl = $this->resolveImagePath($imagePath);
+            if ($resolvedUrl === asset('images/default-product.png')) {
+                $invalidImages[] = "Image $index: File not found - $imagePath";
+            } else {
+                $validImages[] = $resolvedUrl;
+            }
         }
         
-        return $validated;
+        return [
+            'valid_images' => $validImages,
+            'invalid_images' => $invalidImages,
+            'total_count' => count($images),
+            'valid_count' => count($validImages),
+            'invalid_count' => count($invalidImages)
+        ];
     }
 
     public function getImagePriorityAttribute(): string
