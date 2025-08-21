@@ -1,5 +1,4 @@
 <?php
-// File: app/Console/Commands/TestRajaOngkirCommand.php
 
 namespace App\Console\Commands;
 
@@ -25,7 +24,7 @@ class TestRajaOngkirCommand extends Command
         
         if (!$this->apiKey) {
             $this->error('❌ RajaOngkir API key is required!');
-            $this->line('Use: php artisan rajaongkir:test --api-key=8MZVaA6pc8c11707407345e5Ad0DK9eU');
+            $this->line('Use: php artisan rajaongkir:test --api-key=9de495fa986da8069d9ba9d5e5e574e1');
             return 1;
         }
 
@@ -71,25 +70,24 @@ class TestRajaOngkirCommand extends Command
                     $provinces = $data['data'];
                     $this->line("✅ Found " . count($provinces) . " provinces");
                     
-                    // Show first 5 provinces with CORRECT format
-                    $this->table(
-                        ['ID', 'Province Name'],
-                        array_slice(array_map(function($p) {
-                            return [$p['id'], $p['name']]; // Actual format: id, name
-                        }, $provinces), 0, 5)
-                    );
+                    // Show first 5 provinces in table format
+                    $tableData = array_map(function($province) {
+                        return [$province['id'], $province['name']];
+                    }, array_slice($provinces, 0, 5));
                     
-                    // Find DKI Jakarta ID
-                    $jakarta = collect($provinces)->firstWhere('name', 'DKI JAKARTA');
+                    $this->table(['ID', 'Province Name'], $tableData);
+                    
+                    // Find DKI Jakarta specifically
+                    $jakarta = collect($provinces)->where('name', 'DKI JAKARTA')->first();
                     if ($jakarta) {
-                        $this->line("📍 DKI Jakarta ID: {$jakarta['id']}");
+                        $this->line("📍 DKI Jakarta ID: " . $jakarta['id']);
                     }
                     
                     return $provinces;
                 }
             }
         } catch (\Exception $e) {
-            $this->error('❌ Exception: ' . $e->getMessage());
+            $this->error('❌ Province Exception: ' . $e->getMessage());
         }
         
         return [];
@@ -99,9 +97,9 @@ class TestRajaOngkirCommand extends Command
     {
         $this->info('🏙️ Test 2: Finding cities via search (since cities endpoint returns 404)...');
         
-        $majorCities = ['jakarta', 'bandung', 'surabaya', 'medan', 'semarang'];
+        $testCities = ['jakarta', 'bandung', 'surabaya', 'medan', 'semarang'];
         
-        foreach ($majorCities as $cityName) {
+        foreach ($testCities as $cityName) {
             try {
                 $response = Http::timeout(10)->withHeaders([
                     'key' => $this->apiKey
@@ -113,16 +111,13 @@ class TestRajaOngkirCommand extends Command
                 if ($response->successful()) {
                     $data = $response->json();
                     
-                    if (isset($data['data']) && !empty($data['data'])) {
-                        $results = $data['data'];
-                        $this->line("✅ {$cityName}: Found " . count($results) . " locations");
-                        
-                        // Show first result with actual format
-                        $first = $results[0];
-                        $this->line("   📍 Sample: {$first['subdistrict_name']}, {$first['district_name']}, {$first['city_name']}");
-                        $this->line("   🆔 Location ID: {$first['id']}");
+                    if (isset($data['data']) && is_array($data['data']) && count($data['data']) > 0) {
+                        $this->line("✅ {$cityName}: Found " . count($data['data']) . " locations");
+                        $sample = $data['data'][0];
+                        $this->line("   📍 Sample: {$sample['subdistrict_name']}, {$sample['district_name']}, {$sample['city_name']}");
+                        $this->line("   🆔 Location ID: {$sample['id']}");
                     } else {
-                        $this->line("❌ {$cityName}: No results found");
+                        $this->line("❌ {$cityName}: No locations found");
                     }
                 } else {
                     $this->line("❌ {$cityName}: HTTP " . $response->status());
@@ -224,24 +219,40 @@ class TestRajaOngkirCommand extends Command
         $this->line("   Weight: {$weight}g");
         $this->newLine();
         
-        // Try different cost endpoints and methods
+        // FIXED: Add the working endpoint and use correct format
         $testCases = [
-            ['method' => 'POST', 'url' => '/cost', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
-            ['method' => 'GET', 'url' => '/cost', 'params' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
-            ['method' => 'POST', 'url' => '/shipping/cost', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
-            ['method' => 'POST', 'url' => '/destination/cost', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
-            ['method' => 'POST', 'url' => '/calculate', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
-            ['method' => 'POST', 'url' => '/cost', 'data' => ['origin_id' => $origin, 'destination_id' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            // ✅ ADD: The working endpoint first
+            ['method' => 'POST', 'url' => '/calculate/domestic-cost', 'format' => 'asForm', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            
+            // Other endpoints to test (will still fail, but good to verify)
+            ['method' => 'POST', 'url' => '/cost', 'format' => 'json', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            ['method' => 'GET', 'url' => '/cost', 'format' => 'params', 'params' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            ['method' => 'POST', 'url' => '/shipping/cost', 'format' => 'json', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            ['method' => 'POST', 'url' => '/destination/cost', 'format' => 'json', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
+            ['method' => 'POST', 'url' => '/calculate', 'format' => 'json', 'data' => ['origin' => $origin, 'destination' => $destination, 'weight' => $weight, 'courier' => 'jne']],
         ];
         
         foreach ($testCases as $case) {
             try {
-                $this->line("Testing {$case['method']} {$case['url']}...");
+                $this->line("Testing {$case['method']} {$case['url']} ({$case['format']})...");
                 
                 if ($case['method'] === 'POST') {
-                    $response = Http::timeout(15)->withHeaders([
-                        'key' => $this->apiKey
-                    ])->post($this->baseUrl . $case['url'], $case['data']);
+                    // Use different formats based on test case
+                    if ($case['format'] === 'asForm') {
+                        // ✅ FIXED: Use the working format
+                        $response = Http::asForm()
+                            ->withHeaders([
+                                'accept' => 'application/json',
+                                'key' => $this->apiKey
+                            ])
+                            ->timeout(15)
+                            ->post($this->baseUrl . $case['url'], $case['data']);
+                    } else {
+                        // Standard JSON format (for other endpoints)
+                        $response = Http::timeout(15)->withHeaders([
+                            'key' => $this->apiKey
+                        ])->post($this->baseUrl . $case['url'], $case['data']);
+                    }
                 } else {
                     $response = Http::timeout(15)->withHeaders([
                         'key' => $this->apiKey
@@ -252,8 +263,23 @@ class TestRajaOngkirCommand extends Command
                 
                 if ($response->successful()) {
                     $data = $response->json();
-                    $this->line("   ✅ SUCCESS! Response structure:");
-                    $this->line("   " . json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                    $this->line("   ✅ SUCCESS! Found working endpoint!");
+                    
+                    // Show partial response for the working endpoint
+                    if (isset($data['data']) && is_array($data['data'])) {
+                        $optionCount = count($data['data']);
+                        $this->line("   📦 Found {$optionCount} shipping options");
+                        
+                        // Show first few options
+                        foreach (array_slice($data['data'], 0, 3) as $option) {
+                            $cost = number_format($option['cost'] ?? 0);
+                            $service = $option['service'] ?? 'Unknown';
+                            $etd = $option['etd'] ?? 'N/A';
+                            $this->line("      • {$service}: Rp {$cost} ({$etd})");
+                        }
+                    }
+                    
+                    $this->line("   🎯 Use this endpoint: {$case['url']} with {$case['format']} format");
                     return; // Stop on first success
                 } else {
                     $responseBody = $response->body();
@@ -317,8 +343,8 @@ class TestRajaOngkirCommand extends Command
         $this->line('✅ Provinces endpoint: WORKING (format: id, name)');
         $this->line('❌ Cities endpoint: NOT WORKING (404 error)');
         $this->line('✅ Search endpoint: WORKING (format: id, label, province_name, city_name, etc.)');
-        $this->line('❌ Cost calculation: ENDPOINT NOT FOUND');
+        $this->line('✅ Cost calculation: WORKING (/calculate/domestic-cost with asForm format)'); // ✅ UPDATED
         $this->newLine();
-        $this->info('🎯 Recommendation: Use search-based approach for location selection');
+        $this->info('🎯 Recommendation: Use /calculate/domestic-cost endpoint with Http::asForm() format');
     }
 }

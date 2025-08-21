@@ -404,10 +404,15 @@ public function getCurrentPoints(Request $request)
             'data' => array_slice($filteredResults, 0, 10) // Limit ke 10 hasil teratas
         ]);
         
-    } catch (\Exception $e) {
-        Log::error('RajaOngkir search error: ' . $e->getMessage());
-        return $this->getMockDestinations($search);
-    }
+} catch (\Exception $e) {
+    Log::error('RajaOngkir search error: ' . $e->getMessage());
+    return response()->json([
+        'success' => false,
+        'message' => 'Pencarian lokasi tidak tersedia saat ini',
+        'total' => 0,
+        'data' => []
+    ]);
+}
 }
 
 private function generateSearchVariations($search)
@@ -514,11 +519,11 @@ public function calculateShipping(Request $request)
         $destinationLabel = $request->input('destination_label', '');
         $weight = $request->input('weight', 1000);
 
-        Log::info('📦 JNE API-only shipping calculation', [
+        Log::info('🚢 RajaOngkir API shipping calculation (FIXED)', [
             'destination_id' => $destinationId,
             'destination_label' => $destinationLabel,
             'weight' => $weight,
-            'mode' => 'API_ONLY_NO_MOCK'
+            'endpoint' => '/calculate/domestic-cost'
         ]);
 
         // Validate required data
@@ -535,31 +540,27 @@ public function calculateShipping(Request $request)
         // Get origin from environment
         $originId = $this->getOriginIdFromEnv();
         
-        Log::info('🏭 API-only setup', [
+        Log::info('🏭 Shipping calculation setup', [
             'origin_id' => $originId,
             'destination_id' => $destinationId,
             'api_endpoint' => '/calculate/domestic-cost'
         ]);
 
-        // DIRECT API CALL - NO SERVICE LAYER
-        $apiKey = $this->rajaOngkirApiKey;
-        $baseUrl = $this->rajaOngkirBaseUrl;
-
-        $response = \Illuminate\Support\Facades\Http::timeout(15)
+        // FIXED: Use the exact same format as successful tinker test
+        $response = Http::asForm()
             ->withHeaders([
                 'accept' => 'application/json',
-                'content-type' => 'application/x-www-form-urlencoded',
-                'key' => $apiKey
+                'key' => $this->rajaOngkirApiKey
             ])
-            ->asForm()
-            ->post($baseUrl . '/calculate/domestic-cost', [
-                'origin' => (string) $originId,
-                'destination' => (string) $destinationId,
+            ->timeout(15)
+            ->post($this->rajaOngkirBaseUrl . '/calculate/domestic-cost', [
+                'origin' => $originId,
+                'destination' => $destinationId,
                 'weight' => max(1000, (int) $weight),
                 'courier' => 'jne'
             ]);
 
-        Log::info("📡 Direct API call result", [
+        Log::info("📡 API call result", [
             'status' => $response->status(),
             'successful' => $response->successful(),
             'response_size' => strlen($response->body())
@@ -568,42 +569,57 @@ public function calculateShipping(Request $request)
         if ($response->successful()) {
             $data = $response->json();
             
-            Log::info("✅ Raw API response received", [
+            Log::info("✅ API response received", [
                 'has_data' => isset($data['data']),
                 'response_keys' => array_keys($data ?? []),
-                'raw_response' => json_encode($data)
+                'data_count' => isset($data['data']) ? count($data['data']) : 0
             ]);
-
-            // Parse response directly
-            $jneOptions = $this->parseDirectAPIResponse($data);
             
-            if (!empty($jneOptions)) {
-                Log::info('🎯 Successfully parsed JNE options from API', [
-                    'options_count' => count($jneOptions),
-                    'services' => array_map(function($opt) {
-                        return $opt['service'] . ' - Rp ' . number_format($opt['cost']);
-                    }, $jneOptions)
+            // Parse the response - format from tinker: {"meta": {...}, "data": [...]}
+            if (isset($data['data']) && is_array($data['data']) && count($data['data']) > 0) {
+                $shippingOptions = [];
+                
+                foreach ($data['data'] as $option) {
+                    $shippingOptions[] = [
+                        'courier' => strtoupper($option['code'] ?? 'JNE'),
+                        'courier_name' => $option['name'] ?? 'Jalur Nugraha Ekakurir (JNE)',
+                        'service' => $option['service'] ?? 'Unknown',
+                        'description' => $option['description'] ?? $option['service'] ?? 'Shipping Service',
+                        'cost' => (int) ($option['cost'] ?? 0),
+                        'formatted_cost' => 'Rp ' . number_format($option['cost'] ?? 0, 0, ',', '.'),
+                        'etd' => $option['etd'] ?? 'N/A',
+                        'formatted_etd' => $option['etd'] ?? 'N/A',
+                        'recommended' => false,
+                        'type' => 'api',
+                        'is_mock' => false
+                    ];
+                }
+                
+                Log::info("🎯 Parsed shipping options", [
+                    'total_options' => count($shippingOptions),
+                    'sample_option' => $shippingOptions[0] ?? null
                 ]);
                 
                 return response()->json([
                     'success' => true,
-                    'options' => $jneOptions,
-                    'origin_id' => $originId,
-                    'destination_id' => $destinationId,
-                    'method' => 'direct_api_success',
-                    'message' => 'Real JNE shipping costs from API'
+                    'message' => 'Shipping calculated successfully',
+                    'options' => $shippingOptions,
+                    'total' => count($shippingOptions),
+                    'origin' => $originId,
+                    'destination' => $destinationId,
+                    'weight' => $weight
                 ]);
             } else {
-                Log::error('❌ API returned data but no JNE options could be parsed', [
-                    'raw_data' => json_encode($data)
+                Log::warning('❌ No shipping data in response', [
+                    'response_structure' => array_keys($data ?? []),
+                    'data_content' => $data['data'] ?? 'missing'
                 ]);
                 
                 return response()->json([
                     'success' => false,
-                    'error' => 'No JNE shipping options available',
-                    'message' => 'API returned data but no valid shipping options found',
-                    'debug_data' => $data
-                ], 404);
+                    'error' => 'No shipping options available',
+                    'message' => 'No shipping services found for this location'
+                ], 422);
             }
         } else {
             Log::error('❌ API request failed', [
@@ -613,288 +629,24 @@ public function calculateShipping(Request $request)
             
             return response()->json([
                 'success' => false,
-                'error' => 'Shipping API failed',
-                'message' => 'Unable to calculate shipping costs from API',
-                'api_status' => $response->status(),
-                'api_response' => $response->body()
-            ], $response->status());
+                'error' => 'API request failed',
+                'message' => 'Unable to calculate shipping at this time',
+                'status_code' => $response->status()
+            ], 500);
         }
-
+        
     } catch (\Exception $e) {
-        Log::error('❌ Direct API shipping calculation exception', [
+        Log::error('❌ Shipping calculation exception', [
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-            'request_data' => $request->all()
+            'trace' => $e->getTraceAsString()
         ]);
-
+        
         return response()->json([
             'success' => false,
-            'error' => 'Shipping calculation failed',
-            'message' => 'An error occurred while calculating shipping costs',
-            'exception' => $e->getMessage()
+            'error' => 'Calculation failed',
+            'message' => 'An error occurred while calculating shipping'
         ], 500);
     }
-}
-
-/**
- * Parse API response directly without service layer
- * API ONLY - NO MOCK
- */
-private function parseDirectAPIResponse($data)
-{
-    $jneOptions = [];
-    
-    try {
-        Log::info('🔍 Parsing direct API response', [
-            'data_type' => gettype($data),
-            'data_keys' => is_array($data) ? array_keys($data) : 'not_array'
-        ]);
-
-        // Handle different response formats
-        if (isset($data['rajaongkir']['results'])) {
-            // Standard RajaOngkir format
-            Log::info('📋 Processing standard RajaOngkir format');
-            $results = $data['rajaongkir']['results'];
-            
-            foreach ($results as $result) {
-                if (strtolower($result['code'] ?? '') === 'jne' && isset($result['costs'])) {
-                    Log::info('✅ Found JNE result with costs', [
-                        'costs_count' => count($result['costs'])
-                    ]);
-                    
-                    foreach ($result['costs'] as $cost) {
-                        $costValue = $cost['cost'][0]['value'] ?? 0;
-                        $etd = $cost['cost'][0]['etd'] ?? '2-3';
-                        
-                        $jneOptions[] = [
-                            'courier' => 'JNE',
-                            'courier_name' => 'JNE',
-                            'service' => $cost['service'] ?? 'REG',
-                            'description' => $cost['description'] ?? 'JNE Service',
-                            'cost' => (int) $costValue,
-                            'formatted_cost' => 'Rp ' . number_format($costValue, 0, ',', '.'),
-                            'etd' => $etd,
-                            'formatted_etd' => $etd . ' hari',
-                            'recommended' => ($cost['service'] ?? '') === 'REG',
-                            'type' => 'api',
-                            'is_mock' => false
-                        ];
-                        
-                        Log::info('➕ Added JNE option', [
-                            'service' => $cost['service'] ?? 'REG',
-                            'cost' => $costValue,
-                            'etd' => $etd
-                        ]);
-                    }
-                }
-            }
-        }
-        elseif (isset($data['data']) && is_array($data['data'])) {
-            // Komerce custom format
-            Log::info('📋 Processing Komerce custom format');
-            
-            foreach ($data['data'] as $result) {
-                if (strtolower($result['courier'] ?? '') === 'jne') {
-                    $costValue = $result['cost'] ?? 0;
-                    $etd = $result['etd'] ?? '2-3';
-                    
-                    $jneOptions[] = [
-                        'courier' => 'JNE',
-                        'courier_name' => 'JNE',
-                        'service' => $result['service'] ?? 'REG',
-                        'description' => $result['description'] ?? 'JNE Service',
-                        'cost' => (int) $costValue,
-                        'formatted_cost' => 'Rp ' . number_format($costValue, 0, ',', '.'),
-                        'etd' => $etd,
-                        'formatted_etd' => $etd . ' hari',
-                        'recommended' => ($result['service'] ?? '') === 'REG',
-                        'type' => 'api',
-                        'is_mock' => false
-                    ];
-                    
-                    Log::info('➕ Added JNE option from Komerce format', [
-                        'service' => $result['service'] ?? 'REG',
-                        'cost' => $costValue
-                    ]);
-                }
-            }
-        }
-        else {
-            Log::warning('⚠️ Unknown API response format', [
-                'data_structure' => json_encode($data)
-            ]);
-        }
-        
-        // Sort by service priority: REG first, then by cost
-        if (!empty($jneOptions)) {
-            usort($jneOptions, function($a, $b) {
-                if ($a['service'] === 'REG' && $b['service'] !== 'REG') return -1;
-                if ($b['service'] === 'REG' && $a['service'] !== 'REG') return 1;
-                return $a['cost'] <=> $b['cost'];
-            });
-        }
-        
-    } catch (\Exception $e) {
-        Log::error('❌ Error parsing direct API response', [
-            'error' => $e->getMessage(),
-            'data_sample' => json_encode(array_slice($data, 0, 3))
-        ]);
-    }
-    
-    return $jneOptions;
-}
-private function generateRealisticMockShippingOptions($weight, $destinationLabel = '')
-{
-    // Base shipping rates untuk berbagai daerah (dalam Rupiah)
-    $shippingRates = [
-        // Jakarta area
-        'jakarta' => ['base' => 8000, 'per_kg' => 2000],
-        'bekasi' => ['base' => 12000, 'per_kg' => 3000],
-        'tangerang' => ['base' => 10000, 'per_kg' => 2500],
-        'depok' => ['base' => 11000, 'per_kg' => 2800],
-        'bogor' => ['base' => 15000, 'per_kg' => 4000],
-        
-        // Jawa
-        'bandung' => ['base' => 18000, 'per_kg' => 5000],
-        'surabaya' => ['base' => 25000, 'per_kg' => 7000],
-        'yogyakarta' => ['base' => 20000, 'per_kg' => 5500],
-        'semarang' => ['base' => 22000, 'per_kg' => 6000],
-        
-        // Luar Jawa
-        'medan' => ['base' => 35000, 'per_kg' => 10000],
-        'makassar' => ['base' => 40000, 'per_kg' => 12000],
-        'denpasar' => ['base' => 30000, 'per_kg' => 8000],
-        
-        // Default untuk daerah tidak dikenal
-        'default' => ['base' => 15000, 'per_kg' => 4000]
-    ];
-    
-    // Determine rate berdasarkan destination
-    $rate = $shippingRates['default'];
-    $destinationLower = strtolower($destinationLabel);
-    
-    foreach ($shippingRates as $city => $cityRate) {
-        if (strpos($destinationLower, $city) !== false) {
-            $rate = $cityRate;
-            break;
-        }
-    }
-    
-    // Calculate weight multiplier
-    $weightKg = max(1, $weight / 1000);
-    $additionalCost = ($weightKg - 1) * $rate['per_kg'];
-    
-    // Generate courier options
-    $basePrice = $rate['base'] + $additionalCost;
-    
-    return [
-        [
-            'courier' => 'JNE',
-            'courier_name' => 'JNE',
-            'service' => 'REG',
-            'description' => 'Layanan Reguler',
-            'cost' => (int) $basePrice,
-            'formatted_cost' => 'Rp ' . number_format($basePrice, 0, ',', '.'),
-            'etd' => '2-3 days',
-            'formatted_etd' => '2-3 hari',
-            'recommended' => true,
-            'type' => 'mock',
-            'is_mock' => true
-        ],
-        [
-            'courier' => 'JNE',
-            'courier_name' => 'JNE',
-            'service' => 'YES',
-            'description' => 'Yakin Esok Sampai',
-            'cost' => (int) ($basePrice * 1.6),
-            'formatted_cost' => 'Rp ' . number_format($basePrice * 1.6, 0, ',', '.'),
-            'etd' => '1-2 days',
-            'formatted_etd' => '1-2 hari',
-            'recommended' => false,
-            'type' => 'mock',
-            'is_mock' => true
-        ],
-        [
-            'courier' => 'TIKI',
-            'courier_name' => 'TIKI',
-            'service' => 'REG',
-            'description' => 'Regular Service',
-            'cost' => (int) ($basePrice * 0.85),
-            'formatted_cost' => 'Rp ' . number_format($basePrice * 0.85, 0, ',', '.'),
-            'etd' => '2-4 days',
-            'formatted_etd' => '2-4 hari',
-            'recommended' => false,
-            'type' => 'mock',
-            'is_mock' => true
-        ]
-    ];
-}
-
-private function generateMockShippingOptions($weight, $destinationLabel = '')
-{
-    // Generate realistic shipping options based on weight and destination
-    $baseShippingCost = max(8000, $weight * 0.008); // Minimum 8k, or 8 rupiah per gram
-    
-    $options = [
-        [
-            'courier' => 'JNE',
-            'courier_name' => 'JNE',
-            'service' => 'REG',
-            'description' => 'Layanan Reguler',
-            'cost' => (int) $baseShippingCost,
-            'formatted_cost' => 'Rp ' . number_format($baseShippingCost, 0, ',', '.'),
-            'etd' => '2-3 days',
-            'formatted_etd' => '2-3 hari',
-            'recommended' => true,
-            'type' => 'mock',
-            'is_mock' => true
-        ],
-        [
-            'courier' => 'JNE',
-            'courier_name' => 'JNE', 
-            'service' => 'YES',
-            'description' => 'Yakin Esok Sampai',
-            'cost' => (int) ($baseShippingCost * 1.5),
-            'formatted_cost' => 'Rp ' . number_format($baseShippingCost * 1.5, 0, ',', '.'),
-            'etd' => '1-2 days',
-            'formatted_etd' => '1-2 hari',
-            'recommended' => false,
-            'type' => 'mock',
-            'is_mock' => true
-        ],
-        [
-            'courier' => 'TIKI',
-            'courier_name' => 'TIKI',
-            'service' => 'REG',
-            'description' => 'Regular Service',
-            'cost' => (int) ($baseShippingCost * 0.9),
-            'formatted_cost' => 'Rp ' . number_format($baseShippingCost * 0.9, 0, ',', '.'),
-            'etd' => '2-4 days',
-            'formatted_etd' => '2-4 hari',
-            'recommended' => false,
-            'type' => 'mock',
-            'is_mock' => true
-        ]
-    ];
-
-    // Add destination-specific adjustments
-    if (stripos($destinationLabel, 'jakarta') !== false) {
-        // Jakarta - cheaper and faster
-        foreach ($options as &$option) {
-            $option['cost'] = (int) ($option['cost'] * 0.8);
-            $option['formatted_cost'] = 'Rp ' . number_format($option['cost'], 0, ',', '.');
-        }
-    } elseif (stripos($destinationLabel, 'papua') !== false || stripos($destinationLabel, 'maluku') !== false) {
-        // Eastern Indonesia - more expensive
-        foreach ($options as &$option) {
-            $option['cost'] = (int) ($option['cost'] * 1.8);
-            $option['formatted_cost'] = 'Rp ' . number_format($option['cost'], 0, ',', '.');
-            $option['etd'] = str_replace(['1-2', '2-3', '2-4'], ['3-4', '4-5', '5-7'], $option['etd']);
-            $option['formatted_etd'] = str_replace(['1-2', '2-3', '2-4'], ['3-4', '4-5', '5-7'], $option['formatted_etd']);
-        }
-    }
-
-    return $options;
 }
 
     /**
@@ -1654,114 +1406,6 @@ private function generateMockShippingOptions($weight, $destinationLabel = '')
         return null;
     }
 }
-private function getEmergencyShippingOptions()
-{
-    return [
-        [
-            'courier' => 'JNE',
-            'courier_name' => 'JNE',
-            'service' => 'REG',
-            'description' => 'Layanan Reguler',
-            'cost' => 15000,
-            'formatted_cost' => 'Rp 15.000',
-            'etd' => '2-3 days',
-            'formatted_etd' => '2-3 hari',
-            'recommended' => true,
-            'type' => 'emergency',
-            'is_mock' => true
-        ]
-    ];
-}
-
-    // Keep ALL other methods exactly the same as working version
-    private function getMockDestinations($search)
-    {
-        $mockDestinations = [];
-        
-        $searchLower = strtolower($search);
-        
-        if (strpos($searchLower, 'jakarta') !== false) {
-            $mockDestinations = [
-                [
-                    'location_id' => 'mock_jkt_001',
-                    'subdistrict_name' => 'Menteng',
-                    'district_name' => 'Menteng',
-                    'city_name' => 'Jakarta Pusat',
-                    'province_name' => 'DKI Jakarta',
-                    'zip_code' => '10310',
-                    'label' => 'Menteng, Jakarta Pusat, DKI Jakarta 10310',
-                    'display_name' => 'Menteng, Jakarta Pusat',
-                    'full_address' => 'Menteng, Jakarta Pusat, DKI Jakarta 10310'
-                ],
-                [
-                    'location_id' => 'mock_jkt_002',
-                    'subdistrict_name' => 'Kebayoran Lama',
-                    'district_name' => 'Kebayoran Lama',
-                    'city_name' => 'Jakarta Selatan',
-                    'province_name' => 'DKI Jakarta',
-                    'zip_code' => '12240',
-                    'label' => 'Kebayoran Lama, Jakarta Selatan, DKI Jakarta 12240',
-                    'display_name' => 'Kebayoran Lama, Jakarta Selatan',
-                    'full_address' => 'Kebayoran Lama, Jakarta Selatan, DKI Jakarta 12240'
-                ]
-            ];
-        } elseif (strpos($searchLower, 'bandung') !== false) {
-            $mockDestinations = [
-                [
-                    'location_id' => 'mock_bdg_001',
-                    'subdistrict_name' => 'Sukasari',
-                    'district_name' => 'Sukasari',
-                    'city_name' => 'Bandung',
-                    'province_name' => 'Jawa Barat',
-                    'zip_code' => '40164',
-                    'label' => 'Sukasari, Bandung, Jawa Barat 40164',
-                    'display_name' => 'Sukasari, Bandung',
-                    'full_address' => 'Sukasari, Bandung, Jawa Barat 40164'
-                ]
-            ];
-        } elseif (strpos($searchLower, 'surabaya') !== false) {
-            $mockDestinations = [
-                [
-                    'location_id' => 'mock_sby_001',
-                    'subdistrict_name' => 'Gubeng',
-                    'district_name' => 'Gubeng',
-                    'city_name' => 'Surabaya',
-                    'province_name' => 'Jawa Timur',
-                    'zip_code' => '60281',
-                    'label' => 'Gubeng, Surabaya, Jawa Timur 60281',
-                    'display_name' => 'Gubeng, Surabaya',
-                    'full_address' => 'Gubeng, Surabaya, Jawa Timur 60281'
-                ]
-            ];
-        }
-        
-        if (empty($mockDestinations)) {
-            $mockDestinations = [
-                [
-                    'location_id' => 'mock_generic_001',
-                    'subdistrict_name' => ucfirst($search),
-                    'district_name' => ucfirst($search),
-                    'city_name' => ucfirst($search),
-                    'province_name' => 'Indonesia',
-                    'zip_code' => '10000',
-                    'label' => ucfirst($search) . ', Indonesia 10000',
-                    'display_name' => ucfirst($search),
-                    'full_address' => ucfirst($search) . ', Indonesia 10000'
-                ]
-            ];
-        }
-        
-        Log::info('Returning mock destinations for search: ' . $search, [
-            'count' => count($mockDestinations)
-        ]);
-        
-        return response()->json([
-            'success' => true,
-            'total' => count($mockDestinations),
-            'data' => $mockDestinations,
-            'note' => 'Mock data - API not available'
-        ]);
-    }
 
     private function getOriginIdFromEnv()
     {
@@ -1805,117 +1449,7 @@ private function getEmergencyShippingOptions()
         return $originCityIdFallback;
     }
 
-    private function calculateRealShipping($originId, $destinationId, $weight)
-    {
-        $couriers = ['jne'];
-        $shippingOptions = [];
 
-        $endpoints = ['/cost', '/shipping/cost', '/destination/cost', '/calculate'];
-        
-        foreach ($endpoints as $endpoint) {
-            try {
-                $response = Http::timeout(15)->withHeaders([
-                    'key' => $this->rajaOngkirApiKey
-                ])->post($this->rajaOngkirBaseUrl . $endpoint, [
-                    'origin' => $originId,
-                    'destination' => $destinationId,
-                    'weight' => $weight,
-                    'courier' => 'jne'
-                ]);
-
-                if ($response->successful()) {
-                    $data = $response->json();
-                    
-                    Log::info("Found working cost endpoint: {$endpoint} for JNE courier");
-                    
-                    $parsed = $this->parseShippingResponse($data, 'jne');
-                    $shippingOptions = array_merge($shippingOptions, $parsed);
-                }
-            } catch (\Exception $e) {
-                continue;
-            }
-            
-            if (!empty($shippingOptions)) {
-                break;
-            }
-        }
-
-        return $shippingOptions;
-    }
-
-    private function parseShippingResponse($data, $courier)
-    {
-        return [];
-    }
-
-    private function getMockShippingOptions($weight, $destinationLabel = '')
-    {
-        $basePrice = max(10000, $weight * 5);
-        
-        $distanceFactor = 1;
-        $originCity = env('STORE_ORIGIN_CITY_NAME', 'jakarta');
-        
-        if (stripos($destinationLabel, strtolower($originCity)) !== false) {
-            $distanceFactor = 1;
-        } elseif (stripos($destinationLabel, 'jakarta') !== false && stripos($originCity, 'jakarta') !== false) {
-            $distanceFactor = 1;
-        } elseif (stripos($destinationLabel, 'bandung') !== false || stripos($destinationLabel, 'jawa barat') !== false) {
-            $distanceFactor = 1.2;
-        } elseif (stripos($destinationLabel, 'surabaya') !== false || stripos($destinationLabel, 'jawa timur') !== false) {
-            $distanceFactor = 1.5;
-        } elseif (stripos($destinationLabel, 'medan') !== false || stripos($destinationLabel, 'sumatera') !== false) {
-            $distanceFactor = 2;
-        } else {
-            $distanceFactor = 1.8;
-        }
-        
-        $adjustedPrice = $basePrice * $distanceFactor;
-
-        return [
-            [
-                'courier' => 'JNE',
-                'courier_name' => 'Jalur Nugraha Ekakurir (JNE)',
-                'service' => 'REG',
-                'description' => 'Layanan Reguler',
-                'cost' => (int) $adjustedPrice,
-                'etd' => '2-3',
-                'formatted_cost' => 'Rp ' . number_format($adjustedPrice, 0, ',', '.'),
-                'formatted_etd' => '2-3 hari',
-                'is_mock' => true,
-                'type' => 'mock',
-                'origin_info' => env('STORE_ORIGIN_CITY_NAME', 'jakarta'),
-                'recommended' => true
-            ],
-            [
-                'courier' => 'JNE',
-                'courier_name' => 'Jalur Nugraha Ekakurir (JNE)',
-                'service' => 'YES',
-                'description' => 'Yakin Esok Sampai',
-                'cost' => (int) ($adjustedPrice * 1.8),
-                'etd' => '1',
-                'formatted_cost' => 'Rp ' . number_format($adjustedPrice * 1.8, 0, ',', '.'),
-                'formatted_etd' => '1 hari',
-                'is_mock' => true,
-                'type' => 'mock',
-                'origin_info' => env('STORE_ORIGIN_CITY_NAME', 'jakarta'),
-                'recommended' => false
-            ],
-            [
-                'courier' => 'JNE',
-                'courier_name' => 'Jalur Nugraha Ekakurir (JNE)',
-                'service' => 'OKE',
-                'description' => 'Ongkos Kirim Ekonomis',
-                'cost' => (int) ($adjustedPrice * 0.8),
-                'etd' => '3-4',
-                'formatted_cost' => 'Rp ' . number_format($adjustedPrice * 0.8, 0, ',', '.'),
-                'formatted_etd' => '3-4 hari',
-                'is_mock' => true,
-                'type' => 'mock',
-                'origin_info' => env('STORE_ORIGIN_CITY_NAME', 'jakarta'),
-                'recommended' => false
-            ]
-        ];
-    }
 
     private function getProvinces()
     {
@@ -1977,35 +1511,6 @@ private function getEmergencyShippingOptions()
         }
 
         return $cities;
-    }
-
-    private function autoSortShippingOptions($options)
-    {
-        usort($options, function($a, $b) {
-            if ($a['recommended'] && !$b['recommended']) return -1;
-            if (!$a['recommended'] && $b['recommended']) return 1;
-            
-            $etdA = $this->parseEtd($a['etd']);
-            $etdB = $this->parseEtd($b['etd']);
-            
-            if ($etdA !== $etdB) {
-                return $etdA <=> $etdB;
-            }
-            
-            return $a['cost'] <=> $b['cost'];
-        });
-        
-        return $options;
-    }
-
-    private function parseEtd($etd)
-    {
-        if (strpos($etd, '-') !== false) {
-            $parts = explode('-', $etd);
-            return (intval($parts[0]) + intval($parts[1])) / 2;
-        }
-        
-        return intval($etd);
     }
 
     // Keep ALL payment methods exactly the same as working version

@@ -184,73 +184,113 @@ class RajaOngkirService
 public function calculateShipping($originId, $destinationId, $weight, $courier = 'jne')
 {
     try {
-        Log::info('🚢 JNE shipping calculation with working endpoint', [
+        Log::info('🚢 RajaOngkir Service shipping calculation (FIXED)', [
             'origin' => $originId,
             'destination' => $destinationId,
             'weight' => $weight,
-            'courier' => 'JNE ONLY',
+            'courier' => $courier,
             'endpoint' => '/calculate/domestic-cost'
         ]);
 
         // Ensure weight is at least 1000g (1kg minimum)
         $weight = max(1000, (int) $weight);
 
-        // FIXED: Use the correct working endpoint with form data - JNE ONLY
-        $response = Http::timeout(15)
+        // FIXED: Use the exact same format as successful tinker test
+        $response = Http::asForm()
             ->withHeaders([
                 'accept' => 'application/json',
-                'content-type' => 'application/x-www-form-urlencoded',
                 'key' => $this->apiKey
             ])
-            ->asForm()
+            ->timeout(15)
             ->post($this->baseUrl . '/calculate/domestic-cost', [
-                'origin' => (string) $originId,
-                'destination' => (string) $destinationId,
+                'origin' => $originId,
+                'destination' => $destinationId,
                 'weight' => $weight,
-                'courier' => 'jne'  // HARDCODED JNE
+                'courier' => 'jne'  // Fixed to JNE only for now
             ]);
 
-        Log::info("📡 JNE API response", [
+        Log::info("📡 Service API response", [
             'status' => $response->status(),
             'successful' => $response->successful()
         ]);
 
         if ($response->successful()) {
             $data = $response->json();
-            Log::info("✅ JNE API response received", [
+            Log::info("✅ Service API response received", [
                 'has_data' => isset($data['data']),
-                'response_structure' => array_keys($data ?? [])
+                'response_structure' => array_keys($data ?? []),
+                'data_count' => isset($data['data']) ? count($data['data']) : 0
             ]);
             
-            // Parse the JNE response
-            $jneOptions = $this->parseJNEShippingResponse($data);
+            // Parse the response using the correct format
+            $shippingOptions = $this->parseShippingResponseFixed($data);
             
-            if (!empty($jneOptions)) {
-                Log::info("🎯 Found " . count($jneOptions) . " JNE shipping options from API");
-                return $jneOptions;
+            if (!empty($shippingOptions)) {
+                Log::info("🎯 Service found " . count($shippingOptions) . " shipping options");
+                return $shippingOptions;
             } else {
-                Log::warning("⚠️ No JNE options found in API response");
+                Log::warning("❌ Service parsed no shipping options from response");
+                return [];
             }
         } else {
-            Log::warning("❌ JNE API request failed", [
+            Log::error("❌ Service API request failed", [
                 'status' => $response->status(),
                 'response' => $response->body()
             ]);
+            return [];
         }
-
-        // If API fails, return empty array (will trigger JNE mock fallback)
-        return [];
-
     } catch (\Exception $e) {
-        Log::error('❌ JNE shipping calculation exception', [
+        Log::error('❌ Service shipping calculation error', [
             'error' => $e->getMessage(),
             'origin' => $originId,
             'destination' => $destinationId
         ]);
-        
-        // Return empty array instead of throwing exception
         return [];
     }
+}
+
+/**
+ * Parse shipping response with the correct format from /calculate/domestic-cost
+ * Response format: {"meta": {...}, "data": [{"name": "...", "code": "jne", "service": "...", "description": "...", "cost": 10000, "etd": "1 day"}]}
+ */
+private function parseShippingResponseFixed($data)
+{
+    $options = [];
+    
+    try {
+        if (isset($data['data']) && is_array($data['data'])) {
+            foreach ($data['data'] as $option) {
+                $options[] = [
+                    'courier' => strtoupper($option['code'] ?? 'JNE'),
+                    'courier_name' => $option['name'] ?? 'Jalur Nugraha Ekakurir (JNE)',
+                    'service' => $option['service'] ?? 'Unknown',
+                    'description' => $option['description'] ?? $option['service'] ?? 'Shipping Service',
+                    'cost' => (int) ($option['cost'] ?? 0),
+                    'formatted_cost' => 'Rp ' . number_format($option['cost'] ?? 0, 0, ',', '.'),
+                    'etd' => $option['etd'] ?? 'N/A',
+                    'formatted_etd' => $option['etd'] ?? 'N/A',
+                    'recommended' => false,
+                    'type' => 'api',
+                    'is_mock' => false
+                ];
+            }
+        }
+        
+        Log::info('🎯 Service parsed ' . count($options) . ' shipping options', [
+            'sample_options' => array_map(function($opt) {
+                return $opt['service'] . ' - Rp ' . number_format($opt['cost']);
+            }, array_slice($options, 0, 3))
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Error parsing shipping response', [
+            'error' => $e->getMessage(),
+            'data_structure' => is_array($data) ? array_keys($data) : 'not_array',
+            'data_sample' => is_array($data) ? json_encode(array_slice($data, 0, 2)) : substr(json_encode($data), 0, 200)
+        ]);
+    }
+    
+    return $options;
 }
 private function parseJNEShippingResponse($data)
 {
