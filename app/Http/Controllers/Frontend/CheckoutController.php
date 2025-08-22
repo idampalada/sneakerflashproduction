@@ -1179,7 +1179,8 @@ private function getWebErrorMessage($statusCode)
     /**
      * CRITICAL FIX: Store method with VOUCHER integration that works
      */
-    public function store(Request $request)
+
+public function store(Request $request)
 {
     Log::info('Checkout request received with points support', [
         'payment_method' => $request->payment_method,
@@ -1197,7 +1198,7 @@ private function getWebErrorMessage($statusCode)
         'phone' => 'required|string|max:20',
         'birthdate' => 'nullable|date|before:today',
         
-        // Address fields (keep existing)...
+        // Address fields
         'saved_address_id' => 'nullable|string',
         'address_label' => 'required_without:saved_address_id|nullable|in:Kantor,Rumah',
         'recipient_name' => 'required|string|max:255',
@@ -1213,16 +1214,23 @@ private function getWebErrorMessage($statusCode)
         'shipping_cost' => 'required|numeric|min:0',
         'payment_method' => 'required|in:bank_transfer,credit_card,ewallet',
         
-        // Voucher fields (keep existing)
+        // Voucher fields
         'applied_voucher_code' => 'nullable|string|max:50',
         'applied_voucher_discount' => 'nullable|numeric|min:0',
         
-        // Points fields - NEW
+        // Points fields
         'points_used' => 'nullable|integer|min:0',
         'points_discount' => 'nullable|numeric|min:0',
         
         'privacy_accepted' => 'required|boolean',
     ]);
+    
+    // CRITICAL FIX: Initialize ALL variables at the start
+    $pointsUsed = 0;
+    $pointsDiscount = 0;
+    $user = Auth::user();
+    $orderNumber = null;
+    $order = null;
     
     try {
         DB::beginTransaction();
@@ -1242,7 +1250,7 @@ private function getWebErrorMessage($statusCode)
         $subtotal = $cartItems->sum('subtotal');
         $shippingCost = (float) $request->shipping_cost;
         
-        // VOUCHER HANDLING (keep existing logic)
+        // VOUCHER HANDLING
         $discountAmount = 0;
         $voucherInfo = null;
 
@@ -1265,11 +1273,7 @@ private function getWebErrorMessage($statusCode)
             }
         }
         
-        // POINTS HANDLING - NEW
-        $pointsUsed = 0;
-        $pointsDiscount = 0;
-        $user = Auth::user();
-
+        // POINTS HANDLING - FIXED: Proper initialization
         if ($request->get('points_used') && $request->get('points_discount')) {
             $pointsUsed = (int) $request->get('points_used');
             $pointsDiscount = (float) $request->get('points_discount');
@@ -1301,11 +1305,11 @@ private function getWebErrorMessage($statusCode)
             'points_used' => $pointsUsed
         ]);
 
-        // Keep existing user and address handling...
+        // Handle user and address
         $user = $this->handleUserAccountCreationOrUpdate($request);
         $addressData = $this->handleAddressData($request, $user);
 
-        // Generate order number (keep existing)
+        // Generate order number
         do {
             $orderNumber = 'SF-' . date('Ymd') . '-' . strtoupper(Str::random(6));
         } while (Order::where('order_number', $orderNumber)->exists());
@@ -1361,9 +1365,7 @@ private function getWebErrorMessage($statusCode)
                     'birthdate' => $request->birthdate ?? null,
                     'newsletter_subscribe' => $request->newsletter_subscribe ?? false,
                 ],
-                // VOUCHER info (keep existing)
                 'voucher_info' => $voucherInfo,
-                // POINTS info - NEW
                 'points_info' => [
                     'points_used' => $pointsUsed,
                     'points_discount' => $pointsDiscount,
@@ -1394,7 +1396,7 @@ private function getWebErrorMessage($statusCode)
             'updated_at' => now()
         ];
 
-        // Filter existing columns (keep existing logic)
+        // Filter existing columns
         $existingColumns = [
             'order_number', 'user_id', 'customer_name', 'customer_email', 'customer_phone',
             'status', 'subtotal', 'tax_amount', 'shipping_cost', 'discount_amount', 
@@ -1423,7 +1425,7 @@ private function getWebErrorMessage($statusCode)
 
         $order = Order::create($filteredOrderData);
 
-        // Create order items (keep existing logic)
+        // Create order items
         foreach ($cartItems as $item) {
             $product = Product::lockForUpdate()->find($item['id']);
             
@@ -1444,11 +1446,10 @@ private function getWebErrorMessage($statusCode)
             $product->decrement('stock_quantity', $item['quantity']);
         }
 
-        // DEDUCT POINTS FROM USER - NEW
+        // DEDUCT POINTS FROM USER
         if ($pointsUsed > 0 && $user) {
             $user->decrement('points_balance', $pointsUsed);
             
-            // You can add points transaction logging here if you have that table
             Log::info('Points deducted from user', [
                 'user_id' => $user->id,
                 'points_used' => $pointsUsed,
@@ -1476,62 +1477,114 @@ private function getWebErrorMessage($statusCode)
             'user_id' => $user ? $user->id : null,
         ]);
 
-        // Create Midtrans payment (keep existing logic but update for points)
-        $midtrans = $this->createMidtransPayment($order, $cartItems, $request);
+        // Create Midtrans payment
+$midtrans = $this->createMidtransPayment($order, $cartItems, $request);
 
-        if ($midtrans && isset($midtrans['token'])) {
-            $snapToken = $midtrans['token'];
-            $redirectUrl = $midtrans['redirect_url'] ?? null;
+if ($midtrans && (isset($midtrans['token']) || isset($midtrans['force_hosted']))) {
+    
+    // Handle successful token creation
+    if (isset($midtrans['token'])) {
+        $snapToken = $midtrans['token'];
+        $redirectUrl = $midtrans['redirect_url'] ?? null;
+        $preferHosted = $midtrans['prefer_hosted'] ?? false;
+        $forceHosted = $midtrans['force_hosted'] ?? false;
+        $networkInfo = $midtrans['network_info'] ?? null;
 
-            $order->update([
+        $order->update([
+            'snap_token' => $snapToken,
+            'payment_url' => $redirectUrl,
+        ]);
+
+        Log::info('Midtrans token created successfully with enhanced handling', [
+            'order_number' => $order->order_number,
+            'snap_token_length' => strlen($snapToken),
+            'final_amount' => $totalAmount,
+            'points_discount_applied' => $pointsDiscount,
+            'prefer_hosted' => $preferHosted,
+            'force_hosted' => $forceHosted,
+            'has_redirect_url' => !empty($redirectUrl),
+            'network_can_load_popup' => $networkInfo['can_load_popup'] ?? 'unknown'
+        ]);
+
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Order created successfully. Opening payment gateway...',
+                'order_number' => $order->order_number,
+                'customer_name' => $order->customer_name,
                 'snap_token' => $snapToken,
-                'payment_url' => $redirectUrl,
+                'redirect_url' => $redirectUrl ?: route('checkout.payment', ['orderNumber' => $order->order_number]),
+                'prefer_hosted' => $preferHosted,     // 🆕 Network detection signal
+                'force_hosted' => $forceHosted,       // 🆕 Force hosted flag
+                'network_info' => $networkInfo,       // 🆕 Network information
+                'fallback_strategy' => $preferHosted ? 'hosted_payment' : 'popup_with_fallback'
             ]);
-
-            Log::info('Midtrans token created successfully with points support', [
-                'order_number' => $order->order_number,
-                'snap_token_length' => strlen($snapToken),
-                'final_amount' => $totalAmount,
-                'points_discount_applied' => $pointsDiscount
-            ]);
-
-            if ($request->ajax() || $request->expectsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Order created successfully. Opening payment gateway...',
-                    'order_number' => $order->order_number,
-                    'customer_name' => $order->customer_name,
-                    'snap_token' => $snapToken,
-                    'redirect_url' => $redirectUrl ?: route('checkout.payment', ['orderNumber' => $order->order_number]),
-                ]);
-            }
-
-            return redirect()
-                ->route('checkout.payment', ['orderNumber' => $order->order_number])
-                ->with('snap_token', $snapToken);
-        } else {
-            Log::error('Failed to create Midtrans token with points support', [
-                'order_number' => $order->order_number,
-                'payment_method' => $request->payment_method,
-                'total_amount' => $totalAmount
-            ]);
-
-            if ($request->ajax() || $request->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Failed to create payment session. Please try again or contact support.',
-                    'order_number' => $order->order_number
-                ], 500);
-            }
-
-            return redirect()->route('checkout.success', ['orderNumber' => $order->order_number])
-                           ->with('error', 'Order created but payment session failed. Please contact support.');
         }
+
+        return redirect()
+            ->route('checkout.payment', ['orderNumber' => $order->order_number])
+            ->with('snap_token', $snapToken)
+            ->with('prefer_hosted', $preferHosted)
+            ->with('force_hosted', $forceHosted);
+            
+    } 
+    // Handle fallback scenarios (no token but has fallback info)
+    elseif (isset($midtrans['force_hosted']) && $midtrans['force_hosted']) {
+        $errorMessage = $midtrans['error'] ?? 'Payment gateway temporarily unavailable';
+        $fallbackUrl = $midtrans['fallback_url'] ?? route('checkout.payment', ['orderNumber' => $order->order_number]);
+        
+        Log::warning('Midtrans token creation failed, using fallback strategy', [
+            'order_number' => $order->order_number,
+            'error' => $errorMessage,
+            'fallback_url' => $fallbackUrl,
+            'prefer_hosted' => $midtrans['prefer_hosted'] ?? true
+        ]);
+
+        if ($request->ajax() || $request->expectsJson()) {
+            return response()->json([
+                'success' => true, // Still success because order was created
+                'message' => 'Order created successfully. Redirecting to secure payment page...',
+                'order_number' => $order->order_number,
+                'customer_name' => $order->customer_name,
+                'snap_token' => null,
+                'redirect_url' => $fallbackUrl,
+                'prefer_hosted' => true,
+                'force_hosted' => true,
+                'fallback_strategy' => 'hosted_payment_only',
+                'warning' => 'Using secure payment page due to connectivity'
+            ]);
+        }
+
+        return redirect($fallbackUrl)
+               ->with('warning', 'Payment gateway opened in secure mode. Your order has been created successfully.');
+    }
+    
+} else {
+    // Complete failure - no token and no fallback
+    Log::error('Complete Midtrans payment creation failure', [
+        'order_number' => $order->order_number,
+        'payment_method' => $request->payment_method,
+        'total_amount' => $totalAmount,
+        'midtrans_response' => $midtrans
+    ]);
+
+    if ($request->ajax() || $request->expectsJson()) {
+        return response()->json([
+            'success' => false,
+            'error' => 'Failed to create payment session. Please try again or contact support.',
+            'order_number' => $order->order_number,
+            'fallback_url' => route('checkout.payment', ['orderNumber' => $order->order_number])
+        ], 500);
+    }
+
+    return redirect()->route('checkout.success', ['orderNumber' => $order->order_number])
+                   ->with('error', 'Order created but payment session failed. Please contact support to complete payment.');
+}
 
     } catch (\Exception $e) {
         DB::rollback();
         
-        // REFUND POINTS IF ORDER FAILED - NEW
+        // REFUND POINTS IF ORDER FAILED - Variables are now properly initialized
         if ($pointsUsed > 0 && $user) {
             $user->increment('points_balance', $pointsUsed);
             Log::info('Points refunded due to order failure', [
@@ -1747,14 +1800,16 @@ private function getWebErrorMessage($statusCode)
     /**
      * CRITICAL FIX: Create Midtrans payment with VOUCHER support that works
      */
-    private function createMidtransPayment($order, $cartItems, $request)
+private function createMidtransPayment($order, $cartItems, $request)
 {
     try {
-        Log::info('Creating Midtrans payment session with points support', [
+        Log::info('Creating Midtrans payment session with enhanced fallback', [
             'order_number' => $order->order_number,
             'total_amount' => $order->total_amount,
             'discount_amount' => $order->discount_amount ?? 0,
             'payment_method' => $request->payment_method,
+            'user_agent' => $request->userAgent(),
+            'ip_address' => $request->ip()
         ]);
 
         // Prepare item details (keep existing logic)
@@ -1809,6 +1864,8 @@ private function getWebErrorMessage($statusCode)
         }
         
         // Add points discount as negative item - NEW
+        $pointsDiscount = 0;
+        $pointsUsed = 0;
         if ($order->meta_data) {
             $metaData = json_decode($order->meta_data, true);
             $pointsDiscount = (float) ($metaData['points_info']['points_discount'] ?? 0);
@@ -1840,10 +1897,12 @@ private function getWebErrorMessage($statusCode)
         if ($calculatedSum !== $expectedTotal) {
             $difference = $expectedTotal - $calculatedSum;
             
-            Log::warning('Midtrans amounts mismatch with points, adding adjustment', [
+            Log::warning('Midtrans amounts mismatch, adding adjustment', [
                 'difference' => $difference,
                 'calculated_sum' => $calculatedSum,
-                'expected_total' => $expectedTotal
+                'expected_total' => $expectedTotal,
+                'voucher_discount' => $discountAmount,
+                'points_discount' => $pointsDiscount
             ]);
             
             $itemDetails[] = [
@@ -1892,45 +1951,92 @@ private function getWebErrorMessage($statusCode)
             'item_details' => $itemDetails
         ];
 
-        Log::info('Calling MidtransService with points-enabled payload', [
+        Log::info('Calling enhanced MidtransService', [
             'order_number' => $order->order_number,
             'gross_amount' => (int) $order->total_amount,
             'item_details_count' => count($itemDetails),
             'has_voucher_discount' => $discountAmount > 0,
-            'has_points_discount' => isset($metaData) && ($metaData['points_info']['points_discount'] ?? 0) > 0
+            'has_points_discount' => $pointsDiscount > 0,
+            'total_discounts' => $discountAmount + $pointsDiscount
         ]);
 
-        // Use MidtransService
+        // Use enhanced MidtransService
         $response = $this->midtransService->createSnapToken($midtransPayload);
         
-        if (isset($response['token'])) {
-            Log::info('Midtrans Snap token created successfully with points support', [
+        // ENHANCED: Handle new response format with network detection
+        if (isset($response['success']) && $response['success'] && isset($response['token'])) {
+            $preferHosted = $response['prefer_hosted'] ?? false;
+            $networkInfo = $response['network_info'] ?? null;
+            
+            Log::info('Midtrans Snap token created successfully with enhanced features', [
                 'order_number' => $order->order_number,
                 'token_length' => strlen($response['token']),
-                'total_discounts' => $discountAmount + ($metaData['points_info']['points_discount'] ?? 0)
+                'total_discounts' => $discountAmount + $pointsDiscount,
+                'prefer_hosted' => $preferHosted,
+                'network_response_time' => $networkInfo['response_time_ms'] ?? 'unknown',
+                'can_load_popup' => $networkInfo['can_load_popup'] ?? 'unknown'
             ]);
 
             return [
                 'token' => $response['token'],
                 'redirect_url' => $response['redirect_url'] ?? null,
+                'prefer_hosted' => $preferHosted,
+                'network_info' => $networkInfo,
+                'force_hosted' => $preferHosted // Signal untuk frontend
             ];
-        } else {
-            Log::error('MidtransService returned no token', [
+            
+        } elseif (isset($response['token'])) {
+            // Backward compatibility - old response format
+            Log::info('Midtrans Snap token created (legacy format)', [
                 'order_number' => $order->order_number,
-                'response' => $response
+                'token_length' => strlen($response['token']),
+                'total_discounts' => $discountAmount + $pointsDiscount
             ]);
-            return null;
+
+            return [
+                'token' => $response['token'],
+                'redirect_url' => $response['redirect_url'] ?? null,
+                'prefer_hosted' => false, // Default untuk legacy
+                'force_hosted' => false
+            ];
+            
+        } else {
+            // Error in token creation
+            $errorMessage = $response['error'] ?? 'Unknown error creating payment token';
+            $preferHosted = $response['prefer_hosted'] ?? true;
+            
+            Log::error('MidtransService token creation failed', [
+                'order_number' => $order->order_number,
+                'error' => $errorMessage,
+                'prefer_hosted' => $preferHosted,
+                'full_response' => $response
+            ]);
+            
+            // Return fallback info for hosted payment
+            return [
+                'error' => $errorMessage,
+                'prefer_hosted' => $preferHosted,
+                'force_hosted' => true,
+                'fallback_url' => route('checkout.payment', ['orderNumber' => $order->order_number])
+            ];
         }
 
     } catch (\Exception $e) {
-        Log::error('Exception in Midtrans payment creation with points support', [
+        Log::error('Exception in enhanced Midtrans payment creation', [
             'order_number' => $order->order_number ?? 'unknown',
             'error' => $e->getMessage(),
             'error_line' => $e->getLine(),
             'error_file' => $e->getFile(),
+            'trace' => $e->getTraceAsString()
         ]);
         
-        return null;
+        // Return fallback for exceptions
+        return [
+            'error' => 'Payment system temporarily unavailable: ' . $e->getMessage(),
+            'prefer_hosted' => true,
+            'force_hosted' => true,
+            'fallback_url' => route('checkout.payment', ['orderNumber' => $order->order_number ?? 'unknown'])
+        ];
     }
 }
 
@@ -2098,25 +2204,18 @@ private function getWebErrorMessage($statusCode)
         return view('frontend.checkout.payment', compact('order', 'snapToken'));
     }
 
-    public function paymentSuccess(Request $request)
+public function paymentSuccess(Request $request)
 {
     $orderNumber = $request->get('order_id');
     
+    Log::info('PaymentSuccess callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
     if ($orderNumber) {
-        $order = Order::where('order_number', $orderNumber)->first();
-        
-        if ($order && $order->status === 'pending') {
-            // Update order status to paid
-            $order->update(['status' => 'paid']);
-            
-            // Log successful payment
-            Log::info('Payment successful via callback', [
-                'order_number' => $orderNumber,
-                'order_id' => $order->id,
-                'user_id' => $order->user_id,
-                'amount' => $order->total_amount
-            ]);
-        }
+        // ✅ PERBAIKAN: JANGAN langsung update ke paid
+        // Biarkan webhook yang handle update status
         
         return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
                        ->with('success', 'Payment completed! We are processing your order.');
@@ -2125,16 +2224,23 @@ private function getWebErrorMessage($statusCode)
     return redirect()->route('home')->with('success', 'Payment completed successfully!');
 }
 
-    public function paymentPending(Request $request)
+public function paymentPending(Request $request)
 {
     $orderNumber = $request->get('order_id');
     
+    Log::info('PaymentPending callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
     if ($orderNumber) {
+        // ✅ JANGAN update status, biarkan webhook yang handle
+        
         return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
                        ->with('warning', 'Payment is being processed. You will receive confirmation shortly.');
     }
     
-    return redirect()->route('home')->with('warning', 'Payment is being processed.');
+    return redirect()->route('home')->with('warning', 'Payment pending.');
 }
 
     public function paymentError(Request $request)
@@ -2174,17 +2280,24 @@ private function getWebErrorMessage($statusCode)
         return redirect()->route('home')->with('success', 'Payment completed successfully!');
     }
 
-    public function paymentUnfinish(Request $request)
-    {
-        $orderNumber = $request->get('order_id');
+public function paymentUnfinish(Request $request)
+{
+    $orderNumber = $request->get('order_id');
+    
+    Log::info('PaymentUnfinish callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
+    if ($orderNumber) {
+        // ✅ JANGAN update status, biarkan webhook yang handle
         
-        if ($orderNumber) {
-            return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
-                           ->with('warning', 'Payment was not completed. You can retry payment anytime.');
-        }
-        
-        return redirect()->route('home')->with('warning', 'Payment pending.');
+        return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
+                       ->with('warning', 'Payment was not completed. You can retry payment anytime from your order page.');
     }
+    
+    return redirect()->route('home')->with('warning', 'Payment was not completed.');
+}
 
     public function getPaymentStatus($orderNumber)
     {

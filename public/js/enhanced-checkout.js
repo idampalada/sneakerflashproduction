@@ -956,10 +956,14 @@ function selectLocation(location) {
         "postal_code",
         location.zip_code || location.postal_code || ""
     );
-    fillFieldIfEmpty(
-        "destination_id",
-        location.location_id || location.destination_id || ""
-    );
+
+    // ✅ FIXED: Gunakan properti ID yang benar dari API response
+    // Berdasarkan log, kemungkinan besar properti yang benar adalah 'id'
+    const destinationId =
+        location.id || location.location_id || location.destination_id || "";
+    fillFieldIfEmpty("destination_id", destinationId);
+
+    console.log("🎯 Destination ID set:", destinationId); // TAMBAHAN: Debug log
 
     // Fill legacy fields for backward compatibility
     fillFieldIfEmpty(
@@ -971,16 +975,20 @@ function selectLocation(location) {
         location.full_address || location.label || ""
     );
 
-    // Update selectedDestination for shipping calculation
-    selectedDestination = location;
+    // ✅ FIXED: Update selectedDestination dengan ID yang benar
+    selectedDestination = {
+        ...location,
+        destination_id: destinationId, // TAMBAHAN: Pastikan destination_id tersedia
+        location_id: destinationId, // TAMBAHAN: Fallback untuk kompatibilitas
+    };
 
     // Display selected location
-    const selectedLocation = document.getElementById("selected-location");
+    const selectedLocationDiv = document.getElementById("selected-location");
     const selectedLocationText = document.getElementById(
         "selected-location-text"
     );
 
-    if (selectedLocation && selectedLocationText) {
+    if (selectedLocationDiv && selectedLocationText) {
         selectedLocationText.textContent =
             location.full_address ||
             location.label ||
@@ -989,7 +997,7 @@ function selectLocation(location) {
                 location.city_name +
                 ", " +
                 location.province_name;
-        selectedLocation.classList.remove("hidden");
+        selectedLocationDiv.classList.remove("hidden");
     }
 
     // Hide search results
@@ -1108,8 +1116,21 @@ function setupEventListeners() {
 
 // ENHANCED: Step 2 validation with better error handling
 function validateStep2Enhanced() {
+    console.log("🔍 Enhanced Step 2 validation starting...");
+
     let isValid = true;
     const errors = [];
+
+    // Remove existing error messages first
+    const existingError = document.getElementById("step2-errors");
+    if (existingError) {
+        existingError.remove();
+    }
+
+    // Clear previous error styling
+    document.querySelectorAll(".border-red-500").forEach((el) => {
+        el.classList.remove("border-red-500");
+    });
 
     // Check if using saved address or new address
     const savedAddressInput = document.querySelector(
@@ -1117,22 +1138,26 @@ function validateStep2Enhanced() {
     );
 
     if (!savedAddressInput) {
-        // No address selection made
-        errors.push("Please select an address or add a new address");
-        isValid = false;
+        // No address selection made - this means customer wants to add new address
+        console.log("No saved address selected - validating new address");
+        isValid = validateNewAddressForm(errors);
     } else if (savedAddressInput.value === "new") {
-        // New address selected, validate new address form
+        // New address explicitly selected
+        console.log("New address explicitly selected");
         isValid = validateNewAddressForm(errors);
     } else {
         // Saved address selected, ensure it's loaded
+        console.log("Saved address selected:", savedAddressInput.value);
         isValid = validateSavedAddressSelection(errors);
     }
 
     if (!isValid) {
         showValidationErrors(errors);
+        return false;
     }
 
-    return isValid;
+    console.log("✅ Step 2 validation passed");
+    return true;
 }
 
 function validateNewAddressForm(errors) {
@@ -1147,42 +1172,56 @@ function validateNewAddressForm(errors) {
         { id: "city_name", name: "City" },
         { id: "subdistrict_name", name: "Subdistrict" },
         { id: "postal_code", name: "Postal Code" },
+        { id: "destination_id", name: "Destination ID" },
     ];
 
     requiredFields.forEach((field) => {
         const element = document.getElementById(field.id);
         if (!element || !element.value.trim()) {
-            errors.push(field.name + " is required");
+            // For location fields, give more specific error message
+            if (
+                [
+                    "province_name",
+                    "city_name",
+                    "subdistrict_name",
+                    "postal_code",
+                    "destination_id",
+                ].includes(field.id)
+            ) {
+                if (
+                    !errors.includes(
+                        "Please select a delivery location from the search results"
+                    )
+                ) {
+                    errors.push(
+                        "Please select a delivery location from the search results"
+                    );
+                }
+            } else {
+                errors.push(field.name + " is required");
+            }
             isValid = false;
 
             // Add error styling
             if (element) {
                 element.classList.add("border-red-500");
-                element.addEventListener(
-                    "input",
-                    function () {
-                        this.classList.remove("border-red-500");
-                    },
-                    { once: true }
-                );
             }
         }
     });
 
-    // Address label validation
-    const addressLabel = document.querySelector(
-        'input[name="address_label"]:checked'
-    );
-    if (!addressLabel) {
-        errors.push("Please select address label (Kantor or Rumah)");
-        isValid = false;
+    // Special handling for location search field
+    if (!document.getElementById("destination_id")?.value.trim()) {
+        const locationSearch = document.getElementById("location_search");
+        if (locationSearch) {
+            locationSearch.classList.add("border-red-500");
+        }
     }
 
     // Phone number format validation
     const phoneInput = document.getElementById("phone_recipient");
     if (phoneInput && phoneInput.value) {
         const phoneRegex = /^[0-9+\-\s\(\)]{10,}$/;
-        if (!phoneRegex.test(phoneInput.value)) {
+        if (!phoneRegex.test(phoneInput.value.trim())) {
             errors.push(
                 "Please enter a valid phone number (minimum 10 digits)"
             );
@@ -1195,14 +1234,90 @@ function validateNewAddressForm(errors) {
     const postalInput = document.getElementById("postal_code");
     if (postalInput && postalInput.value) {
         const postalRegex = /^[0-9]{5}$/;
-        if (!postalRegex.test(postalInput.value)) {
+        if (!postalRegex.test(postalInput.value.trim())) {
             errors.push("Postal code must be exactly 5 digits");
             isValid = false;
             postalInput.classList.add("border-red-500");
         }
     }
 
+    // Address label validation
+    const addressLabel = document.querySelector(
+        'input[name="address_label"]:checked'
+    );
+    if (!addressLabel) {
+        // Auto-set to "Rumah" if not selected
+        const rumahOption = document.querySelector(
+            'input[name="address_label"][value="Rumah"]'
+        );
+        if (rumahOption) {
+            rumahOption.checked = true;
+            if (typeof updateAddressLabelStyles === "function") {
+                updateAddressLabelStyles();
+            }
+        } else {
+            errors.push("Please select address label (Kantor or Rumah)");
+            isValid = false;
+        }
+    }
+
+    // Fill legacy fields if validation passes
+    if (isValid) {
+        fillLegacyFieldsForValidation();
+    }
+
     return isValid;
+}
+
+// Tambahkan fungsi baru ini di enhanced-checkout.js:
+function fillLegacyFieldsForValidation() {
+    console.log("🔧 Filling legacy fields for form submission...");
+
+    const streetAddress =
+        document.getElementById("street_address")?.value || "";
+    const provinceName = document.getElementById("province_name")?.value || "";
+    const cityName = document.getElementById("city_name")?.value || "";
+    const subdistrictName =
+        document.getElementById("subdistrict_name")?.value || "";
+    const postalCode = document.getElementById("postal_code")?.value || "";
+
+    // Create full address string
+    const fullAddress = `${streetAddress}, ${subdistrictName}, ${cityName}, ${provinceName} ${postalCode}`;
+    const locationString = `${subdistrictName}, ${cityName}, ${provinceName}`;
+
+    // Set legacy fields
+    setFieldValueSafe("legacy_address", fullAddress);
+    setFieldValueSafe("legacy_destination_label", locationString);
+
+    // Also set the main address fields for form submission
+    setFieldValueSafe("address", fullAddress);
+    setFieldValueSafe("destination_label", locationString);
+
+    console.log("Legacy fields filled:", {
+        address: fullAddress,
+        destination_label: locationString,
+    });
+}
+
+// Tambahkan fungsi utility ini di enhanced-checkout.js:
+function setFieldValueSafe(fieldId, value) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+        field.value = value || "";
+    } else {
+        // If field doesn't exist, create hidden input
+        const hiddenField = document.createElement("input");
+        hiddenField.type = "hidden";
+        hiddenField.id = fieldId;
+        hiddenField.name = fieldId;
+        hiddenField.value = value || "";
+
+        // Add to the form
+        const form = document.getElementById("checkout-form");
+        if (form) {
+            form.appendChild(hiddenField);
+        }
+    }
 }
 
 function validateSavedAddressSelection(errors) {
@@ -1405,10 +1520,26 @@ async function calculateShipping() {
     if (shippingOptions) shippingOptions.classList.add("hidden");
     if (loadingDiv) loadingDiv.classList.remove("hidden");
 
+    // ✅ FIXED: Pastikan destination_id terisi dengan benar
+    const destinationId =
+        selectedDestination.destination_id ||
+        selectedDestination.id ||
+        selectedDestination.location_id ||
+        document.getElementById("destination_id")?.value;
+
+    if (!destinationId) {
+        console.error("❌ No destination_id available:", selectedDestination);
+        displayShippingError(
+            "Invalid destination selected. Please select location again."
+        );
+        isCalculatingShipping = false;
+        if (loadingDiv) loadingDiv.classList.add("hidden");
+        if (shippingOptions) shippingOptions.classList.remove("hidden");
+        return;
+    }
+
     const requestData = {
-        destination_id:
-            selectedDestination.location_id ||
-            selectedDestination.destination_id,
+        destination_id: destinationId, // ✅ FIXED: Gunakan ID yang pasti valid
         destination_label:
             selectedDestination.label ||
             selectedDestination.full_address ||
@@ -1417,6 +1548,7 @@ async function calculateShipping() {
     };
 
     console.log("📦 Shipping request data:", requestData);
+    console.log("🎯 destination_id being sent:", destinationId); // TAMBAHAN: Debug log
 
     const csrfToken = document
         .querySelector('meta[name="csrf-token"]')
@@ -1832,17 +1964,22 @@ function validateAndFillAddressFields(formData) {
 
 // ✅ FIXED: Proper snap_token handling + robust fallback
 async function handleSuccessfulOrder(data, paymentMethod, redirectUrl = null) {
-    console.log("🎯 Handling successful order (NO TAX + VOUCHER):", data);
+    console.log("🎯 Handling successful order with enhanced detection:", data);
 
     const orderNumber = data.order_number;
+    const preferHosted = data.prefer_hosted || false;
+    const forceHosted = data.force_hosted || false;
+    const networkInfo = data.network_info || {};
 
     // helper redirect
     const goRedirect = (why = "fallback") => {
         console.warn(`↪️ Fallback redirect triggered (${why})`);
-        if (redirectUrl) {
-            window.location.href = redirectUrl; // Hosted payment page Midtrans
+        if (data.redirect_url) {
+            console.log("🔄 Using provided redirect URL");
+            window.location.href = data.redirect_url;
         } else if (orderNumber) {
-            window.location.href = `/checkout/payment/${orderNumber}`; // Halaman payment kita (embed snap)
+            console.log("🔄 Using order payment page");
+            window.location.href = `/checkout/payment/${orderNumber}`;
         } else {
             handleOrderError(
                 "Payment session not available. Please refresh the page."
@@ -1850,68 +1987,116 @@ async function handleSuccessfulOrder(data, paymentMethod, redirectUrl = null) {
         }
     };
 
-    try {
-        await loadMidtransScript(); // pastikan snap siap
+    // ENHANCED: Check force hosted flag
+    if (forceHosted || !data.snap_token) {
+        console.log("🔄 Force hosted payment mode", {
+            forceHosted,
+            hasToken: !!data.snap_token,
+            reason: forceHosted
+                ? "Network issues detected"
+                : "No token provided",
+        });
 
-        // Kalau token ngga ada, langsung redirect
-        if (!data.snap_token) {
-            console.warn("No snap_token in response, redirecting…");
-            return goRedirect("no_token");
-        }
+        showSuccess("💳 Redirecting to secure payment page...");
+        setTimeout(() => goRedirect("force_hosted"), 1000);
+        return;
+    }
+
+    // ENHANCED: Network-aware popup attempt
+    const popupTimeout = preferHosted ? 2000 : 5000; // Shorter timeout for poor connections
+    console.log(
+        `🌐 Network status: ${
+            preferHosted ? "prefer hosted" : "can try popup"
+        }, timeout: ${popupTimeout}ms`
+    );
+
+    try {
+        // Quick timeout for script loading if network is poor
+        const scriptTimeout = preferHosted ? 3000 : 8000;
+
+        const loadPromise = loadMidtransScript();
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(
+                () => reject(new Error("Script timeout")),
+                scriptTimeout
+            );
+        });
+
+        await Promise.race([loadPromise, timeoutPromise]);
 
         showSuccess("💳 Opening payment gateway...");
 
-        // Coba buka modal
-        try {
-            window.snap.pay(data.snap_token, {
-                onSuccess: function (result) {
-                    console.log("✅ Payment successful:", result);
-                    showSuccess("✅ Payment successful! Redirecting...");
-                    setTimeout(() => {
-                        const oid = result.order_id || orderNumber;
-                        window.location.href = `/checkout/success/${oid}?payment=success`;
-                    }, 1200);
-                },
-                onPending: function (result) {
-                    console.log("⏳ Payment pending:", result);
-                    showError(
-                        "⏳ Payment is being processed. You will receive confirmation shortly."
-                    );
-                    setTimeout(() => {
-                        const oid = result.order_id || orderNumber;
-                        window.location.href = `/checkout/success/${oid}?payment=pending`;
-                    }, 1500);
-                },
-                onError: function (result) {
-                    console.error("❌ Payment error:", result);
-                    // 💉 error karena asset CDN timeout / adblock → redirect ke hosted page
-                    goRedirect("onError");
-                },
-                onClose: function () {
-                    console.log("🔒 Payment popup closed by user");
+        // Try popup with network-aware timeout
+        const popupPromise = new Promise((resolve, reject) => {
+            try {
+                window.snap.pay(data.snap_token, {
+                    onSuccess: function (result) {
+                        console.log("✅ Payment successful:", result);
+                        showSuccess("✅ Payment successful! Redirecting...");
+                        setTimeout(() => {
+                            const oid = result.order_id || orderNumber;
+                            window.location.href = `/checkout/success/${oid}?payment=success`;
+                        }, 1200);
+                        resolve();
+                    },
+                    onPending: function (result) {
+                        console.log("⏳ Payment pending:", result);
+                        showError(
+                            "⏳ Payment is being processed. You will receive confirmation shortly."
+                        );
+                        setTimeout(() => {
+                            const oid = result.order_id || orderNumber;
+                            window.location.href = `/checkout/success/${oid}?payment=pending`;
+                        }, 1500);
+                        resolve();
+                    },
+                    onError: function (result) {
+                        console.error("❌ Payment error:", result);
+                        reject(new Error("Payment error"));
+                    },
+                    onClose: function () {
+                        console.log("🔒 Payment popup closed by user");
+                        showError(
+                            "Payment was cancelled. Redirecting to your orders..."
+                        );
+                        setTimeout(() => {
+                            window.location.href = "/orders";
+                        }, 1000);
+                        resolve();
+                    },
+                });
+                console.log("✅ Snap.pay called successfully");
+            } catch (snapErr) {
+                reject(snapErr);
+            }
+        });
 
-                    // 🎯 DIRECT REDIRECT TO ORDERS INDEX - NO CONFIRMATION
-                    showError(
-                        "Payment was cancelled. Redirecting to your orders..."
-                    );
+        const quickTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Popup timeout")), popupTimeout);
+        });
 
-                    setTimeout(() => {
-                        window.location.href = "/orders";
-                    }, 1000);
-                },
-            });
-
-            // Kalau tidak throw → anggap modal berhasil dipanggil
-            console.log("✅ Snap.pay called successfully");
-        } catch (snapOpenErr) {
-            console.error("❌ Error calling snap.pay:", snapOpenErr);
-            // 💉 langsung fallback
-            return goRedirect("snap_pay_exception");
-        }
+        await Promise.race([popupPromise, quickTimeout]);
     } catch (e) {
-        console.error("❌ Midtrans script not ready:", e);
-        // 💉 fallback aman
-        return goRedirect("script_not_ready");
+        console.error("❌ Enhanced error handling:", e.message);
+
+        // Smart fallback based on error type
+        if (e.message.includes("timeout") || preferHosted) {
+            console.log("🔄 Network timeout detected, using hosted payment");
+            showSuccess("💳 Opening secure payment page...");
+        } else {
+            console.log("🔄 Script error, falling back to hosted payment");
+            showError("⚠️ Loading payment gateway...");
+        }
+
+        setTimeout(
+            () =>
+                goRedirect(
+                    e.message.includes("timeout")
+                        ? "network_timeout"
+                        : "script_error"
+                ),
+            800
+        );
     }
 }
 
@@ -1994,11 +2179,9 @@ function showError(message) {
 // Midtrans integration
 function loadMidtransScript() {
     return new Promise((resolve, reject) => {
-        dgroup("=== DEBUG loadMidtransScript ===");
         try {
             if (window.snap) {
-                dlog("snap already present");
-                dgroupEnd();
+                console.log("snap already present");
                 return resolve();
             }
 
@@ -2011,46 +2194,26 @@ function loadMidtransScript() {
             const clientKey = clientKeyMeta?.content || "";
             const isProduction = prodMeta?.content === "true";
 
-            dlog(
-                "clientKey present?",
-                !!clientKey,
-                "isProduction?",
-                isProduction
-            );
-
             if (!clientKey) {
-                dgroupEnd();
-                return reject(
-                    new Error("Midtrans client key not found in meta")
-                );
+                return reject(new Error("Midtrans client key not found"));
             }
 
-            // prevent double load
+            // Check existing script
             const existing = document.querySelector("script[data-client-key]");
             if (existing) {
-                dlog("script tag already exists, waiting for snap…");
+                // Timeout yang sangat cepat untuk existing script
+                let checkCount = 0;
                 const check = setInterval(() => {
+                    checkCount++;
                     if (window.snap) {
                         clearInterval(check);
-                        dlog("snap became available");
-                        dgroupEnd();
                         resolve();
+                    } else if (checkCount > 10) {
+                        // 1 detik total (100ms * 10)
+                        clearInterval(check);
+                        reject(new Error("Existing script timeout"));
                     }
                 }, 100);
-                setTimeout(() => {
-                    clearInterval(check);
-                    if (window.snap) {
-                        dgroupEnd();
-                        resolve();
-                    } else {
-                        dgroupEnd();
-                        reject(
-                            new Error(
-                                "Snap not available after existing script present"
-                            )
-                        );
-                    }
-                }, 5000);
                 return;
             }
 
@@ -2060,21 +2223,29 @@ function loadMidtransScript() {
                 : "https://app.sandbox.midtrans.com/snap/snap.js";
             script.setAttribute("data-client-key", clientKey);
 
+            // Timeout 1.5 detik untuk script loading
+            const scriptTimeout = setTimeout(() => {
+                script.remove();
+                reject(new Error("Script loading timeout"));
+            }, 1500);
+
             script.onload = () => {
-                dlog("snap onload fired. available?", !!window.snap);
-                dgroupEnd();
-                if (window.snap) resolve();
-                else reject(new Error("Snap object not available after load"));
+                clearTimeout(scriptTimeout);
+                if (window.snap) {
+                    resolve();
+                } else {
+                    reject(new Error("Snap object not available"));
+                }
             };
+
             script.onerror = (e) => {
-                derr("script.onerror snap.js", e);
-                dgroupEnd();
-                reject(new Error("Failed to load Midtrans script"));
+                clearTimeout(scriptTimeout);
+                script.remove();
+                reject(new Error("Failed to load script"));
             };
+
             document.head.appendChild(script);
         } catch (e) {
-            derr("loadMidtransScript exception", e);
-            dgroupEnd();
             reject(e);
         }
     });
@@ -2154,6 +2325,27 @@ function openMidtransPayment(snapToken, orderNumber) {
             });
     } else {
         doPay();
+    }
+}
+
+async function testMidtransCDN() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+
+        const response = await fetch(
+            "https://app.sandbox.midtrans.com/snap/v1/transactions",
+            {
+                method: "HEAD",
+                signal: controller.signal,
+            }
+        );
+
+        clearTimeout(timeoutId);
+        return response.ok || response.status === 405; // 405 is expected for HEAD request
+    } catch (error) {
+        console.log("🌐 CDN connectivity test failed:", error.message);
+        return false;
     }
 }
 
