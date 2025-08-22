@@ -947,49 +947,39 @@ function displayLocationResults(locations) {
 
 function selectLocation(location) {
     console.log("📍 Location selected:", location);
-
+    
     // Fill location fields
     fillFieldIfEmpty("province_name", location.province_name || "");
     fillFieldIfEmpty("city_name", location.city_name || "");
     fillFieldIfEmpty("subdistrict_name", location.subdistrict_name || "");
-    fillFieldIfEmpty(
-        "postal_code",
-        location.zip_code || location.postal_code || ""
-    );
-    fillFieldIfEmpty(
-        "destination_id",
-        location.location_id || location.destination_id || ""
-    );
-
+    fillFieldIfEmpty("postal_code", location.zip_code || location.postal_code || "");
+    
+    // ✅ FIXED: Gunakan properti ID yang benar dari API response
+    // Berdasarkan log, kemungkinan besar properti yang benar adalah 'id'
+    const destinationId = location.id || location.location_id || location.destination_id || "";
+    fillFieldIfEmpty("destination_id", destinationId);
+    
+    console.log("🎯 Destination ID set:", destinationId); // TAMBAHAN: Debug log
+    
     // Fill legacy fields for backward compatibility
-    fillFieldIfEmpty(
-        "legacy_address",
-        location.full_address || location.label || ""
-    );
-    fillFieldIfEmpty(
-        "legacy_destination_label",
-        location.full_address || location.label || ""
-    );
+    fillFieldIfEmpty("legacy_address", location.full_address || location.label || "");
+    fillFieldIfEmpty("legacy_destination_label", location.full_address || location.label || "");
 
-    // Update selectedDestination for shipping calculation
-    selectedDestination = location;
+    // ✅ FIXED: Update selectedDestination dengan ID yang benar
+    selectedDestination = {
+        ...location,
+        destination_id: destinationId, // TAMBAHAN: Pastikan destination_id tersedia
+        location_id: destinationId,    // TAMBAHAN: Fallback untuk kompatibilitas
+    };
 
     // Display selected location
-    const selectedLocation = document.getElementById("selected-location");
-    const selectedLocationText = document.getElementById(
-        "selected-location-text"
-    );
+    const selectedLocationDiv = document.getElementById("selected-location");
+    const selectedLocationText = document.getElementById("selected-location-text");
 
-    if (selectedLocation && selectedLocationText) {
-        selectedLocationText.textContent =
-            location.full_address ||
-            location.label ||
-            location.subdistrict_name +
-                ", " +
-                location.city_name +
-                ", " +
-                location.province_name;
-        selectedLocation.classList.remove("hidden");
+    if (selectedLocationDiv && selectedLocationText) {
+        selectedLocationText.textContent = location.full_address || location.label || 
+            location.subdistrict_name + ", " + location.city_name + ", " + location.province_name;
+        selectedLocationDiv.classList.remove("hidden");
     }
 
     // Hide search results
@@ -1405,22 +1395,33 @@ async function calculateShipping() {
     if (shippingOptions) shippingOptions.classList.add("hidden");
     if (loadingDiv) loadingDiv.classList.remove("hidden");
 
+    // ✅ FIXED: Pastikan destination_id terisi dengan benar
+    const destinationId = selectedDestination.destination_id || 
+                         selectedDestination.id || 
+                         selectedDestination.location_id || 
+                         document.getElementById("destination_id")?.value;
+
+    if (!destinationId) {
+        console.error("❌ No destination_id available:", selectedDestination);
+        displayShippingError("Invalid destination selected. Please select location again.");
+        isCalculatingShipping = false;
+        if (loadingDiv) loadingDiv.classList.add("hidden");
+        if (shippingOptions) shippingOptions.classList.remove("hidden");
+        return;
+    }
+
     const requestData = {
-        destination_id:
-            selectedDestination.location_id ||
-            selectedDestination.destination_id,
-        destination_label:
-            selectedDestination.label ||
-            selectedDestination.full_address ||
-            `${selectedDestination.subdistrict_name}, ${selectedDestination.city_name}`,
+        destination_id: destinationId, // ✅ FIXED: Gunakan ID yang pasti valid
+        destination_label: selectedDestination.label || 
+                          selectedDestination.full_address ||
+                          `${selectedDestination.subdistrict_name}, ${selectedDestination.city_name}`,
         weight: totalWeight,
     };
 
     console.log("📦 Shipping request data:", requestData);
+    console.log("🎯 destination_id being sent:", destinationId); // TAMBAHAN: Debug log
 
-    const csrfToken = document
-        .querySelector('meta[name="csrf-token"]')
-        ?.getAttribute("content");
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
 
     try {
         const response = await fetch("/checkout/calculate-shipping", {
@@ -1448,9 +1449,7 @@ async function calculateShipping() {
         }
     } catch (error) {
         console.error("❌ Shipping calculation error:", error);
-        displayShippingError(
-            error.message || "Failed to calculate shipping options"
-        );
+        displayShippingError(error.message || "Failed to calculate shipping options");
     } finally {
         isCalculatingShipping = false;
         if (loadingDiv) loadingDiv.classList.add("hidden");
@@ -1832,86 +1831,117 @@ function validateAndFillAddressFields(formData) {
 
 // ✅ FIXED: Proper snap_token handling + robust fallback
 async function handleSuccessfulOrder(data, paymentMethod, redirectUrl = null) {
-    console.log("🎯 Handling successful order (NO TAX + VOUCHER):", data);
+    console.log("🎯 Handling successful order with enhanced detection:", data);
 
     const orderNumber = data.order_number;
+    const preferHosted = data.prefer_hosted || false;
+    const forceHosted = data.force_hosted || false;
+    const networkInfo = data.network_info || {};
 
     // helper redirect
     const goRedirect = (why = "fallback") => {
         console.warn(`↪️ Fallback redirect triggered (${why})`);
-        if (redirectUrl) {
-            window.location.href = redirectUrl; // Hosted payment page Midtrans
+        if (data.redirect_url) {
+            console.log("🔄 Using provided redirect URL");
+            window.location.href = data.redirect_url;
         } else if (orderNumber) {
-            window.location.href = `/checkout/payment/${orderNumber}`; // Halaman payment kita (embed snap)
+            console.log("🔄 Using order payment page");
+            window.location.href = `/checkout/payment/${orderNumber}`;
         } else {
-            handleOrderError(
-                "Payment session not available. Please refresh the page."
-            );
+            handleOrderError("Payment session not available. Please refresh the page.");
         }
     };
 
-    try {
-        await loadMidtransScript(); // pastikan snap siap
+    // ENHANCED: Check force hosted flag
+    if (forceHosted || !data.snap_token) {
+        console.log("🔄 Force hosted payment mode", {
+            forceHosted,
+            hasToken: !!data.snap_token,
+            reason: forceHosted ? 'Network issues detected' : 'No token provided'
+        });
+        
+        showSuccess("💳 Redirecting to secure payment page...");
+        setTimeout(() => goRedirect("force_hosted"), 1000);
+        return;
+    }
 
-        // Kalau token ngga ada, langsung redirect
-        if (!data.snap_token) {
-            console.warn("No snap_token in response, redirecting…");
-            return goRedirect("no_token");
-        }
+    // ENHANCED: Network-aware popup attempt
+    const popupTimeout = preferHosted ? 2000 : 5000; // Shorter timeout for poor connections
+    console.log(`🌐 Network status: ${preferHosted ? 'prefer hosted' : 'can try popup'}, timeout: ${popupTimeout}ms`);
+
+    try {
+        // Quick timeout for script loading if network is poor
+        const scriptTimeout = preferHosted ? 3000 : 8000;
+        
+        const loadPromise = loadMidtransScript();
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Script timeout')), scriptTimeout);
+        });
+
+        await Promise.race([loadPromise, timeoutPromise]);
 
         showSuccess("💳 Opening payment gateway...");
 
-        // Coba buka modal
-        try {
-            window.snap.pay(data.snap_token, {
-                onSuccess: function (result) {
-                    console.log("✅ Payment successful:", result);
-                    showSuccess("✅ Payment successful! Redirecting...");
-                    setTimeout(() => {
-                        const oid = result.order_id || orderNumber;
-                        window.location.href = `/checkout/success/${oid}?payment=success`;
-                    }, 1200);
-                },
-                onPending: function (result) {
-                    console.log("⏳ Payment pending:", result);
-                    showError(
-                        "⏳ Payment is being processed. You will receive confirmation shortly."
-                    );
-                    setTimeout(() => {
-                        const oid = result.order_id || orderNumber;
-                        window.location.href = `/checkout/success/${oid}?payment=pending`;
-                    }, 1500);
-                },
-                onError: function (result) {
-                    console.error("❌ Payment error:", result);
-                    // 💉 error karena asset CDN timeout / adblock → redirect ke hosted page
-                    goRedirect("onError");
-                },
-                onClose: function () {
-                    console.log("🔒 Payment popup closed by user");
+        // Try popup with network-aware timeout
+        const popupPromise = new Promise((resolve, reject) => {
+            try {
+                window.snap.pay(data.snap_token, {
+                    onSuccess: function (result) {
+                        console.log("✅ Payment successful:", result);
+                        showSuccess("✅ Payment successful! Redirecting...");
+                        setTimeout(() => {
+                            const oid = result.order_id || orderNumber;
+                            window.location.href = `/checkout/success/${oid}?payment=success`;
+                        }, 1200);
+                        resolve();
+                    },
+                    onPending: function (result) {
+                        console.log("⏳ Payment pending:", result);
+                        showError("⏳ Payment is being processed. You will receive confirmation shortly.");
+                        setTimeout(() => {
+                            const oid = result.order_id || orderNumber;
+                            window.location.href = `/checkout/success/${oid}?payment=pending`;
+                        }, 1500);
+                        resolve();
+                    },
+                    onError: function (result) {
+                        console.error("❌ Payment error:", result);
+                        reject(new Error('Payment error'));
+                    },
+                    onClose: function () {
+                        console.log("🔒 Payment popup closed by user");
+                        showError("Payment was cancelled. Redirecting to your orders...");
+                        setTimeout(() => {
+                            window.location.href = "/orders";
+                        }, 1000);
+                        resolve();
+                    },
+                });
+                console.log("✅ Snap.pay called successfully");
+            } catch (snapErr) {
+                reject(snapErr);
+            }
+        });
 
-                    // 🎯 DIRECT REDIRECT TO ORDERS INDEX - NO CONFIRMATION
-                    showError(
-                        "Payment was cancelled. Redirecting to your orders..."
-                    );
+        const quickTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Popup timeout')), popupTimeout);
+        });
 
-                    setTimeout(() => {
-                        window.location.href = "/orders";
-                    }, 1000);
-                },
-            });
+        await Promise.race([popupPromise, quickTimeout]);
 
-            // Kalau tidak throw → anggap modal berhasil dipanggil
-            console.log("✅ Snap.pay called successfully");
-        } catch (snapOpenErr) {
-            console.error("❌ Error calling snap.pay:", snapOpenErr);
-            // 💉 langsung fallback
-            return goRedirect("snap_pay_exception");
-        }
     } catch (e) {
-        console.error("❌ Midtrans script not ready:", e);
-        // 💉 fallback aman
-        return goRedirect("script_not_ready");
+        console.error("❌ Enhanced error handling:", e.message);
+        
+        // Smart fallback based on error type
+        if (e.message.includes('timeout') || preferHosted) {
+            console.log("🔄 Network timeout detected, using hosted payment");
+            showSuccess("💳 Opening secure payment page...");
+        } else {
+            console.log("🔄 Script error, falling back to hosted payment");
+            showError("⚠️ Loading payment gateway...");
+        }
+        
+        setTimeout(() => goRedirect(e.message.includes('timeout') ? 'network_timeout' : 'script_error'), 800);
     }
 }
 
@@ -1994,63 +2024,36 @@ function showError(message) {
 // Midtrans integration
 function loadMidtransScript() {
     return new Promise((resolve, reject) => {
-        dgroup("=== DEBUG loadMidtransScript ===");
         try {
             if (window.snap) {
-                dlog("snap already present");
-                dgroupEnd();
+                console.log("snap already present");
                 return resolve();
             }
 
-            const clientKeyMeta = document.querySelector(
-                'meta[name="midtrans-client-key"]'
-            );
-            const prodMeta = document.querySelector(
-                'meta[name="midtrans-production"]'
-            );
+            const clientKeyMeta = document.querySelector('meta[name="midtrans-client-key"]');
+            const prodMeta = document.querySelector('meta[name="midtrans-production"]');
             const clientKey = clientKeyMeta?.content || "";
             const isProduction = prodMeta?.content === "true";
 
-            dlog(
-                "clientKey present?",
-                !!clientKey,
-                "isProduction?",
-                isProduction
-            );
-
             if (!clientKey) {
-                dgroupEnd();
-                return reject(
-                    new Error("Midtrans client key not found in meta")
-                );
+                return reject(new Error("Midtrans client key not found"));
             }
 
-            // prevent double load
+            // Check existing script
             const existing = document.querySelector("script[data-client-key]");
             if (existing) {
-                dlog("script tag already exists, waiting for snap…");
+                // Timeout yang sangat cepat untuk existing script
+                let checkCount = 0;
                 const check = setInterval(() => {
+                    checkCount++;
                     if (window.snap) {
                         clearInterval(check);
-                        dlog("snap became available");
-                        dgroupEnd();
                         resolve();
+                    } else if (checkCount > 10) { // 1 detik total (100ms * 10)
+                        clearInterval(check);
+                        reject(new Error("Existing script timeout"));
                     }
                 }, 100);
-                setTimeout(() => {
-                    clearInterval(check);
-                    if (window.snap) {
-                        dgroupEnd();
-                        resolve();
-                    } else {
-                        dgroupEnd();
-                        reject(
-                            new Error(
-                                "Snap not available after existing script present"
-                            )
-                        );
-                    }
-                }, 5000);
                 return;
             }
 
@@ -2060,21 +2063,29 @@ function loadMidtransScript() {
                 : "https://app.sandbox.midtrans.com/snap/snap.js";
             script.setAttribute("data-client-key", clientKey);
 
+            // Timeout 1.5 detik untuk script loading
+            const scriptTimeout = setTimeout(() => {
+                script.remove();
+                reject(new Error("Script loading timeout"));
+            }, 1500);
+
             script.onload = () => {
-                dlog("snap onload fired. available?", !!window.snap);
-                dgroupEnd();
-                if (window.snap) resolve();
-                else reject(new Error("Snap object not available after load"));
+                clearTimeout(scriptTimeout);
+                if (window.snap) {
+                    resolve();
+                } else {
+                    reject(new Error("Snap object not available"));
+                }
             };
+            
             script.onerror = (e) => {
-                derr("script.onerror snap.js", e);
-                dgroupEnd();
-                reject(new Error("Failed to load Midtrans script"));
+                clearTimeout(scriptTimeout);
+                script.remove();
+                reject(new Error("Failed to load script"));
             };
+            
             document.head.appendChild(script);
         } catch (e) {
-            derr("loadMidtransScript exception", e);
-            dgroupEnd();
             reject(e);
         }
     });
@@ -2154,6 +2165,24 @@ function openMidtransPayment(snapToken, orderNumber) {
             });
     } else {
         doPay();
+    }
+}
+
+async function testMidtransCDN() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+        
+        const response = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
+            method: 'HEAD',
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        return response.ok || response.status === 405; // 405 is expected for HEAD request
+    } catch (error) {
+        console.log("🌐 CDN connectivity test failed:", error.message);
+        return false;
     }
 }
 

@@ -47,18 +47,32 @@ class MidtransService
                 return ['error' => 'Midtrans server key not configured'];
             }
 
+            // 🆕 Network connectivity check
+            $networkCheck = $this->checkMidtransConnectivity();
+            $preferHosted = !$networkCheck['can_load_popup'];
+
             // Prepare authorization header
             $authorization = base64_encode($this->serverKey . ':');
             
-            Log::info('Creating Midtrans Snap Token', [
+            Log::info('Creating Midtrans Snap Token with network detection', [
                 'order_id' => $orderData['transaction_details']['order_id'] ?? 'unknown',
                 'gross_amount' => $orderData['transaction_details']['gross_amount'] ?? 0,
                 'items_count' => count($orderData['item_details'] ?? []),
                 'server_key_length' => strlen($this->serverKey),
-                'snap_url' => $this->snapUrl
+                'snap_url' => $this->snapUrl,
+                'network_check' => $networkCheck,
+                'prefer_hosted' => $preferHosted
             ]);
 
-            // Enhanced request payload
+            // 🆕 Safe callback URL building
+            $baseUrl = rtrim(config('app.url'), '/');
+            $callbacks = [
+                'finish' => $baseUrl . '/checkout/payment-success',
+                'unfinish' => $baseUrl . '/checkout/payment-pending',
+                'error' => $baseUrl . '/checkout/payment-error'
+            ];
+
+            // Enhanced request payload with optimizations
             $payload = [
                 'transaction_details' => [
                     'order_id' => $orderData['transaction_details']['order_id'],
@@ -66,12 +80,10 @@ class MidtransService
                 ],
                 'item_details' => $orderData['item_details'] ?? [],
                 'customer_details' => $orderData['customer_details'] ?? [],
-                'enabled_payments' => [
-                    'credit_card', 'cimb_clicks', 'bca_klikbca', 'bca_klikpay', 
-                    'bri_epay', 'echannel', 'permata_va', 'bca_va', 'bni_va', 
-                    'bri_va', 'other_va', 'gopay', 'indomaret', 'alfamart', 
-                    'danamon_online', 'akulaku'
-                ],
+                
+                // 🆕 Optimized payment methods untuk faster loading
+                'enabled_payments' => $this->getOptimizedPaymentMethods(),
+                
                 'credit_card' => [
                     'secure' => true,
                     'bank' => 'bca',
@@ -80,34 +92,49 @@ class MidtransService
                         'terms' => [
                             'bni' => [3, 6, 12],
                             'mandiri' => [3, 6, 12],
-                            'cimb' => [3],
-                            'bca' => [3, 6, 12],
-                            'offline' => [6, 12]
+                            'bca' => [3, 6, 12]
                         ]
                     ]
                 ],
-                // Callback URLs
-                'callbacks' => [
-                    'finish' => config('app.url') . '/checkout/payment-success',
-                    'unfinish' => config('app.url') . '/checkout/payment-pending', 
-                    'error' => config('app.url') . '/checkout/payment-error'
+                
+                // 🆕 Safe callback URLs
+                'callbacks' => $callbacks,
+                
+                // 🆕 Performance optimizations
+                'page_expiry' => [
+                    'duration' => 30,
+                    'unit' => 'minutes'
+                ],
+                
+                // 🆕 Custom expiry untuk faster processing
+                'custom_expiry' => [
+                    'expiry_duration' => 30,
+                    'unit' => 'minutes'
                 ]
             ];
 
-            Log::info('Midtrans payload prepared', [
+            // 🆕 Log with safe URLs
+            Log::info('Midtrans payload prepared with optimizations', [
                 'payload_keys' => array_keys($payload),
                 'order_id' => $payload['transaction_details']['order_id'],
                 'gross_amount' => $payload['transaction_details']['gross_amount'],
-                'callbacks' => $payload['callbacks']
+                'callbacks' => $callbacks,
+                'base_url' => $baseUrl,
+                'payments_count' => count($payload['enabled_payments'])
             ]);
 
-            // Make HTTP request to Midtrans
-            $response = Http::withHeaders([
-                'Accept' => 'application/json',
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . $authorization,
-                'User-Agent' => 'SneakerFlash/1.0'
-            ])->timeout(30)->post($this->snapUrl, $payload);
+            // 🆕 Timeout berdasarkan network condition
+            $timeout = $networkCheck['has_slow_connection'] ? 45 : 30;
+
+            // Make HTTP request to Midtrans with retry logic
+            $response = $this->makeRequestWithRetry($payload, $authorization, $timeout);
+
+            if (!$response) {
+                return [
+                    'error' => 'Failed to connect to Midtrans after retries',
+                    'prefer_hosted' => true
+                ];
+            }
 
             $statusCode = $response->status();
             $responseBody = $response->body();
@@ -115,7 +142,8 @@ class MidtransService
             Log::info('Midtrans API response received', [
                 'status_code' => $statusCode,
                 'response_size' => strlen($responseBody),
-                'order_id' => $payload['transaction_details']['order_id']
+                'order_id' => $payload['transaction_details']['order_id'],
+                'timeout_used' => $timeout
             ]);
 
             if ($response->successful()) {
@@ -125,20 +153,26 @@ class MidtransService
                     'order_id' => $payload['transaction_details']['order_id'],
                     'has_token' => isset($responseData['token']),
                     'has_redirect_url' => isset($responseData['redirect_url']),
-                    'response_keys' => array_keys($responseData)
+                    'response_keys' => array_keys($responseData),
+                    'prefer_hosted' => $preferHosted
                 ]);
 
                 if (isset($responseData['token'])) {
                     return [
                         'success' => true,
                         'token' => $responseData['token'],
-                        'redirect_url' => $responseData['redirect_url'] ?? null
+                        'redirect_url' => $responseData['redirect_url'] ?? null,
+                        'prefer_hosted' => $preferHosted, // 🆕 Signal untuk frontend
+                        'network_info' => $networkCheck    // 🆕 Network info
                     ];
                 } else {
                     Log::error('Midtrans response missing token', [
                         'response_data' => $responseData
                     ]);
-                    return ['error' => 'Token not found in Midtrans response'];
+                    return [
+                        'error' => 'Token not found in Midtrans response',
+                        'prefer_hosted' => true
+                    ];
                 }
             } else {
                 // Handle API errors
@@ -160,7 +194,8 @@ class MidtransService
                 return [
                     'error' => $errorMessage,
                     'status_code' => $statusCode,
-                    'details' => $errorData
+                    'details' => $errorData,
+                    'prefer_hosted' => true
                 ];
             }
 
@@ -173,10 +208,188 @@ class MidtransService
             ]);
 
             return [
-                'error' => 'Midtrans service error: ' . $e->getMessage()
+                'error' => 'Midtrans service error: ' . $e->getMessage(),
+                'prefer_hosted' => true
             ];
         }
     }
+
+    /**
+     * 🆕 Check Midtrans connectivity and performance
+     */
+    private function checkMidtransConnectivity()
+    {
+        $startTime = microtime(true);
+        $canConnect = false;
+        $responseTime = 0;
+        
+        try {
+            // Quick connectivity test
+            $response = Http::timeout(5)->get($this->isProduction 
+                ? 'https://app.midtrans.com' 
+                : 'https://app.sandbox.midtrans.com');
+            
+            $responseTime = (microtime(true) - $startTime) * 1000;
+            $canConnect = $response->successful();
+            
+        } catch (\Exception $e) {
+            Log::warning('Midtrans connectivity check failed', [
+                'error' => $e->getMessage(),
+                'response_time_ms' => $responseTime
+            ]);
+        }
+        
+        $hasSlowConnection = $responseTime > 3000; // > 3 seconds
+        $canLoadPopup = $canConnect && !$hasSlowConnection;
+        
+        Log::info('Midtrans connectivity check', [
+            'can_connect' => $canConnect,
+            'response_time_ms' => round($responseTime, 2),
+            'has_slow_connection' => $hasSlowConnection,
+            'can_load_popup' => $canLoadPopup
+        ]);
+        
+        return [
+            'can_connect' => $canConnect,
+            'response_time_ms' => round($responseTime, 2),
+            'has_slow_connection' => $hasSlowConnection,
+            'can_load_popup' => $canLoadPopup
+        ];
+    }
+
+    /**
+     * 🆕 Get optimized payment methods based on region
+     */
+    private function getOptimizedPaymentMethods()
+    {
+        // Prioritas payment methods yang load cepat
+        return [
+            'credit_card',
+            'bca_va', 'bni_va', 'bri_va', 'permata_va', // Virtual Account (fast)
+            'gopay', 'shopeepay',                        // E-wallet (popular)
+            'indomaret', 'alfamart',                     // Convenience store
+            'echannel', 'bca_klikbca',                   // Online banking
+            'other_va'                                   // Other VA
+        ];
+    }
+
+    /**
+     * 🆕 Make request with retry logic
+     */
+    private function makeRequestWithRetry($payload, $authorization, $timeout = 30, $maxRetries = 2)
+    {
+        $attempt = 0;
+        
+        while ($attempt < $maxRetries) {
+            try {
+                $response = Http::withHeaders([
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Basic ' . $authorization,
+                    'User-Agent' => 'SneakerFlash/1.0'
+                ])
+                ->timeout($timeout)
+                ->retry(2, 1000) // Built-in retry
+                ->post($this->snapUrl, $payload);
+
+                if ($response->successful()) {
+                    Log::info('Midtrans request successful', [
+                        'attempt' => $attempt + 1,
+                        'timeout' => $timeout
+                    ]);
+                    return $response;
+                }
+                
+                // If not successful but got response, return it for error handling
+                if ($response->status() !== 0) {
+                    return $response;
+                }
+                
+            } catch (\Exception $e) {
+                Log::warning('Midtrans request attempt failed', [
+                    'attempt' => $attempt + 1,
+                    'error' => $e->getMessage(),
+                    'timeout' => $timeout
+                ]);
+                
+                if ($attempt === $maxRetries - 1) {
+                    throw $e;
+                }
+            }
+            
+            $attempt++;
+            
+            // Exponential backoff
+            if ($attempt < $maxRetries) {
+                usleep(1000000 * $attempt); // 1s, 2s delay
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * 🆕 Enhanced transaction status check with caching
+     */
+    public function getTransactionStatus($orderId, $useCache = true)
+    {
+        $cacheKey = "midtrans_status_{$orderId}";
+        
+        // Check cache first (valid for 30 seconds)
+        if ($useCache && cache()->has($cacheKey)) {
+            $cached = cache()->get($cacheKey);
+            Log::info('Transaction status from cache', [
+                'order_id' => $orderId,
+                'cached_status' => $cached['transaction_status'] ?? 'unknown'
+            ]);
+            return $cached;
+        }
+        
+        try {
+            Log::info('🔍 Checking transaction status via API', ['order_id' => $orderId]);
+
+            $authorization = base64_encode($this->serverKey . ':');
+            
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . $authorization
+            ])->timeout(15)->get($this->apiUrl . '/' . $orderId . '/status');
+
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                // Cache for 30 seconds
+                if ($useCache) {
+                    cache()->put($cacheKey, $data, 30);
+                }
+                
+                Log::info('✅ Transaction status retrieved', [
+                    'order_id' => $orderId,
+                    'status' => $data['transaction_status'] ?? 'unknown',
+                    'fraud_status' => $data['fraud_status'] ?? 'unknown',
+                    'cached' => $useCache
+                ]);
+
+                return $data;
+            } else {
+                Log::warning('⚠️ Failed to get transaction status', [
+                    'order_id' => $orderId,
+                    'status_code' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return null;
+            }
+        } catch (\Exception $e) {
+            Log::error('❌ Exception getting transaction status', [
+                'order_id' => $orderId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    // ... [Keep all other existing methods unchanged] ...
 
     /**
      * UPDATED: Handle notification webhook - now returns simplified payment status
@@ -200,8 +413,8 @@ class MidtransService
 
             Log::info('✅ Signature verification passed');
 
-            // Double check with Midtrans API
-            $verifiedData = $this->getTransactionStatus($notification['order_id']);
+            // Double check with Midtrans API (with caching)
+            $verifiedData = $this->getTransactionStatus($notification['order_id'], true);
             if ($verifiedData) {
                 Log::info('✅ Transaction verified with Midtrans API', [
                     'api_status' => $verifiedData['transaction_status'],
@@ -242,49 +455,6 @@ class MidtransService
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'notification' => $notification
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * Get transaction status from Midtrans API
-     */
-    public function getTransactionStatus($orderId)
-    {
-        try {
-            Log::info('🔍 Checking transaction status via API', ['order_id' => $orderId]);
-
-            $authorization = base64_encode($this->serverKey . ':');
-            
-            $response = Http::withHeaders([
-                'Accept' => 'application/json',
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . $authorization
-            ])->timeout(15)->get($this->apiUrl . '/' . $orderId . '/status');
-
-            if ($response->successful()) {
-                $data = $response->json();
-                
-                Log::info('✅ Transaction status retrieved', [
-                    'order_id' => $orderId,
-                    'status' => $data['transaction_status'] ?? 'unknown',
-                    'fraud_status' => $data['fraud_status'] ?? 'unknown'
-                ]);
-
-                return $data;
-            } else {
-                Log::warning('⚠️ Failed to get transaction status', [
-                    'order_id' => $orderId,
-                    'status_code' => $response->status(),
-                    'response' => $response->body()
-                ]);
-                return null;
-            }
-        } catch (\Exception $e) {
-            Log::error('❌ Exception getting transaction status', [
-                'order_id' => $orderId,
-                'error' => $e->getMessage()
             ]);
             return null;
         }
@@ -413,11 +583,14 @@ class MidtransService
     }
 
     /**
-     * Test connection ke Midtrans
+     * 🆕 Enhanced connection test
      */
     public function testConnection()
     {
         try {
+            // Test connectivity first
+            $networkCheck = $this->checkMidtransConnectivity();
+            
             $testPayload = [
                 'transaction_details' => [
                     'order_id' => 'TEST-' . time(),
@@ -443,13 +616,15 @@ class MidtransService
             
             return [
                 'success' => isset($result['token']),
-                'result' => $result
+                'result' => $result,
+                'network_check' => $networkCheck
             ];
 
         } catch (\Exception $e) {
             return [
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'network_check' => $this->checkMidtransConnectivity()
             ];
         }
     }
