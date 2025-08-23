@@ -238,21 +238,26 @@
                                             <div class="flex flex-wrap gap-1 mt-1" id="sizeContainer-{{ $product->id }}">
                                                 @foreach($sizeVariants as $variant)
                                                     @php
-                                                        $variantData = is_array($variant) ? $variant : (array) $variant;
-                                                        $size = $variantData['size'] ?? 'Unknown';
-                                                        $stock = (int) ($variantData['stock'] ?? 0);
-                                                        $variantId = $variantData['id'] ?? '';
-                                                        $sku = $variantData['sku'] ?? '';
-                                                        $isAvailable = $stock > 0;
-                                                    @endphp
-                                                    <span class="size-badge text-xs px-2 py-1 rounded border {{ $isAvailable ? 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-300' : 'text-gray-400 bg-gray-100 border-gray-200 line-through' }}" 
-                                                          data-size="{{ $size }}" 
-                                                          data-stock="{{ $stock }}"
-                                                          data-product-id="{{ $variantId }}"
-                                                          data-sku="{{ $sku }}"
-                                                          data-available="{{ $isAvailable ? 'true' : 'false' }}">
-                                                        {{ $size }}
-                                                    </span>
+    $variantData = is_array($variant) ? $variant : (array) $variant;
+    $size = $variantData['size'] ?? 'Unknown';
+    $stock = (int) ($variantData['stock'] ?? 0);
+    $variantId = $variantData['id'] ?? '';
+    $sku = $variantData['sku'] ?? '';
+    $isAvailable = $stock > 0;
+    // 🔥 TAMBAHKAN PRICE DATA
+    $variantPrice = $variantData['price'] ?? $productPrice;
+    $variantOriginalPrice = $variantData['original_price'] ?? $productPrice;
+@endphp
+<span class="size-badge text-xs px-2 py-1 rounded border {{ $isAvailable ? 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-300' : 'text-gray-400 bg-gray-100 border-gray-200 line-through' }}" 
+      data-size="{{ $size }}" 
+      data-stock="{{ $stock }}"
+      data-product-id="{{ $variantId }}"
+      data-sku="{{ $sku }}"
+      data-available="{{ $isAvailable ? 'true' : 'false' }}"
+      data-price="{{ $variantPrice }}"
+      data-original-price="{{ $variantOriginalPrice }}">
+    {{ $size }}
+</span>
                                                 @endforeach
                                             </div>
                                         </div>
@@ -297,13 +302,15 @@
                                             @if($hasMultipleSizes)
                                                 {{-- ⭐ FIXED: Use clean product name in button data --}}
                                                 <button type="button" 
-                                                        class="flex-1 bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors size-select-btn"
-                                                        data-product-id="{{ $product->id ?? '' }}"
-                                                        data-sku-parent="{{ $product->sku_parent ?? '' }}"
-                                                        data-product-name="{{ $cleanProductName }}">
-                                                    <i class="fas fa-shopping-cart mr-1"></i>
-                                                    Select Size
-                                                </button>
+        class="flex-1 bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors size-select-btn"
+        data-product-id="{{ $product->id ?? '' }}"
+        data-sku-parent="{{ $product->sku_parent ?? '' }}"
+        data-product-name="{{ $cleanProductName }}"
+        data-price="{{ $salePrice ?: $productPrice }}"
+        data-original-price="{{ $productPrice }}">
+    <i class="fas fa-shopping-cart mr-1"></i>
+    Select Size
+</button>
                                             @else
                                                 <form action="{{ route('cart.add') }}" method="POST" class="add-to-cart-form flex-1">
                                                     @csrf
@@ -424,7 +431,7 @@
                             </div>
                             <div class="flex items-center justify-between">
                                 <span class="text-sm text-blue-600">Price:</span>
-                                <span id="selectedSizePrice" class="text-sm font-semibold text-blue-700">Rp 649,000</span>
+                                <span id="selectedSizePrice" class="text-sm font-semibold text-blue-700">-</span>
                             </div>
                         </div>
                     </div>
@@ -474,486 +481,177 @@
     </div>
 
     <!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
-    <script>
-        console.log('🚀 Enhanced JavaScript Loading with Clean Product Names...');
+<script>
+console.log('🚀 Enhanced JavaScript with Price Support...');
 
-        // Wait for everything to load
-        window.addEventListener('load', function() {
-            console.log('✅ Window loaded - initializing...');
+window.addEventListener('load', function() {
+    setupSizeSelection();
+});
+
+function setupSizeSelection() {
+    document.addEventListener('click', handleClick);
+}
+
+function handleClick(e) {
+    // Size select button
+    if (e.target.closest('.size-select-btn')) {
+        e.preventDefault();
+        openSizeModal(e.target.closest('.size-select-btn'));
+        return;
+    }
+    
+    // Close modal
+    if (e.target.id === 'closeModalBtn' || e.target.closest('#closeModalBtn') || e.target.id === 'sizeSelectionModal') {
+        closeModal();
+        return;
+    }
+    
+    // Size option
+    if (e.target.closest('.size-option')) {
+        var option = e.target.closest('.size-option');
+        if (!option.classList.contains('disabled')) {
+            selectSize(option);
+        }
+        return;
+    }
+}
+
+function openSizeModal(button) {
+    var productId = button.getAttribute('data-product-id');
+    var productName = button.getAttribute('data-product-name');
+    var defaultPrice = button.getAttribute('data-price') || '0';
+    
+    console.log('Opening modal for:', productName, 'Price:', defaultPrice);
+    
+    var modal = document.getElementById('sizeSelectionModal');
+    var title = document.getElementById('modalProductName');
+    var container = document.getElementById('sizeOptionsContainer');
+    
+    if (!modal || !container) return;
+    
+    // Set title
+    if (title) title.textContent = 'Select Size - ' + productName;
+    
+    // Get sizes from product card
+    var productCard = button.closest('.product-card');
+    var sizeContainer = productCard ? productCard.querySelector('#sizeContainer-' + productId) : null;
+    
+    // Clear container
+    container.innerHTML = '';
+    
+    if (sizeContainer) {
+        var badges = sizeContainer.querySelectorAll('.size-badge');
+        
+        badges.forEach(function(badge) {
+            var size = badge.getAttribute('data-size');
+            var stock = badge.getAttribute('data-stock');
+            var productVariantId = badge.getAttribute('data-product-id');
+            var available = badge.getAttribute('data-available') === 'true';
             
-            // Force check every 100ms until elements are ready
-            var checkInterval = setInterval(function() {
-                var buttons = document.querySelectorAll('.size-select-btn');
-                var modal = document.getElementById('sizeSelectionModal');
-                
-                if (buttons.length > 0 && modal) {
-                    console.log('✅ Elements found - setting up events');
-                    clearInterval(checkInterval);
-                    setupSizeSelection();
-                }
-            }, 100);
+            // 🔥 GET PRICE from badge
+            var price = badge.getAttribute('data-price') || defaultPrice;
+            var originalPrice = badge.getAttribute('data-original-price') || defaultPrice;
             
-            // Timeout after 5 seconds
-            setTimeout(function() {
-                clearInterval(checkInterval);
-                console.log('⚠️ Timeout - setting up anyway');
-                setupSizeSelection();
-            }, 5000);
+            var div = document.createElement('div');
+            div.className = 'size-option cursor-pointer p-4 border-2 rounded-lg text-center transition-all ' + 
+                (available ? 'border-gray-300 hover:border-blue-500 hover:bg-blue-50' : 'border-gray-200 bg-gray-100 opacity-50 cursor-not-allowed disabled');
+            
+            // Set data attributes INCLUDING PRICE
+            div.setAttribute('data-size', size);
+            div.setAttribute('data-stock', stock);
+            div.setAttribute('data-product-id', productVariantId);
+            div.setAttribute('data-available', available);
+            div.setAttribute('data-price', price);
+            div.setAttribute('data-original-price', originalPrice);
+            
+            div.innerHTML = 
+                '<div class="text-lg font-semibold text-gray-900">' + size + '</div>' +
+                '<div class="text-xs mt-1" style="color: ' + (available ? '#059669' : '#dc2626') + ';">' +
+                (available ? stock + ' left' : 'Out of stock') + '</div>';
+            
+            container.appendChild(div);
+            
+            console.log('Size option created:', size, 'Price:', price);
         });
+    }
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
 
-        function setupSizeSelection() {
-            console.log('🔧 Setting up size selection with clean product names...');
-            
-            // Remove any existing listeners first
-            document.removeEventListener('click', handleDocumentClick);
-            
-            // Add fresh listeners
-            document.addEventListener('click', handleDocumentClick);
-            
-            // Add direct listeners to buttons as backup
-            var buttons = document.querySelectorAll('.size-select-btn');
-            console.log('Found', buttons.length, 'size select buttons');
-            
-            buttons.forEach(function(button, index) {
-                console.log('Setting up button', index + 1, 'with clean name:', button.dataset.productName);
-                
-                // Remove existing listeners
-                button.removeEventListener('click', handleButtonClick);
-                
-                // Add new listener
-                button.addEventListener('click', handleButtonClick);
-                
-                // Also add onclick as backup
-                button.onclick = function(e) {
-                    e.preventDefault();
-                    console.log('📱 Backup onclick triggered with clean name:', this.dataset.productName);
-                    handleButtonClick.call(this, e);
-                };
-            });
-            
-            console.log('✅ Size selection setup complete with clean product names');
-        }
+function selectSize(element) {
+    var size = element.getAttribute('data-size');
+    var stock = element.getAttribute('data-stock');
+    var productId = element.getAttribute('data-product-id');
+    var price = element.getAttribute('data-price') || '0';
+    
+    console.log('Size selected:', size, 'Price:', price);
+    
+    // Clear selections
+    document.querySelectorAll('.size-option').forEach(function(opt) {
+        opt.classList.remove('selected');
+        opt.style.backgroundColor = '';
+        opt.style.color = '';
+        opt.style.borderColor = '';
+    });
+    
+    // Mark selected
+    element.classList.add('selected');
+    element.style.backgroundColor = '#3b82f6';
+    element.style.color = 'white';
+    element.style.borderColor = '#3b82f6';
+    
+    // Update UI elements
+    var sizeInfo = document.getElementById('selectedSizeInfo');
+    var sizeDisplay = document.getElementById('selectedSizeDisplay');
+    var sizeStock = document.getElementById('selectedSizeStock');
+    var sizePriceElement = document.getElementById('selectedSizePrice');
+    var form = document.getElementById('sizeAddToCartForm');
+    var productInput = document.getElementById('selectedProductId');
+    var sizeInput = document.getElementById('selectedSizeValue');
+    
+    if (sizeDisplay) sizeDisplay.textContent = size;
+    if (sizeStock) sizeStock.textContent = stock + ' available';
+    
+    // 🔥 UPDATE PRICE - INI YANG PALING PENTING
+    if (sizePriceElement) {
+        var formattedPrice = 'Rp ' + new Intl.NumberFormat('id-ID').format(parseInt(price));
+        sizePriceElement.textContent = formattedPrice;
+        console.log('💰 Price updated to:', formattedPrice);
+    }
+    
+    if (productInput) productInput.value = productId;
+    if (sizeInput) sizeInput.value = size;
+    
+    if (sizeInfo) sizeInfo.classList.remove('hidden');
+    if (form) form.classList.remove('hidden');
+}
 
-        function handleDocumentClick(e) {
-            // Size select button
-            if (e.target.closest('.size-select-btn')) {
-                e.preventDefault();
-                console.log('🎯 Document click - size button');
-                var button = e.target.closest('.size-select-btn');
-                openSizeModal(button);
-                return;
-            }
-            
-            // Modal close
-            if (e.target.id === 'closeModalBtn' || e.target.closest('#closeModalBtn')) {
-                console.log('❌ Close button clicked');
-                closeModal();
-                return;
-            }
-            
-            // Background close
-            if (e.target.id === 'sizeSelectionModal') {
-                console.log('❌ Background clicked');
-                closeModal();
-                return;
-            }
-            
-            // Size option
-            if (e.target.closest('.size-option')) {
-                var option = e.target.closest('.size-option');
-                if (!option.classList.contains('disabled')) {
-                    console.log('📏 Size option clicked:', option.dataset.size);
-                    selectSize(option);
-                }
-                return;
-            }
-        }
-
-        function handleButtonClick(e) {
-            e.preventDefault();
-            console.log('🎯 Direct button click triggered with clean name:', this.dataset.productName);
-            openSizeModal(this);
-        }
-
-        function openSizeModal(button) {
-            console.log('🔓 Opening size modal...');
-            
-            var productId = button.getAttribute('data-product-id');
-            
-            // ⭐ Use clean product name from data attribute
-            var cleanProductName = button.getAttribute('data-product-name');
-            
-            console.log('Product:', productId, 'Clean Name:', cleanProductName);
-            
-            var modal = document.getElementById('sizeSelectionModal');
-            var title = document.getElementById('modalProductName');
-            var container = document.getElementById('sizeOptionsContainer');
-            
-            if (!modal) {
-                console.error('❌ Modal not found!');
-                alert('Modal not found!');
-                return;
-            }
-            
-            // ⭐ Set title with clean product name
-            if (title) {
-                title.textContent = 'Select Size - ' + cleanProductName;
-            }
-            
-            // Get sizes from product card
-            var productCard = button.closest('.product-card');
-            var sizeContainer = productCard ? productCard.querySelector('#sizeContainer-' + productId) : null;
-            
-            var sizes = [];
-            if (sizeContainer) {
-                var badges = sizeContainer.querySelectorAll('.size-badge');
-                badges.forEach(function(badge) {
-                    sizes.push({
-                        size: badge.getAttribute('data-size'),
-                        stock: badge.getAttribute('data-stock'),
-                        available: badge.getAttribute('data-available') === 'true',
-                        productId: badge.getAttribute('data-product-id')
-                    });
-                });
-            }
-            
-            console.log('Found sizes:', sizes);
-            
-            // Populate sizes
-            if (container) {
-                container.innerHTML = '';
-                
-                if (sizes.length > 0) {
-                    sizes.forEach(function(size) {
-                        var div = document.createElement('div');
-                        div.className = 'size-option' + (size.available ? '' : ' disabled');
-                        div.setAttribute('data-size', size.size);
-                        div.setAttribute('data-stock', size.stock);
-                        div.setAttribute('data-product-id', size.productId);
-                        
-                        div.innerHTML = 
-                            '<div class="size-label" style="font-weight: 600; font-size: 14px;">' + size.size + '</div>' +
-                            '<div class="stock-info" style="font-size: 11px; margin-top: 2px; color: ' + (size.available ? '#059669' : '#dc2626') + ';">' +
-                            (size.available ? size.stock + ' left' : 'Out of stock') + '</div>';
-                        
-                        container.appendChild(div);
-                    });
-                } else {
-                    container.innerHTML = '<div style="grid-column: span 3; text-align: center; color: #6b7280;">No sizes available</div>';
-                }
-            }
-            
-            // Show modal
-            modal.classList.remove('hidden');
-            modal.style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-            
-            console.log('✅ Modal displayed with clean product name:', cleanProductName);
-        }
-
-        function selectSize(element) {
-            console.log('📏 Selecting size:', element.getAttribute('data-size'));
-            
-            // Clear previous selections
-            document.querySelectorAll('.size-option').forEach(function(opt) {
-                opt.classList.remove('selected');
-                opt.style.backgroundColor = '';
-                opt.style.color = '';
-                opt.style.borderColor = '';
-            });
-            
-            // Select current
-            element.classList.add('selected');
-            element.style.backgroundColor = '#3b82f6';
-            element.style.color = 'white';
-            element.style.borderColor = '#3b82f6';
-            
-            var size = element.getAttribute('data-size');
-            var stock = element.getAttribute('data-stock');
-            var productId = element.getAttribute('data-product-id');
-            
-            // Update form
-            var sizeInfo = document.getElementById('selectedSizeInfo');
-            var sizeDisplay = document.getElementById('selectedSizeDisplay');
-            var sizeStock = document.getElementById('selectedSizeStock');
-            var form = document.getElementById('sizeAddToCartForm');
-            var productInput = document.getElementById('selectedProductId');
-            var sizeInput = document.getElementById('selectedSizeValue');
-            
-            if (sizeDisplay) sizeDisplay.textContent = size;
-            if (sizeStock) sizeStock.textContent = stock + ' available';
-            if (productInput) productInput.value = productId;
-            if (sizeInput) sizeInput.value = size;
-            
-            if (sizeInfo) sizeInfo.classList.remove('hidden');
-            if (form) form.classList.remove('hidden');
-            
-            console.log('📝 Form updated with:', productId, size);
-        }
-
-        function closeModal() {
-            console.log('❌ Closing modal...');
-            
-            var modal = document.getElementById('sizeSelectionModal');
-            if (modal) {
-                modal.classList.add('hidden');
-                modal.style.display = 'none';
-                document.body.style.overflow = '';
-                
-                // Reset form
-                var sizeInfo = document.getElementById('selectedSizeInfo');
-                var form = document.getElementById('sizeAddToCartForm');
-                if (sizeInfo) sizeInfo.classList.add('hidden');
-                if (form) form.classList.add('hidden');
-                
-                // Clear selections
-                document.querySelectorAll('.size-option').forEach(function(opt) {
-                    opt.classList.remove('selected');
-                    opt.style.backgroundColor = '';
-                    opt.style.color = '';
-                    opt.style.borderColor = '';
-                });
-            }
-        }
-
-        // Handle form submission
-        document.addEventListener('submit', function(e) {
-            if (e.target.id === 'sizeAddToCartForm') {
-                e.preventDefault();
-                console.log('🛒 Form submitted');
-                
-                var form = e.target;
-                var button = form.querySelector('button[type="submit"]');
-                var originalText = button.innerHTML;
-                
-                // Get CSRF token
-                var csrf = document.querySelector('meta[name="csrf-token"]');
-                if (!csrf) {
-                    alert('CSRF token missing. Please refresh the page.');
-                    return;
-                }
-                
-                // Show loading
-                button.innerHTML = '⏳ Adding...';
-                button.disabled = true;
-                
-                // Create form data
-                var formData = new FormData(form);
-                
-                console.log('📦 Sending data:', {
-                    productId: formData.get('product_id'),
-                    size: formData.get('size'),
-                    quantity: formData.get('quantity')
-                });
-                
-                // Submit via fetch
-                fetch(form.action, {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': csrf.getAttribute('content'),
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(function(response) {
-                    console.log('📡 Response status:', response.status);
-                    console.log('📡 Response headers:', response.headers.get('content-type'));
-                    
-                    // Check if response is JSON
-                    var contentType = response.headers.get('content-type');
-                    if (contentType && contentType.includes('application/json')) {
-                        return response.json();
-                    } else {
-                        // If not JSON, return the text to see what's wrong
-                        return response.text().then(function(text) {
-                            console.error('❌ Non-JSON response:', text.substring(0, 500));
-                            throw new Error('Server returned HTML instead of JSON. Response: ' + text.substring(0, 100));
-                        });
-                    }
-                })
-                .then(function(data) {
-                    console.log('📦 JSON Data:', data);
-                    
-                    if (data.success) {
-                        button.innerHTML = '✅ Added!';
-                        button.style.backgroundColor = '#10b981';
-                        showToast('Product added to cart!');
-                        
-                        // Update cart counter if provided
-                        if (data.cart_count) {
-                            updateCartCounter(data.cart_count);
-                        }
-                        
-                        setTimeout(function() {
-                            closeModal();
-                        }, 1500);
-                    } else {
-                        button.innerHTML = '❌ Failed';
-                        showToast(data.message || 'Failed to add to cart', 'error');
-                    }
-                })
-                .catch(function(error) {
-                    console.error('💥 Add to cart error:', error);
-                    button.innerHTML = '❌ Error';
-                    
-                    // More specific error messages
-                    if (error.message.includes('HTML instead of JSON')) {
-                        showToast('Server error - please check if cart route exists', 'error');
-                    } else if (error.message.includes('Failed to fetch')) {
-                        showToast('Network error - please check your connection', 'error');
-                    } else {
-                        showToast('Error: ' + error.message, 'error');
-                    }
-                })
-                .finally(function() {
-                    setTimeout(function() {
-                        button.innerHTML = originalText;
-                        button.disabled = false;
-                        button.style.backgroundColor = '';
-                    }, 3000);
-                });
-            }
-        });
-
-        // ESC key handler
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-
-        function showToast(message, type) {
-            var toast = document.createElement('div');
-            toast.className = 'fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white transition-all duration-300 ' + 
-                             (type === 'error' ? 'bg-red-500' : 'bg-green-500');
-            
-            toast.innerHTML = '<div style="display: flex; align-items: center; gap: 8px;"><span>' + message + '</span></div>';
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(function() {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100%)';
-                setTimeout(function() {
-                    toast.remove();
-                }, 300);
-            }, 3000);
-        }
-
-        function updateCartCounter(count) {
-            var cartCounters = document.querySelectorAll('.cart-counter, [data-cart-count], .cart-badge');
-            cartCounters.forEach(function(counter) {
-                counter.textContent = count;
-                if (count > 0) {
-                    counter.style.display = 'inline';
-                } else {
-                    counter.style.display = 'none';
-                }
-            });
-            console.log('🔢 Cart counter updated to:', count);
-        }
-
-        // Utility functions
-        function updateSort(value) {
-            var url = new URL(window.location);
-            url.searchParams.set('sort', value);
-            window.location = url;
-        }
-
-        function clearFilters() {
-            window.location = window.location.pathname;
-        }
-
-        // Initialize wishlist functionality
-        function initWishlist() {
-            document.querySelectorAll('.wishlist-btn').forEach(function(button) {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    var productId = this.dataset.productId;
-                    var cleanProductName = this.dataset.productName; // ⭐ Using clean product name
-                    
-                    console.log('❤️ Wishlist clicked for clean product:', cleanProductName);
-                    
-                    // Toggle wishlist functionality here
-                    var icon = this.querySelector('.wishlist-icon');
-                    if (icon.classList.contains('far')) {
-                        icon.classList.remove('far');
-                        icon.classList.add('fas');
-                        icon.style.color = '#ef4444';
-                        showToast(cleanProductName + ' added to wishlist!', 'success');
-                    } else {
-                        icon.classList.remove('fas');
-                        icon.classList.add('far');
-                        icon.style.color = '#9ca3af';
-                        showToast(cleanProductName + ' removed from wishlist!', 'info');
-                    }
-                });
-            });
-        }
-
-        // Initialize filter toggle
-        function initFilterToggle() {
-            var filterToggle = document.getElementById('filterToggle');
-            var filterSidebar = document.getElementById('filterSidebar');
-            var filterIcon = document.getElementById('filterIcon');
-            
-            if (filterToggle && filterSidebar && filterIcon) {
-                var filterVisible = false;
-                
-                filterToggle.addEventListener('click', function() {
-                    filterVisible = !filterVisible;
-                    
-                    if (filterVisible) {
-                        filterSidebar.classList.remove('hidden');
-                        filterIcon.classList.remove('fa-chevron-down');
-                        filterIcon.classList.add('fa-chevron-up');
-                    } else {
-                        filterSidebar.classList.add('hidden');
-                        filterIcon.classList.remove('fa-chevron-up');
-                        filterIcon.classList.add('fa-chevron-down');
-                    }
-                });
-            }
-        }
-
-        // Initialize view toggle
-        function initViewToggle() {
-            var gridViewBtn = document.getElementById('gridView');
-            var listViewBtn = document.getElementById('listView');
-            var productsContainer = document.getElementById('productsContainer');
-            
-            if (gridViewBtn && listViewBtn && productsContainer) {
-                gridViewBtn.addEventListener('click', function() {
-                    productsContainer.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6';
-                    this.classList.add('text-blue-600', 'bg-blue-50');
-                    this.classList.remove('text-gray-400');
-                    listViewBtn.classList.remove('text-blue-600', 'bg-blue-50');
-                    listViewBtn.classList.add('text-gray-400');
-                });
-                
-                listViewBtn.addEventListener('click', function() {
-                    productsContainer.className = 'space-y-4';
-                    this.classList.add('text-blue-600', 'bg-blue-50');
-                    this.classList.remove('text-gray-400');
-                    gridViewBtn.classList.remove('text-blue-600', 'bg-blue-50');
-                    gridViewBtn.classList.add('text-gray-400');
-                });
-            }
-        }
-
-        // Initialize all functionality when DOM is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            initWishlist();
-            initFilterToggle();
-            initViewToggle();
-            console.log('✅ All functionality initialized with clean product names');
-        });
-
-        console.log('🎯 Enhanced JavaScript Loaded - Size Selection Ready with Clean Product Names!');
-    </script>
+function closeModal() {
+    var modal = document.getElementById('sizeSelectionModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+    
+    // Reset form
+    var form = document.getElementById('sizeAddToCartForm');
+    var sizeInfo = document.getElementById('selectedSizeInfo');
+    if (form) form.classList.add('hidden');
+    if (sizeInfo) sizeInfo.classList.add('hidden');
+    
+    // Clear selections
+    document.querySelectorAll('.size-option').forEach(function(opt) {
+        opt.classList.remove('selected');
+        opt.style.backgroundColor = '';
+        opt.style.color = '';
+        opt.style.borderColor = '';
+    });
+}
+</script>
 @endsection
 
 @push('styles')

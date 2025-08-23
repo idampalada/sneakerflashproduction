@@ -394,71 +394,61 @@ class MidtransService
     /**
      * UPDATED: Handle notification webhook - now returns simplified payment status
      */
-    public function handleNotification($notification)
-    {
-        try {
-            Log::info('=== PROCESSING MIDTRANS NOTIFICATION ===', [
-                'order_id' => $notification['order_id'] ?? 'unknown',
-                'transaction_status' => $notification['transaction_status'] ?? 'unknown',
-                'payment_type' => $notification['payment_type'] ?? 'unknown',
-                'fraud_status' => $notification['fraud_status'] ?? 'unknown',
-                'signature_key' => isset($notification['signature_key']) ? 'present' : 'missing'
-            ]);
+public function handleNotification($notification)
+{
+    try {
+        Log::info('=== PROCESSING MIDTRANS NOTIFICATION ===', [
+            'order_id' => $notification['order_id'] ?? 'unknown',
+            'transaction_status' => $notification['transaction_status'] ?? 'unknown',
+            'payment_type' => $notification['payment_type'] ?? 'unknown',
+            'fraud_status' => $notification['fraud_status'] ?? 'unknown',
+            'signature_key' => isset($notification['signature_key']) ? 'present' : 'missing'
+        ]);
 
-            // Verify notification signature
-            if (!$this->verifySignature($notification)) {
-                Log::error('❌ Invalid Midtrans notification signature');
-                return null;
-            }
-
-            Log::info('✅ Signature verification passed');
-
-            // Double check with Midtrans API (with caching)
-            $verifiedData = $this->getTransactionStatus($notification['order_id'], true);
-            if ($verifiedData) {
-                Log::info('✅ Transaction verified with Midtrans API', [
-                    'api_status' => $verifiedData['transaction_status'],
-                    'notification_status' => $notification['transaction_status']
-                ]);
-                // Use API data if available (more reliable)
-                $notification = array_merge($notification, $verifiedData);
-            }
-
-            // UPDATED: Map transaction status to simplified payment status
-            $transactionStatus = $notification['transaction_status'] ?? '';
-            $fraudStatus = $notification['fraud_status'] ?? 'accept';
-            $paymentType = $notification['payment_type'] ?? '';
-
-            $paymentStatus = $this->mapToSimplePaymentStatus($transactionStatus, $fraudStatus);
-
-            Log::info('✅ Payment status mapped', [
-                'order_id' => $notification['order_id'],
-                'transaction_status' => $transactionStatus,
-                'fraud_status' => $fraudStatus,
-                'mapped_payment_status' => $paymentStatus
-            ]);
-
-            return [
-                'order_id' => $notification['order_id'] ?? '',
-                'payment_status' => $paymentStatus,
-                'transaction_status' => $transactionStatus,
-                'fraud_status' => $fraudStatus,
-                'payment_type' => $paymentType,
-                'gross_amount' => $notification['gross_amount'] ?? null,
-                'transaction_time' => $notification['transaction_time'] ?? null,
-                'raw_notification' => $notification
-            ];
-
-        } catch (\Exception $e) {
-            Log::error('❌ Error processing Midtrans notification', [
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'notification' => $notification
-            ]);
+        // Verify notification signature
+        if (!$this->verifySignature($notification)) {
+            Log::error('❌ Invalid Midtrans notification signature');
             return null;
         }
+
+        Log::info('✅ Signature verification passed');
+
+        // FIXED: Use webhook notification data directly (no API double-check)
+        $transactionStatus = $notification['transaction_status'] ?? '';
+        $fraudStatus = $notification['fraud_status'] ?? 'accept';
+        $paymentType = $notification['payment_type'] ?? '';
+
+        $paymentStatus = $this->mapToSimplePaymentStatus($transactionStatus, $fraudStatus);
+
+        Log::info('✅ Payment status mapped FROM WEBHOOK', [
+            'order_id' => $notification['order_id'],
+            'transaction_status' => $transactionStatus,
+            'fraud_status' => $fraudStatus,
+            'mapped_payment_status' => $paymentStatus,
+            'source' => 'webhook_direct'
+        ]);
+
+        return [
+            'order_id' => $notification['order_id'] ?? '',
+            'payment_status' => $paymentStatus,
+            'transaction_status' => $transactionStatus,
+            'fraud_status' => $fraudStatus,
+            'payment_type' => $paymentType,
+            'gross_amount' => $notification['gross_amount'] ?? null,
+            'transaction_time' => $notification['transaction_time'] ?? null,
+            'raw_notification' => $notification
+        ];
+
+    } catch (\Exception $e) {
+        Log::error('❌ Error processing Midtrans notification', [
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'notification' => $notification
+        ]);
+        return null;
     }
+}
 
     /**
      * UPDATED: Map to simplified payment status for single status system
