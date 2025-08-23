@@ -2204,25 +2204,18 @@ private function createMidtransPayment($order, $cartItems, $request)
         return view('frontend.checkout.payment', compact('order', 'snapToken'));
     }
 
-    public function paymentSuccess(Request $request)
+public function paymentSuccess(Request $request)
 {
     $orderNumber = $request->get('order_id');
     
+    Log::info('PaymentSuccess callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
     if ($orderNumber) {
-        $order = Order::where('order_number', $orderNumber)->first();
-        
-        if ($order && $order->status === 'pending') {
-            // Update order status to paid
-            $order->update(['status' => 'paid']);
-            
-            // Log successful payment
-            Log::info('Payment successful via callback', [
-                'order_number' => $orderNumber,
-                'order_id' => $order->id,
-                'user_id' => $order->user_id,
-                'amount' => $order->total_amount
-            ]);
-        }
+        // ✅ PERBAIKAN: JANGAN langsung update ke paid
+        // Biarkan webhook yang handle update status
         
         return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
                        ->with('success', 'Payment completed! We are processing your order.');
@@ -2231,16 +2224,23 @@ private function createMidtransPayment($order, $cartItems, $request)
     return redirect()->route('home')->with('success', 'Payment completed successfully!');
 }
 
-    public function paymentPending(Request $request)
+public function paymentPending(Request $request)
 {
     $orderNumber = $request->get('order_id');
     
+    Log::info('PaymentPending callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
     if ($orderNumber) {
+        // ✅ JANGAN update status, biarkan webhook yang handle
+        
         return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
                        ->with('warning', 'Payment is being processed. You will receive confirmation shortly.');
     }
     
-    return redirect()->route('home')->with('warning', 'Payment is being processed.');
+    return redirect()->route('home')->with('warning', 'Payment pending.');
 }
 
     public function paymentError(Request $request)
@@ -2280,17 +2280,24 @@ private function createMidtransPayment($order, $cartItems, $request)
         return redirect()->route('home')->with('success', 'Payment completed successfully!');
     }
 
-    public function paymentUnfinish(Request $request)
-    {
-        $orderNumber = $request->get('order_id');
+public function paymentUnfinish(Request $request)
+{
+    $orderNumber = $request->get('order_id');
+    
+    Log::info('PaymentUnfinish callback accessed', [
+        'order_id' => $orderNumber,
+        'all_params' => $request->all()
+    ]);
+    
+    if ($orderNumber) {
+        // ✅ JANGAN update status, biarkan webhook yang handle
         
-        if ($orderNumber) {
-            return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
-                           ->with('warning', 'Payment was not completed. You can retry payment anytime.');
-        }
-        
-        return redirect()->route('home')->with('warning', 'Payment pending.');
+        return redirect()->route('checkout.success', ['orderNumber' => $orderNumber])
+                       ->with('warning', 'Payment was not completed. You can retry payment anytime from your order page.');
     }
+    
+    return redirect()->route('home')->with('warning', 'Payment was not completed.');
+}
 
     public function getPaymentStatus($orderNumber)
     {

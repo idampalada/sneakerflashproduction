@@ -286,7 +286,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('city_name').value = location.city_name || '';
         document.getElementById('subdistrict_name').value = location.subdistrict_name || '';
         document.getElementById('postal_code').value = location.zip_code || location.postal_code || '';
-        document.getElementById('destination_id').value = location.location_id || location.destination_id || '';
+document.getElementById('destination_id').value = location.location_id || location.id || '';
+
 
         // Display selected location
         selectedLocationText.textContent = location.full_address || location.label || `${location.subdistrict_name}, ${location.city_name}, ${location.province_name}`;
