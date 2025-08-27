@@ -1285,57 +1285,63 @@ html, body {
 
     <!-- Footer -->
     <footer class="bg-black text-white py-12" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
-        <div class="container mx-auto px-4">
-            <!-- Grid Layout: 2 kolom di mobile, 3 kolom di desktop -->
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8">
-                
-                <!-- Company Info (Hidden di mobile, tampil di desktop) -->
-                <div class="hidden md:block">
+    <!-- Container tanpa max-width constraint untuk logo -->
+    <div class="w-full">
+        <!-- Grid Layout: 2 kolom di mobile (tanpa logo), 3 kolom di desktop -->
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8">
+            
+            <!-- Company Info - BENAR-BENAR di pojok kiri tanpa margin/padding, hidden di mobile -->
+            <div class="hidden md:block md:col-span-1">
+                <div class="pl-4 lg:pl-8">
                     <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img mb-4 filter brightness-0 invert">
-                    <p class="text-gray-300 text-sm">
+                    <p class="text-gray-300 text-sm pr-4">
                         Premium sneakers and streetwear for everyone. Authentic products, fast delivery.
                     </p>
                 </div>
+            </div>
 
-                <!-- Section 1: Information -->
-                <div>
-                    <h4 class="font-semibold mb-4 text-white">Information</h4>
-                    <ul class="space-y-2 text-sm">
-                        <li><a href="/about" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>About Us</a></li>
-                        <li><a href="/delivery" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Delivery</a></li>
-                        <li><a href="/terms" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Terms & Conditions</a></li>
-                        <li><a href="/privacy" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Privacy Policy</a></li>
-                        <li><a href="/flash-club" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Flash Club</a></li>
-                    </ul>
-                </div>
+            <!-- Section 1: Information -->
+            <div class="px-4 lg:px-0 group">
+                <h4 class="font-semibold mb-2 text-white">Information</h4>
+                <div class="w-8 h-px bg-gray-400 mb-4 transition-all duration-300 group-hover:w-40"></div>
+                <ul class="space-y-2 text-sm">
+                    <li><a href="/about" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>About Us</a></li>
+                    <li><a href="/delivery" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Delivery</a></li>
+                    <li><a href="/terms" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Terms & Conditions</a></li>
+                    <li><a href="/privacy" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Privacy Policy</a></li>
+                    <li><a href="/flash-club" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Flash Club</a></li>
+                </ul>
+            </div>
 
-                <!-- Section 2: Contact Us -->
-                <div class="pr-2">
-                    <h4 class="font-semibold mb-4 text-white">Contact Us</h4>
-                    <div class="space-y-3 text-sm">
-                        <!-- Location -->
-                        <div class="flex items-start space-x-2">
-                            <i class="fas fa-map-marker-alt text-gray-300 mt-1 flex-shrink-0 text-xs"></i>
-                            <span class="text-gray-300 leading-tight">West Jakarta, Indonesia</span>
-                        </div>
-                        
-                        <!-- Phone -->
-                        <div class="flex items-center space-x-2">
-                            <i class="fas fa-phone text-gray-300 flex-shrink-0 text-xs"></i>
-                            <a href="tel:0812345678" class="text-gray-300 hover:text-white">0812345678</a>
-                        </div>
-                        
-                        <!-- Email -->
-                        <div class="flex items-start space-x-2">
-                            <i class="fas fa-envelope text-gray-300 flex-shrink-0 text-xs mt-1"></i>
-                            <a href="mailto:hello@sneakersflash.com" class="text-gray-300 hover:text-white leading-tight break-words">hello@sneakersflash.com</a>
-                        </div>
+            <!-- Section 2: Contact Us -->
+            <div class="px-4 lg:px-0 group" style="margin-right: -24px !important; padding-right: 0 !important;">
+                <h4 class="font-semibold mb-2 text-white">Contact Us</h4>
+                <div class="w-8 h-px bg-gray-400 mb-4 transition-all duration-300 group-hover:w-20"></div>
+                <div class="space-y-3 text-sm" style="margin-right: -16px !important;">
+                    <!-- Location -->
+                    <div class="flex items-start space-x-2">
+                        <i class="fas fa-map-marker-alt text-gray-300 mt-1 flex-shrink-0 text-xs"></i>
+                        <span class="text-gray-300 leading-tight">West Jakarta, Indonesia</span>
+                    </div>
+                    
+                    <!-- Phone -->
+                    <div class="flex items-center space-x-2">
+                        <i class="fas fa-phone text-gray-300 flex-shrink-0 text-xs"></i>
+                        <a href="tel:0812345678" class="text-gray-300 hover:text-white">0812345678</a>
+                    </div>
+                    
+                    <!-- Email -->
+                    <div class="flex items-start space-x-2" style="max-width: calc(100vw - 80px);">
+                        <i class="fas fa-envelope text-gray-300 flex-shrink-0 text-xs mt-1"></i>
+                        <a href="mailto:hello@sneakersflash.com" class="text-gray-300 hover:text-white leading-tight break-words" style="word-break: break-all; overflow-wrap: anywhere;">hello@sneakersflash.com</a>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Social Media Icons (menggantikan copyright) -->
-            <div class="border-t border-gray-700 mt-8 pt-8 text-center">
+        <!-- Social Media Icons -->
+        <div class="border-t border-gray-700 mt-8 pt-8 text-center">
+            <div class="max-w-7xl mx-auto px-4 lg:px-8">
                 <div class="flex justify-center space-x-6">
                     <a href="https://instagram.com/sneakersflash" target="_blank" class="text-gray-300 hover:text-white transition-colors">
                         <i class="fab fa-instagram text-2xl"></i>
@@ -1349,12 +1355,28 @@ html, body {
                 </div>
             </div>
         </div>
-    </footer>
+    </div>
+</footer>
+
+<!-- Alternative: Jika masih belum pojok banget, pakai ini -->
+<style>
+/* Opsi ekstrem: Logo benar-benar di pojok kiri tanpa padding */
+.logo-absolute-left {
+    margin-left: -1rem !important;
+    padding-left: 1rem !important;
+}
+
+/* Atau gunakan negative margin */
+.logo-negative-margin {
+    margin-left: -2rem;
+}
+</style>
     <!-- Mobile Bottom Navigation - Add this to your main layout file (layouts/app.blade.php) before closing body tag -->
+<!-- Mobile Bottom Navigation - Updated dengan warna hitam bold -->
 <div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
     <div class="flex items-center justify-around py-2">
         <!-- Home -->
-        <a href="/" class="flex flex-col items-center py-2 px-4 {{ request()->is('/') ? 'text-blue-600' : 'text-gray-600' }}">
+        <a href="/" class="flex flex-col items-center py-2 px-4 {{ request()->is('/') ? 'text-black font-bold' : 'text-gray-400' }}">
             <div class="relative">
                 <i class="fas fa-home text-xl mb-1"></i>
             </div>
@@ -1362,7 +1384,7 @@ html, body {
         </a>
 
         <!-- Cart -->
-        <a href="{{ route('cart.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('cart*') ? 'text-blue-600' : 'text-gray-600' }}">
+        <a href="{{ route('cart.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('cart*') ? 'text-black font-bold' : 'text-gray-400' }}">
             <div class="relative">
                 <i class="fas fa-shopping-cart text-xl mb-1"></i>
                 @if(isset($cartCount) && $cartCount > 0)
@@ -1376,14 +1398,14 @@ html, body {
 
         <!-- Account/Profile -->
         @auth
-            <a href="{{ route('profile.show') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') ? 'text-blue-600' : 'text-gray-600' }}">
+            <a href="{{ route('profile.show') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
                 <div class="relative">
                     <i class="fas fa-user text-xl mb-1"></i>
                 </div>
                 <span class="text-xs font-medium">Account</span>
             </a>
         @else
-            <a href="/login" class="flex flex-col items-center py-2 px-4 {{ request()->is('login*') || request()->is('register*') ? 'text-blue-600' : 'text-gray-600' }}">
+            <a href="/login" class="flex flex-col items-center py-2 px-4 {{ request()->is('login*') || request()->is('register*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
                 <div class="relative">
                     <i class="fas fa-user text-xl mb-1"></i>
                 </div>
@@ -1393,7 +1415,7 @@ html, body {
     </div>
 </div>
 
-<!-- Add bottom padding to body content to prevent overlap with fixed bottom nav -->
+<!-- Updated CSS Styles -->
 <style>
 .mobile-bottom-nav {
     height: 70px;
@@ -1403,10 +1425,12 @@ html, body {
 .mobile-bottom-nav a {
     transition: color 0.2s ease;
     min-width: 60px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/* Hover effect tetap menggunakan warna hitam */
 .mobile-bottom-nav a:hover {
-    color: #2563eb;
+    color: #000000;
 }
 
 /* Add padding to body to prevent content being hidden behind bottom nav */
@@ -1416,9 +1440,13 @@ html, body {
     }
 }
 
-/* Active state styling */
-.mobile-bottom-nav a.text-blue-600 i {
+/* Active state styling - WARNA HITAM BOLD */
+.mobile-bottom-nav a.text-black i {
     transform: scale(1.1);
+}
+
+.mobile-bottom-nav a.font-bold {
+    font-weight: 700;
 }
 
 /* Cart badge animation */
