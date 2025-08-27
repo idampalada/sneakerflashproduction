@@ -156,11 +156,11 @@
             </div>
         @endif
 
-        <div class="text-center mt-12">
-            <a href="/products" class="inline-block bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                View All Best Sellers
-            </a>
-        </div>
+<div class="text-center mt-12">
+    <a href="/products" class="inline-block bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition-colors font-medium">
+        View All Best Sellers
+    </a>
+</div>
     </div>
 </section>
 
@@ -377,11 +377,11 @@
                 </div>
             @endif
 
-            <div class="text-center mt-12">
-                <a href="/products?featured=1" class="inline-block bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                    View All Featured Products
-                </a>
-            </div>
+<div class="text-center mt-12">
+    <a href="/products?featured=1" class="inline-block bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition-colors font-medium">
+        View All Featured Products
+    </a>
+</div>
         </div>
     </section>
 
@@ -468,11 +468,11 @@
                 </div>
             @endif
 
-            <div class="text-center mt-12">
-                <a href="/products?sort=latest" class="inline-block bg-gray-800 text-white px-8 py-3 rounded-lg hover:bg-gray-900 transition-colors font-medium">
-                    View All New Arrivals
-                </a>
-            </div>
+<div class="text-center mt-12">
+    <a href="/products?sort=latest" class="inline-block bg-black text-white px-8 py-3 rounded-lg hover:bg-gray-800 transition-colors font-medium">
+        View All New Arrivals
+    </a>
+</div>
         </div>
     </section>
 

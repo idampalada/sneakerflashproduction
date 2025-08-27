@@ -277,10 +277,10 @@
 
 /* Main navigation button styling */
 .nav-main-btn {
-    color: #666666;
+    color: #000000;  /* GANTI DARI #666666 ke #000000 (HITAM) */
     padding: 8px 20px;
     text-decoration: none;
-    font-weight: 700;
+    font-weight: 700;  /* TETAP BOLD */
     font-size: 16px;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     transition: all 0.3s ease;
@@ -296,7 +296,7 @@
 
 .nav-main-btn:hover {
     background-color: rgba(0,0,0,0.05);
-    color: #333;
+    color: #000000;  /* GANTI DARI #333 ke #000000 (HITAM SAAT HOVER) */
 }
 
 .nav-main-btn.special {
@@ -321,10 +321,10 @@
 
 /* Simple link styling for items without dropdowns */
 .nav-simple-link {
-    color: #666666;
+    color: #000000;  /* GANTI DARI #666666 ke #000000 (HITAM) */
     padding: 8px 20px;
     text-decoration: none;
-    font-weight: 700;
+    font-weight: 700;  /* TETAP BOLD */
     font-size: 16px;
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     transition: all 0.3s ease;
@@ -337,7 +337,7 @@
 
 .nav-simple-link:hover {
     background-color: rgba(0,0,0,0.05);
-    color: #333;
+    color: #000000;  /* GANTI DARI #333 ke #000000 (HITAM SAAT HOVER) */
 }
 
 .nav-simple-link.special {
@@ -1284,60 +1284,69 @@ html, body {
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-900 text-white py-12">
+    <footer class="bg-black text-white py-12" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
         <div class="container mx-auto px-4">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
-                <!-- Company Info -->
-                <div>
+            <!-- Grid Layout: 2 kolom di mobile, 3 kolom di desktop -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8">
+                
+                <!-- Company Info (Hidden di mobile, tampil di desktop) -->
+                <div class="hidden md:block">
                     <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img mb-4 filter brightness-0 invert">
-                    <p class="text-gray-400 text-sm">
+                    <p class="text-gray-300 text-sm">
                         Premium sneakers and streetwear for everyone. Authentic products, fast delivery.
                     </p>
                 </div>
 
-                <!-- Quick Links -->
+                <!-- Section 1: Information -->
                 <div>
-                    <h4 class="font-semibold mb-4">Quick Links</h4>
+                    <h4 class="font-semibold mb-4 text-white">Information</h4>
                     <ul class="space-y-2 text-sm">
-                        <li><a href="/products" class="text-gray-400 hover:text-white">All Products</a></li>
-                        <li><a href="/products?sale=true" class="text-gray-400 hover:text-white">Sale</a></li>
-                        <li><a href="/about" class="text-gray-400 hover:text-white">About Us</a></li>
-                        <li><a href="/contact" class="text-gray-400 hover:text-white">Contact</a></li>
+                        <li><a href="/about" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>About Us</a></li>
+                        <li><a href="/delivery" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Delivery</a></li>
+                        <li><a href="/terms" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Terms & Conditions</a></li>
+                        <li><a href="/privacy" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Privacy Policy</a></li>
+                        <li><a href="/flash-club" class="text-gray-300 hover:text-white flex items-center"><span class="mr-2">></span>Flash Club</a></li>
                     </ul>
                 </div>
 
-                <!-- Customer Service -->
-                <div>
-                    <h4 class="font-semibold mb-4">Customer Service</h4>
-                    <ul class="space-y-2 text-sm">
-                        <li><a href="/shipping-info" class="text-gray-400 hover:text-white">Shipping Info</a></li>
-                        <li><a href="/returns" class="text-gray-400 hover:text-white">Returns</a></li>
-                        <li><a href="/size-guide" class="text-gray-400 hover:text-white">Size Guide</a></li>
-                        <li><a href="/terms" class="text-gray-400 hover:text-white">Terms & Conditions</a></li>
-                    </ul>
-                </div>
-
-                <!-- Follow Us -->
-                <div>
-                    <h4 class="font-semibold mb-4">Follow Us</h4>
-                    <div class="flex space-x-4">
-                        <a href="#" class="text-gray-400 hover:text-white">
-                            <i class="fab fa-instagram text-xl"></i>
-                        </a>
-                        <a href="#" class="text-gray-400 hover:text-white">
-                            <i class="fab fa-tiktok text-xl"></i>
-                        </a>
-                        <a href="#" class="text-gray-400 hover:text-white">
-                            <i class="fab fa-facebook text-xl"></i>
-                        </a>
+                <!-- Section 2: Contact Us -->
+                <div class="pr-2">
+                    <h4 class="font-semibold mb-4 text-white">Contact Us</h4>
+                    <div class="space-y-3 text-sm">
+                        <!-- Location -->
+                        <div class="flex items-start space-x-2">
+                            <i class="fas fa-map-marker-alt text-gray-300 mt-1 flex-shrink-0 text-xs"></i>
+                            <span class="text-gray-300 leading-tight">West Jakarta, Indonesia</span>
+                        </div>
+                        
+                        <!-- Phone -->
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-phone text-gray-300 flex-shrink-0 text-xs"></i>
+                            <a href="tel:0812345678" class="text-gray-300 hover:text-white">0812345678</a>
+                        </div>
+                        
+                        <!-- Email -->
+                        <div class="flex items-start space-x-2">
+                            <i class="fas fa-envelope text-gray-300 flex-shrink-0 text-xs mt-1"></i>
+                            <a href="mailto:hello@sneakersflash.com" class="text-gray-300 hover:text-white leading-tight break-words">hello@sneakersflash.com</a>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="border-t border-gray-800 mt-8 pt-8 text-center">
-                <p class="text-gray-400 text-sm">
-                    &copy; {{ date('Y') }} SneakerFlash. All rights reserved.
-                </p>
+            <!-- Social Media Icons (menggantikan copyright) -->
+            <div class="border-t border-gray-700 mt-8 pt-8 text-center">
+                <div class="flex justify-center space-x-6">
+                    <a href="https://instagram.com/sneakersflash" target="_blank" class="text-gray-300 hover:text-white transition-colors">
+                        <i class="fab fa-instagram text-2xl"></i>
+                    </a>
+                    <a href="https://tiktok.com/@sneakersflash" target="_blank" class="text-gray-300 hover:text-white transition-colors">
+                        <i class="fab fa-tiktok text-2xl"></i>
+                    </a>
+                    <a href="https://facebook.com/sneakersflash" target="_blank" class="text-gray-300 hover:text-white transition-colors">
+                        <i class="fab fa-facebook text-2xl"></i>
+                    </a>
+                </div>
             </div>
         </div>
     </footer>
