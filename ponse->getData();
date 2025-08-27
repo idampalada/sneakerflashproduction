@@ -1,0 +1,13 @@
+[90m= [39m[34;4mIlluminate\Http\JsonResponse[39;24m {#8776
+    +[1mheaders[22m: [34;4mSymfony\Component\HttpFoundation\ResponseHeaderBag[39;24m {#8725},
+    +[1moriginal[22m: [
+      "[34msuccess[39m" => [36mtrue[39m,
+      "[34mis_added[39m" => [36mfalse[39m,
+      "[34mmessage[39m" => "[32mProduct removed from wishlist![39m",
+      "[34mwishlist_count[39m" => [35m0[39m,
+      "[34mproduct_id[39m" => [35m84[39m,
+      "[34mproduct_name[39m" => "[32mVANS HOLDER ST CLASSIC CARDINAL Baju Lengan Pendek Unisex - VN0A3HZFCAR[39m",
+    ],
+    +[1mexception[22m: [36mnull[39m,
+  }
+

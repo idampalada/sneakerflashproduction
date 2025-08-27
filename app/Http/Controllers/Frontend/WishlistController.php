@@ -24,19 +24,92 @@ class WishlistController extends Controller
 
         // Get user's wishlist with products
         $wishlists = Wishlist::where('user_id', Auth::id())
-            ->with(['product' => function($query) {
-                $query->where('is_active', true)
-                      ->whereNotNull('published_at')
-                      ->where('published_at', '<=', now());
-            }])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->filter(function($wishlist) {
-                return $wishlist->product !== null; // Remove items with deleted products
-            });
+    ->with(['product' => function($q){
+        $q->where('is_active', true)
+          ->whereNotNull('published_at')
+          ->where('published_at', '<=', now());
+    }])
+    ->latest()
+    ->get()
+    ->filter(fn($w) => $w->product !== null)
+
+/* 👉 unik per keluarga sku_parent (kalau tak punya, pakai id sendiri) */
+    ->unique(function ($w) {
+        $p = $w->product;
+        return $p->sku_parent ?: 'p-'.$p->id;
+    })
+
+/* 👉 tempel data agregat ke $w->product biar dipakai di Blade */
+    ->map(function ($w) {
+        $p = $w->product;
+
+        if ($p->sku_parent) {
+            $siblings = \App\Models\Product::where('sku_parent', $p->sku_parent)
+                ->where('is_active', true)
+                ->whereNotNull('published_at')
+                ->where('published_at', '<=', now())
+                ->get(['id','name','slug','sku','available_sizes','stock_quantity','price','sale_price','images']);
+
+            // total stok keluarga
+            $totalStock = (int) $siblings->sum('stock_quantity');
+
+            // daftar varian size lengkap (size, stock, price)
+            $sizeVariants = $siblings->map(function ($s) {
+                $size = null;
+                if (is_array($s->available_sizes) && !empty($s->available_sizes)) {
+                    $size = $s->available_sizes[0];
+                } elseif (is_string($s->available_sizes) && strlen($s->available_sizes)) {
+                    $size = $s->available_sizes;
+                } else {
+                    $size = $this->extractSizeFromSku($s->sku, $s->sku_parent); // metode kecil di bawah
+                }
+                return [
+                    'id'             => $s->id,
+                    'size'           => $size ?: 'One Size',
+                    'stock'          => (int) ($s->stock_quantity ?? 0),
+                    'price'          => $s->sale_price ?: $s->price,
+                    'original_price' => $s->price,
+                    'available'      => (int) ($s->stock_quantity ?? 0) > 0,
+                ];
+            })->sortBy('size')->values();
+
+            // daftar size unik untuk tampilan ringkas
+            $aggregatedSizes = $sizeVariants->pluck('size')->filter()->unique()->values()->all();
+
+            // harga minimum antar varian
+            $minPrice = $sizeVariants->min('price');
+
+            // tempel ke product (atribut “sementara”)
+            $p->setAttribute('total_stock', $totalStock);
+            $p->setAttribute('size_variants', $sizeVariants);     // ← dipakai modal
+            $p->setAttribute('aggregated_sizes', $aggregatedSizes); // ← dipakai teks kartu
+            $p->setAttribute('min_price', $minPrice);
+        } else {
+            // produk tunggal (tanpa sku_parent)
+            $p->setAttribute('total_stock', (int) ($p->stock_quantity ?? 0));
+            $p->setAttribute('size_variants', collect([]));
+            $p->setAttribute('aggregated_sizes', is_array($p->available_sizes) ? $p->available_sizes : []);
+            $p->setAttribute('min_price', ($p->sale_price && $p->sale_price < $p->price) ? $p->sale_price : $p->price);
+        }
+        return $w;
+    })
+    ->values();
 
         return view('frontend.wishlist.index', compact('wishlists'));
     }
+
+    private function extractSizeFromSku(?string $sku, ?string $skuParent): ?string
+{
+    if (empty($sku) || empty($skuParent)) return null;
+    $parts = explode('-', $sku);
+    if (count($parts) >= 2) {
+        $sizePart = end($parts);
+        if (in_array(strtoupper($sizePart), ['XS','S','M','L','XL','XXL'])) return strtoupper($sizePart);
+        if (is_numeric($sizePart) || preg_match('/^\d+(\.5)?$/', $sizePart)) return $sizePart;
+    }
+    return null;
+}
+
 
     /**
      * Add/Remove product to/from wishlist (AJAX)

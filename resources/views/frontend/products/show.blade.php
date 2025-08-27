@@ -648,28 +648,72 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // ⭐ Wishlist functionality
-    document.querySelectorAll('.wishlist-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const productId = this.dataset.productId;
-            const cleanProductName = this.dataset.productName; // ⭐ Using clean product name
-            const icon = this.querySelector('i');
-            
-            console.log('❤️ Wishlist clicked for clean product:', cleanProductName);
-            
-            // Toggle wishlist (placeholder - implement actual wishlist logic)
-            if (icon.classList.contains('far')) {
-                icon.classList.remove('far');
-                icon.classList.add('fas');
-                icon.style.color = '#ef4444';
-                showToast((cleanProductName || 'Product') + ' added to wishlist!', 'success');
-            } else {
-                icon.classList.remove('fas');
-                icon.classList.add('far');
-                icon.style.color = '';
-                showToast((cleanProductName || 'Product') + ' removed from wishlist!', 'info');
-            }
-        });
+    // ⭐ Wishlist functionality (REAL)
+document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.wishlist-btn');
+    if (!btn) return;
+
+    // jaga-jaga kalau tombol berada di dalam link/form lain
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const productId = btn.dataset.productId;
+    const productName = btn.dataset.productName || 'Product';
+    const icon = btn.querySelector('i');
+
+    if (!productId) return;
+
+    btn.disabled = true;
+
+    fetch(`/wishlist/toggle/${productId}`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': token,            // token sudah kamu ambil di awal script
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(data => {
+        // kalau backend mengembalikan redirect (mis. belum login)
+        if (data && data.redirect) {
+            window.location.href = data.redirect;
+            return;
+        }
+
+        if (!data || data.success === false) {
+            showToast((data && data.message) || 'Gagal mengubah wishlist', 'error');
+            return;
+        }
+
+        const added = !!data.is_added;
+
+        // Update ikon hati
+        if (icon) {
+            icon.classList.toggle('fas', added);
+            icon.classList.toggle('far', !added);
+            icon.style.color = added ? '#ef4444' : '';
+        }
+
+        // Update badge jumlah wishlist di header (kalau backend mengirim count)
+        if ('wishlist_count' in data) {
+            const counterEls = document.querySelectorAll('[data-wishlist-count], .wishlist-badge');
+            counterEls.forEach(el => el.textContent = data.wishlist_count);
+        }
+
+        showToast(
+            `${productName} ${added ? 'added to' : 'removed from'} wishlist`,
+            added ? 'success' : 'info'
+        );
+    })
+    .catch(() => {
+        showToast('Terjadi kesalahan saat toggle wishlist.', 'error');
+    })
+    .finally(() => {
+        btn.disabled = false;
     });
+});
+
     
     // ⭐ Utility functions
     function showToast(message, type = 'success') {

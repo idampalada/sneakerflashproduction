@@ -160,7 +160,7 @@
                                 $totalStock = $product->total_stock ?? 0;
                             @endphp
                             
-                            <div class="product-card bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-lg transition-all duration-300 group" 
+                            <div class="product-card bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-lg transition-all duration-300 group h-full flex flex-col"
                                  data-product-id="{{ $product->id ?? '' }}"
                                  data-sku-parent="{{ $product->sku_parent ?? '' }}"
                                  data-product-name="{{ $cleanProductName }}">
@@ -213,7 +213,7 @@
                                 </div>
                                 
                                 <!-- Product Info -->
-                                <div class="p-4">
+                                <div class="p-4 flex flex-col h-full">
                                     <div class="mb-2">
                                         <span class="text-xs text-gray-500 uppercase tracking-wide">
                                             {{ strtoupper($product->product_type ?? 'APPAREL') }}
@@ -238,26 +238,26 @@
                                             <div class="flex flex-wrap gap-1 mt-1" id="sizeContainer-{{ $product->id }}">
                                                 @foreach($sizeVariants as $variant)
                                                     @php
-    $variantData = is_array($variant) ? $variant : (array) $variant;
-    $size = $variantData['size'] ?? 'Unknown';
-    $stock = (int) ($variantData['stock'] ?? 0);
-    $variantId = $variantData['id'] ?? '';
-    $sku = $variantData['sku'] ?? '';
-    $isAvailable = $stock > 0;
-    // 🔥 TAMBAHKAN PRICE DATA
-    $variantPrice = $variantData['price'] ?? $productPrice;
-    $variantOriginalPrice = $variantData['original_price'] ?? $productPrice;
-@endphp
-<span class="size-badge text-xs px-2 py-1 rounded border {{ $isAvailable ? 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-300' : 'text-gray-400 bg-gray-100 border-gray-200 line-through' }}" 
-      data-size="{{ $size }}" 
-      data-stock="{{ $stock }}"
-      data-product-id="{{ $variantId }}"
-      data-sku="{{ $sku }}"
-      data-available="{{ $isAvailable ? 'true' : 'false' }}"
-      data-price="{{ $variantPrice }}"
-      data-original-price="{{ $variantOriginalPrice }}">
-    {{ $size }}
-</span>
+                                                        $variantData = is_array($variant) ? $variant : (array) $variant;
+                                                        $size = $variantData['size'] ?? 'Unknown';
+                                                        $stock = (int) ($variantData['stock'] ?? 0);
+                                                        $variantId = $variantData['id'] ?? '';
+                                                        $sku = $variantData['sku'] ?? '';
+                                                        $isAvailable = $stock > 0;
+                                                        // 🔥 TAMBAHKAN PRICE DATA
+                                                        $variantPrice = $variantData['price'] ?? $productPrice;
+                                                        $variantOriginalPrice = $variantData['original_price'] ?? $productPrice;
+                                                    @endphp
+                                                    <span class="size-badge text-xs px-2 py-1 rounded border {{ $isAvailable ? 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-300' : 'text-gray-400 bg-gray-100 border-gray-200 line-through' }}" 
+                                                          data-size="{{ $size }}" 
+                                                          data-stock="{{ $stock }}"
+                                                          data-product-id="{{ $variantId }}"
+                                                          data-sku="{{ $sku }}"
+                                                          data-available="{{ $isAvailable ? 'true' : 'false' }}"
+                                                          data-price="{{ $variantPrice }}"
+                                                          data-original-price="{{ $variantOriginalPrice }}">
+                                                        {{ $size }}
+                                                    </span>
                                                 @endforeach
                                             </div>
                                         </div>
@@ -296,42 +296,44 @@
                                         @endif
                                     </div>
                                     
-                                    <!-- Add to Cart Button -->
-                                    <div class="flex gap-2">
-                                        @if($totalStock > 0)
-                                            @if($hasMultipleSizes)
-                                                {{-- ⭐ FIXED: Use clean product name in button data --}}
-                                                <button type="button" 
-        class="flex-1 bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors size-select-btn"
-        data-product-id="{{ $product->id ?? '' }}"
-        data-sku-parent="{{ $product->sku_parent ?? '' }}"
-        data-product-name="{{ $cleanProductName }}"
-        data-price="{{ $salePrice ?: $productPrice }}"
-        data-original-price="{{ $productPrice }}">
-    <i class="fas fa-shopping-cart mr-1"></i>
-    Select Size
-</button>
-                                            @else
-                                                <form action="{{ route('cart.add') }}" method="POST" class="add-to-cart-form flex-1">
-                                                    @csrf
-                                                    <input type="hidden" name="product_id" value="{{ $product->id ?? '' }}">
-                                                    <input type="hidden" name="quantity" value="1">
-                                                    <button type="submit" class="w-full bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+                                    <!-- Action Buttons (pin ke bawah) -->
+                                    <div class="mt-auto">   {{-- <- kunci: dorong block ini ke paling bawah --}}
+                                        <div class="flex gap-2">
+                                            @if($totalStock > 0)
+                                                @if($hasMultipleSizes)
+                                                    <button type="button"
+                                                            class="flex-1 bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors size-select-btn"
+                                                            data-product-id="{{ $product->id ?? '' }}"
+                                                            data-sku-parent="{{ $product->sku_parent ?? '' }}"
+                                                            data-product-name="{{ $cleanProductName }}"
+                                                            data-price="{{ $salePrice ?: $productPrice }}"
+                                                            data-original-price="{{ $productPrice }}">
                                                         <i class="fas fa-shopping-cart mr-1"></i>
-                                                        Add to Cart
+                                                        Select Size
                                                     </button>
-                                                </form>
+                                                @else
+                                                    <form action="{{ route('cart.add') }}" method="POST" class="add-to-cart-form flex-1">
+                                                        @csrf
+                                                        <input type="hidden" name="product_id" value="{{ $product->id ?? '' }}">
+                                                        <input type="hidden" name="quantity" value="1">
+                                                        <button type="submit" class="w-full bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+                                                            <i class="fas fa-shopping-cart mr-1"></i>
+                                                            Add to Cart
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            @else
+                                                <button disabled class="flex-1 bg-gray-300 text-gray-500 py-2 px-3 rounded-lg text-sm font-medium cursor-not-allowed">
+                                                    <i class="fas fa-times mr-1"></i>
+                                                    Out of Stock
+                                                </button>
                                             @endif
-                                        @else
-                                            <button disabled class="flex-1 bg-gray-300 text-gray-500 py-2 px-3 rounded-lg text-sm font-medium cursor-not-allowed">
-                                                <i class="fas fa-times mr-1"></i>
-                                                Out of Stock
-                                            </button>
-                                        @endif
-                                        <a href="{{ route('products.show', $product->slug ?? '#') }}" 
-                                           class="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
-                                            <i class="fas fa-eye text-gray-600"></i>
-                                        </a>
+
+                                            <a href="{{ route('products.show', $product->slug ?? '#') }}"
+                                               class="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
+                                                <i class="fas fa-eye text-gray-600"></i>
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -650,6 +652,98 @@ function closeModal() {
         opt.style.color = '';
         opt.style.borderColor = '';
     });
+}
+
+const WISHLIST_CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+// Delegasi klik untuk semua tombol wishlist di grid
+document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.wishlist-btn');
+    if (!btn) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    const productId = btn.dataset.productId;
+    const productName = btn.dataset.productName || 'Product';
+    const icon = btn.querySelector('.wishlist-icon') || btn.querySelector('i');
+
+    if (!productId) return;
+    btn.disabled = true;
+
+    fetch(`/wishlist/toggle/${productId}`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': WISHLIST_CSRF,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(data => {
+        // jika backend mengirim redirect (belum login)
+        if (data && data.redirect) {
+            window.location.href = data.redirect;
+            return;
+        }
+
+        if (!data || data.success === false) {
+            showToast((data && data.message) || 'Gagal mengubah wishlist', 'error');
+            return;
+        }
+
+        const added = !!data.is_added;
+
+        // Toggle ikon hati (solid merah saat added)
+        if (icon) {
+            icon.classList.toggle('fas', added);
+            icon.classList.toggle('far', !added);
+            icon.style.color = added ? '#ef4444' : '';
+        }
+
+        // Update badge jumlah wishlist (opsional jika backend kirim)
+        if ('wishlist_count' in data) {
+            document.querySelectorAll('[data-wishlist-count], .wishlist-badge')
+                .forEach(el => el.textContent = data.wishlist_count);
+        }
+
+        showToast(`${productName} ${added ? 'ditambahkan ke' : 'dihapus dari'} wishlist`,
+                  added ? 'success' : 'info');
+    })
+    .catch(() => {
+        showToast('Terjadi kesalahan saat toggle wishlist.', 'error');
+    })
+    .finally(() => {
+        btn.disabled = false;
+    });
+});
+
+// ==== Toast utilities (pakai elemen #toastNotification yang sudah ada) ====
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toastNotification');
+    const icon = document.getElementById('toastIcon');
+    const messageEl = document.getElementById('toastMessage');
+    if (!toast || !icon || !messageEl) return;
+
+    messageEl.textContent = message;
+
+    icon.className = 'fas ';
+    switch(type) {
+        case 'success': icon.className += 'fa-check-circle text-green-500'; break;
+        case 'error':   icon.className += 'fa-exclamation-circle text-red-500'; break;
+        case 'info':    icon.className += 'fa-info-circle text-blue-500'; break;
+        default:        icon.className += 'fa-check-circle text-green-500';
+    }
+
+    toast.classList.remove('hidden');
+    // auto-hide
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(hideToast, 3000);
+}
+
+function hideToast() {
+    const toast = document.getElementById('toastNotification');
+    if (toast) toast.classList.add('hidden');
 }
 </script>
 @endsection

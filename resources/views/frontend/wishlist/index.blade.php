@@ -33,10 +33,6 @@
                     </div>
                     
                     <div class="flex items-center space-x-3">
-                        <button type="button" id="moveAllToCartBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium">
-                            <i class="fas fa-shopping-cart mr-2"></i>
-                            Move All to Cart
-                        </button>
                         <button type="button" id="clearWishlistBtn" class="border border-red-300 text-red-600 px-6 py-2 rounded-lg hover:bg-red-50 transition-colors font-medium">
                             <i class="fas fa-trash mr-2"></i>
                             Clear Wishlist
@@ -45,85 +41,192 @@
                 </div>
             </div>
 
-            <!-- Wishlist Items Grid -->
-            <div id="wishlistGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Wishlist Items Grid - Same as Products Grid -->
+            <div id="wishlistGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 @foreach($wishlists as $wishlist)
                     @if($wishlist->product)
-                        <div class="wishlist-item bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-lg transition-all duration-300 group"
-                             data-product-id="{{ $wishlist->product->id }}"
-                             data-wishlist-id="{{ $wishlist->id }}">
-                            <div class="relative aspect-square bg-gray-50 overflow-hidden">
-                                @if($wishlist->product->images && count($wishlist->product->images) > 0)
-                                    @php
-                                        // ✅ FIXED: Handle both URL and storage images
-                                        $imagePath = $wishlist->product->images[0];
-                                        $imageUrl = '';
-                                        
-                                        // Case 1: Already a full URL
-                                        if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
-                                            $imageUrl = $imagePath;
-                                        }
-                                        // Case 2: Storage path starting with /storage/
-                                        elseif (str_starts_with($imagePath, '/storage/')) {
-                                            $imageUrl = config('app.url') . $imagePath;
-                                        }
-                                        // Case 3: Relative storage path (products/filename.jpg)
-                                        elseif (str_starts_with($imagePath, 'products/')) {
-                                            $imageUrl = config('app.url') . '/storage/' . $imagePath;
-                                        }
-                                        // Case 4: Asset path
-                                        elseif (str_starts_with($imagePath, 'assets/') || str_starts_with($imagePath, 'images/')) {
-                                            $imageUrl = asset($imagePath);
-                                        }
-                                        // Case 5: Filename only - assume in products folder
-                                        elseif (!str_contains($imagePath, '/')) {
-                                            $imageUrl = config('app.url') . '/storage/products/' . $imagePath;
-                                        }
-                                        // Case 6: Generic fallback
-                                        else {
-                                            $imageUrl = config('app.url') . '/storage/' . ltrim($imagePath, '/');
-                                        }
-                                    @endphp
-                                    <img src="{{ $imageUrl }}" 
-                                         alt="{{ $wishlist->product->name }}"
-                                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                         onerror="this.src='{{ asset('images/default-product.png') }}'">
-                                @else
-                                    <div class="w-full h-full flex items-center justify-center bg-gray-100">
-                                        <i class="fas fa-shoe-prints text-4xl text-gray-300"></i>
-                                    </div>
-                                @endif
+                        @php
+$product        = $wishlist->product;
+$productPrice   = $product->price ?? 0;
+$salePrice      = $product->sale_price ?? null;
+$finalPrice     = $salePrice && $salePrice < $productPrice ? $salePrice : $productPrice;
+
+// 🔧 BERSIHKAN NAMA: hilangkan sku_parent & pola size di ujung
+$originalName = $product->name ?? 'Unknown Product';
+$skuParent    = $product->sku_parent ?? '';
+
+$cleanProductName = $originalName;
+
+if (!empty($skuParent)) {
+    // hapus "- <sku_parent>" di akhir atau tengah
+    $cleanProductName = preg_replace('/\s*-\s*' . preg_quote($skuParent, '/') . '\s*$/', '', $cleanProductName);
+    $cleanProductName = preg_replace('/\s*'  . preg_quote($skuParent, '/') . '\s*$/', '', $cleanProductName);
+    $cleanProductName = preg_replace('/\s*-\s*' . preg_quote($skuParent, '/') . '\s*/', '', $cleanProductName);
+}
+
+// hapus pola ukuran di ujung nama
+$cleanProductName = preg_replace('/\s*-\s*Size\s+[A-Z0-9.]+\s*$/i', '', $cleanProductName);
+$cleanProductName = preg_replace('/\s*Size\s+[A-Z0-9.]+\s*$/i', '', $cleanProductName);
+// hapus token huruf/angka terakhir seperti "- MRCXLB4" atau "- 47"
+$cleanProductName = preg_replace('/\s*-\s*[A-Z0-9.]+\s*$/i', '', $cleanProductName);
+
+$cleanProductName = trim($cleanProductName, " -");
+
+
+    // === AMBIL VARIAN DARI accessor Product::getSizeVariantsAttribute() ===
+    // accessor itu mengembalikan koleksi "produk saudara" (id,name,sku,available_sizes,stock_quantity)
+    $rawVariants = $product->size_variants ?? collect();
+
+    // Pastikan array
+    if ($rawVariants instanceof \Illuminate\Support\Collection) {
+        $rawVariants = $rawVariants->toArray();
+    } elseif (!is_array($rawVariants)) {
+        $rawVariants = [];
+    }
+
+    // Helper kecil: coba ambil size dari nama jika available_sizes tidak jelas
+    $extractSize = function (?string $name) {
+        if (!$name) return null;
+        if (preg_match('/Size\s+([0-9]{1,2}(?:\.[0-9])?)/i', $name, $m)) return $m[1];
+        if (preg_match('/(?:-|)\s*([0-9]{1,2}(?:\.[0-9])?)\s*$/', $name, $m)) return $m[1];
+        return null;
+    };
+
+    // Normalisasi ke format yang dimengerti modal: size + stock (+ price)
+    $sizeVariants = [];
+    foreach ($rawVariants as $v) {
+        $a = is_array($v) ? $v : (array)$v;
+
+        // available_sizes bisa array/string/kosong
+        $sizes = [];
+        if (isset($a['available_sizes'])) {
+            if (is_string($a['available_sizes'])) {
+                $decoded = json_decode($a['available_sizes'], true);
+                $sizes = is_array($decoded) ? $decoded : (strlen($a['available_sizes']) ? [$a['available_sizes']] : []);
+            } elseif (is_array($a['available_sizes'])) {
+                $sizes = $a['available_sizes'];
+            }
+        }
+
+        $size  = (count($sizes) === 1) ? $sizes[0] : $extractSize($a['name'] ?? null);
+        $stock = (int)($a['stock_quantity'] ?? 0);
+
+        $sizeVariants[] = [
+            'id'             => $a['id'] ?? null,
+            'sku'            => $a['sku'] ?? null,
+            'size'           => $size ?: 'Unknown',
+            'stock'          => $stock,
+            // kita tidak punya harga per-varian dari accessor → pakai fallback harga produk
+            'price'          => $finalPrice,
+            'original_price' => $productPrice,
+        ];
+    }
+
+    // fallback terakhir jika tetap kosong → pakai available_sizes produk ini
+    if (empty($sizeVariants) && is_array($product->available_sizes) && count($product->available_sizes)) {
+        foreach ($product->available_sizes as $s) {
+            $sizeVariants[] = [
+                'id'             => $product->id,
+                'sku'            => $product->sku ?? null,
+                'size'           => $s,
+                'stock'          => (int)($product->stock_quantity ?? 0),
+                'price'          => $finalPrice,
+                'original_price' => $productPrice,
+            ];
+        }
+    }
+
+    $hasVariants = count($sizeVariants) > 0;
+@endphp
+
+
+                        
+                        <div class="product-card wishlist-item group bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 relative">
+                            <!-- Product Image -->
+<div class="relative aspect-square overflow-hidden">
+    <a href="{{ route('products.show', $product->slug ?? $product->id) }}">
+        @php
+            // Ambil kandidat path: prioritaskan $product->images kalau ada
+            $imageUrl = null;
+
+            // 1) Jika ada images array
+            $images = $product->images ?? null;
+            if (is_string($images)) {
+                // kemungkinan disimpan sebagai JSON string
+                $decoded = json_decode($images, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $images = $decoded;
+                }
+            }
+            if (is_array($images) && count($images) > 0) {
+                $imagePath = $images[0];
+            } else {
+                // fallback ke single field
+                $imagePath = $product->image ?? null;
+            }
+
+            if ($imagePath) {
+                // Case A: sudah full URL
+                if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
+                    $imageUrl = $imagePath;
+                }
+                // Case B: mulai dengan /storage/
+                elseif (str_starts_with($imagePath, '/storage/')) {
+                    $imageUrl = config('app.url') . $imagePath;
+                }
+                // Case C: relative storage path (products/filename.jpg)
+                elseif (str_starts_with($imagePath, 'products/')) {
+                    $imageUrl = config('app.url') . '/storage/' . ltrim($imagePath, '/');
+                }
+                // Case D: asset path (assets/ atau images/)
+                elseif (str_starts_with($imagePath, 'assets/') || str_starts_with($imagePath, 'images/')) {
+                    $imageUrl = asset($imagePath);
+                }
+                // Case E: cuma filename → asumsi di storage/products
+                elseif (!str_contains($imagePath, '/')) {
+                    $imageUrl = config('app.url') . '/storage/products/' . $imagePath;
+                }
+                // Case F: fallback generic ke /storage/<path>
+                else {
+                    $imageUrl = config('app.url') . '/storage/' . ltrim($imagePath, '/');
+                }
+            }
+        @endphp
+
+        @if($imageUrl)
+            <img src="{{ $imageUrl }}"
+                 alt="{{ $cleanProductName }}"
+                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                 onerror="this.src='{{ asset('images/default-product.png') }}'">
+        @else
+            <div class="w-full h-full bg-gray-100 flex items-center justify-center">
+                <i class="fas fa-image text-4xl text-gray-300"></i>
+            </div>
+        @endif
+    </a>
                                 
-                                <!-- Product badges -->
-                                <div class="absolute top-3 left-3 flex flex-col gap-2">
-                                    @if($wishlist->product->is_featured)
-                                        <span class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-medium">
-                                            Featured
-                                        </span>
-                                    @endif
-                                    @if($wishlist->product->sale_price && $wishlist->product->sale_price < $wishlist->product->price)
+                                <!-- Badges -->
+                                <div class="absolute top-3 left-3 flex flex-col gap-2 z-10">
+                                    @if($salePrice && $salePrice < $productPrice)
                                         @php
-                                            $discount = round((($wishlist->product->price - $wishlist->product->sale_price) / $wishlist->product->price) * 100);
+                                            $discount = round((($productPrice - $salePrice) / $productPrice) * 100);
                                         @endphp
                                         <span class="bg-red-500 text-white text-xs px-2 py-1 rounded-full font-medium">
                                             -{{ $discount }}%
                                         </span>
                                     @endif
-                                    @if($wishlist->product->stock_quantity <= 0)
-                                        <span class="bg-gray-500 text-white text-xs px-2 py-1 rounded-full font-medium">
-                                            Out of Stock
-                                        </span>
-                                    @elseif($wishlist->product->stock_quantity < 10)
-                                        <span class="bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-medium">
-                                            Low Stock
-                                        </span>
-                                    @endif
+                                    @php $totalStock = $product->total_stock ?? ($product->stock_quantity ?? 0); @endphp
+@if($totalStock <= 0)
+    <span class="bg-gray-500 text-white text-xs px-2 py-1 rounded-full font-medium">Out of Stock</span>
+@elseif($totalStock < 10)
+    <span class="bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-medium">Low Stock</span>
+@endif
                                 </div>
 
                                 <!-- Remove from wishlist button -->
                                 <button type="button" class="remove-wishlist-btn absolute top-3 right-3 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-all duration-200" 
-                                        data-product-id="{{ $wishlist->product->id }}"
-                                        data-product-name="{{ $wishlist->product->name }}"
+                                        data-product-id="{{ $product->id }}"
+                                        data-product-name="{{ $cleanProductName }}"
                                         title="Remove from wishlist">
                                     <i class="fas fa-times text-gray-600 hover:text-red-500 transition-colors"></i>
                                 </button>
@@ -134,97 +237,133 @@
                                         Added {{ $wishlist->created_at->diffForHumans() }}
                                     </span>
                                 </div>
+
+                                <!-- Hidden size data for modal (same as products/index.blade.php) -->
+                                @if($hasVariants)
+    <div id="sizeContainer-{{ $product->id }}" class="hidden">
+        @foreach($sizeVariants as $v)
+            @php $isAvailable = ($v['stock'] ?? 0) > 0; @endphp
+            <div class="size-badge"
+                 data-size="{{ $v['size'] }}"
+                 data-stock="{{ $v['stock'] }}"
+                 data-product-id="{{ $v['id'] ?? $product->id }}"
+                 data-available="{{ $isAvailable ? 'true' : 'false' }}"
+                 data-price="{{ $v['price'] }}"
+                 data-original-price="{{ $v['original_price'] }}">
+            </div>
+        @endforeach
+    </div>
+@endif
+
+
                             </div>
                             
+                            <!-- Product Details -->
                             <div class="p-4">
                                 <div class="mb-2">
                                     <span class="text-xs text-gray-500 uppercase tracking-wide">
-                                        {{ $wishlist->product->category->name ?? 'Products' }}
-                                        @if($wishlist->product->brand)
-                                            • {{ $wishlist->product->brand }}
+                                        {{ $product->category->name ?? 'Products' }}
+                                        @if($product->brand)
+                                            • {{ $product->brand }}
                                         @endif
                                     </span>
                                 </div>
                                 
-                                <h3 class="font-semibold text-gray-900 mb-3 text-sm leading-tight">
-                                    <a href="{{ route('products.show', $wishlist->product->slug) }}" 
+                                <h3 class="font-semibold text-gray-900 mb-3 text-sm leading-tight line-clamp-2">
+                                    <a href="{{ route('products.show', $product->slug ?? $product->id) }}" 
                                        class="hover:text-blue-600 transition-colors">
-                                        {{ $wishlist->product->name }}
+                                        {{ $cleanProductName }}
                                     </a>
                                 </h3>
                                 
                                 <!-- Display available sizes and colors if exist -->
-                                @if($wishlist->product->available_sizes || $wishlist->product->available_colors)
-                                    <div class="mb-3 text-xs text-gray-500">
-                                        @if($wishlist->product->available_sizes)
-                                            <div class="mb-1">
-                                                <span class="font-medium">Sizes:</span>
-                                                {{ is_array($wishlist->product->available_sizes) ? implode(', ', array_slice($wishlist->product->available_sizes, 0, 3)) : $wishlist->product->available_sizes }}
-                                                @if(is_array($wishlist->product->available_sizes) && count($wishlist->product->available_sizes) > 3)
-                                                    <span class="text-gray-400">+{{ count($wishlist->product->available_sizes) - 3 }} more</span>
-                                                @endif
-                                            </div>
-                                        @endif
-                                        @if($wishlist->product->available_colors)
-                                            <div>
-                                                <span class="font-medium">Colors:</span>
-                                                {{ is_array($wishlist->product->available_colors) ? implode(', ', array_slice($wishlist->product->available_colors, 0, 3)) : $wishlist->product->available_colors }}
-                                                @if(is_array($wishlist->product->available_colors) && count($wishlist->product->available_colors) > 3)
-                                                    <span class="text-gray-400">+{{ count($wishlist->product->available_colors) - 3 }} more</span>
-                                                @endif
-                                            </div>
-                                        @endif
-                                    </div>
-                                @endif
+@if($hasVariants || $product->available_colors)
+    <div class="mb-3 text-xs text-gray-500">
+        @if($hasVariants)
+            <div class="mb-1">
+                <span class="font-medium">Sizes:</span>
+                @php
+  $agg = is_array($product->aggregated_sizes ?? null)
+        ? $product->aggregated_sizes
+        : [];
+  $sizesToShow = array_slice($agg, 0, 3);
+@endphp
+{{ implode(', ', $sizesToShow) }}
+@if(count($agg) > 3)
+  <span class="text-gray-400">+{{ count($agg) - 3 }} more</span>
+@endif
+
+            </div>
+        @endif
+                                        @if($product->available_colors)
+            <div>
+                <span class="font-medium">Colors:</span>
+                {{ is_array($product->available_colors) ? implode(', ', array_slice($product->available_colors, 0, 3)) : $product->available_colors }}
+                @if(is_array($product->available_colors) && count($product->available_colors) > 3)
+                    <span class="text-gray-400">+{{ count($product->available_colors) - 3 }} more</span>
+                @endif
+            </div>
+        @endif
+    </div>
+@endif
                                 
                                 <!-- Price -->
                                 <div class="mb-4">
-                                    @if($wishlist->product->sale_price && $wishlist->product->sale_price < $wishlist->product->price)
-                                        <div class="flex items-center space-x-2">
-                                            <span class="text-lg font-bold text-red-600">
-                                                Rp {{ number_format($wishlist->product->sale_price, 0, ',', '.') }}
-                                            </span>
-                                            <span class="text-sm text-gray-400 line-through">
-                                                Rp {{ number_format($wishlist->product->price, 0, ',', '.') }}
-                                            </span>
-                                        </div>
-                                    @else
-                                        <span class="text-lg font-bold text-gray-900">
-                                            Rp {{ number_format($wishlist->product->price, 0, ',', '.') }}
-                                        </span>
-                                    @endif
+                                    @php
+  $minPrice = $product->min_price ?? ($salePrice && $salePrice < $productPrice ? $salePrice : $productPrice);
+@endphp
+
+@if($minPrice < $productPrice)
+  <div class="flex items-center space-x-2">
+    <span class="text-lg font-bold text-red-600">
+      Rp {{ number_format($minPrice, 0, ',', '.') }}
+    </span>
+    <span class="text-sm text-gray-400 line-through">
+      Rp {{ number_format($productPrice, 0, ',', '.') }}
+    </span>
+  </div>
+@else
+  <span class="text-lg font-bold text-gray-900">
+    Rp {{ number_format($minPrice, 0, ',', '.') }}
+  </span>
+@endif
+
                                 </div>
                                 
-                                <!-- Stock Status -->
-                                <div class="mb-3">
-                                    @if($wishlist->product->stock_quantity > 0)
-                                        <span class="text-xs text-green-600 font-medium">
-                                            <i class="fas fa-check-circle mr-1"></i>
-                                            In Stock ({{ $wishlist->product->stock_quantity }} left)
-                                        </span>
-                                    @else
-                                        <span class="text-xs text-red-600 font-medium">
-                                            <i class="fas fa-times-circle mr-1"></i>
-                                            Out of Stock
-                                        </span>
-                                    @endif
-                                </div>
-                                
-                                <div class="flex gap-2">
-                                    @if($wishlist->product->stock_quantity > 0)
-                                        <button type="button" class="move-to-cart-btn flex-1 bg-green-600 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-                                                data-product-id="{{ $wishlist->product->id }}"
-                                                data-product-name="{{ $wishlist->product->name }}">
-                                            <i class="fas fa-shopping-cart mr-1"></i>
-                                            Move to Cart
-                                        </button>
-                                    @else
-                                        <button type="button" class="flex-1 bg-gray-400 text-white py-2 px-3 rounded-lg text-sm font-medium cursor-not-allowed" disabled>
-                                            <i class="fas fa-times mr-1"></i>
-                                            Out of Stock
-                                        </button>
-                                    @endif
-                                    <a href="{{ route('products.show', $wishlist->product->slug) }}" class="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
+                                <!-- Action Buttons - Same as Products Index -->
+                                <div class="flex items-center space-x-2">
+@php $totalStock = $product->total_stock ?? ($product->stock_quantity ?? 0); @endphp
+@if($totalStock > 0)
+  @if($hasVariants)
+    <button type="button"
+            class="size-select-btn flex-1 bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
+            data-product-id="{{ $product->id }}"
+            data-sku-parent="{{ $product->sku_parent ?? '' }}"
+            data-product-name="{{ $cleanProductName }}"
+            data-price="{{ $product->min_price ?? $finalPrice }}"
+            data-original-price="{{ $productPrice }}">
+      <i class="fas fa-shopping-cart mr-1"></i>
+      Select Size
+    </button>
+  @else
+    <form action="{{ route('cart.add') }}" method="POST" class="add-to-cart-form flex-1">
+      @csrf
+      <input type="hidden" name="product_id" value="{{ $product->id }}">
+      <input type="hidden" name="quantity" value="1">
+      <button type="submit" class="w-full bg-gray-900 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+        <i class="fas fa-shopping-cart mr-1"></i>
+        Add to Cart
+      </button>
+    </form>
+  @endif
+@else
+  <button disabled class="flex-1 bg-gray-300 text-gray-500 py-2 px-3 rounded-lg text-sm font-medium cursor-not-allowed">
+    <i class="fas fa-times mr-1"></i>
+    Out of Stock
+  </button>
+@endif
+
+                                    <a href="{{ route('products.show', $product->slug ?? $product->id) }}" class="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center">
                                         <i class="fas fa-eye text-gray-600"></i>
                                     </a>
                                 </div>
@@ -275,6 +414,68 @@
         @endif
     </div>
 
+    <!-- Size Selection Modal (Same as products/index.blade.php) -->
+    <div id="sizeSelectionModal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div class="sticky top-0 bg-white rounded-t-2xl border-b border-gray-200 p-6 z-10">
+                <div class="flex items-center justify-between">
+                    <h3 id="modalProductName" class="text-xl font-bold text-gray-900">Select Size</h3>
+                    <button id="closeModalBtn" type="button" class="text-gray-400 hover:text-gray-600 transition-colors p-2">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <!-- Size Options Grid -->
+                <div class="mb-6">
+                    <div id="sizeOptionsContainer" class="grid grid-cols-4 gap-3">
+                        <!-- Size options will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Selected Size Info -->
+                <div class="mb-6 hidden" id="selectedSizeInfo">
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-semibold text-blue-900">Selected Size:</span>
+                            <span id="selectedSizeDisplay" class="text-lg font-bold text-blue-700"></span>
+                        </div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-blue-600">Available Stock:</span>
+                            <span id="selectedSizeStock" class="text-sm font-medium text-blue-700"></span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-blue-600">Price:</span>
+                            <span id="selectedSizePrice" class="text-sm font-semibold text-blue-700">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Add to Cart Form -->
+                <form id="sizeAddToCartForm" action="{{ route('cart.add') }}" method="POST" class="hidden">
+                    @csrf
+                    <input type="hidden" name="product_id" id="selectedProductId">
+                    <input type="hidden" name="quantity" value="1">
+                    <input type="hidden" name="size" id="selectedSizeValue">
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-shopping-cart mr-2"></i>
+                        Add to Cart
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="bg-gray-50 px-6 py-3 rounded-b-2xl">
+                <p class="text-xs text-center text-gray-500">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Select a size to continue with your purchase
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="toastNotification" class="fixed top-4 right-4 z-50 hidden">
         <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
@@ -310,11 +511,6 @@
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
-    .move-to-cart-btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-
     /* Animation for removing items */
     .wishlist-item.removing {
         opacity: 0.5;
@@ -322,431 +518,408 @@
         transition: all 0.3s ease;
     }
 
-    /* Toast notification animation */
-    #toastNotification {
-        animation: slideInRight 0.3s ease-out;
+    /* Size option styles */
+    .size-option {
+        transition: all 0.2s ease;
     }
 
-    @keyframes slideInRight {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
+    .size-option:hover:not(.disabled) {
+        border-color: #3B82F6;
+        background-color: #EFF6FF;
     }
 
-    /* Loading state */
-    .loading {
-        opacity: 0.6;
-        pointer-events: none;
+    .size-option.selected {
+        border-color: #3B82F6 !important;
+        background-color: #EFF6FF !important;
+        color: #1D4ED8;
     }
 
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .wishlist-item {
-            margin-bottom: 1rem;
-        }
-        
-        .move-to-cart-btn {
-            font-size: 12px;
-            padding: 8px 12px;
-        }
-        
-        .remove-wishlist-btn {
-            width: 32px;
-            height: 32px;
-            top: 8px;
-            right: 8px;
-        }
+    .size-option.disabled {
+        background-color: #F3F4F6;
+        color: #9CA3AF;
+        cursor: not-allowed;
+    }
+
+    /* Line clamp utility */
+    .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
     </style>
 
-    <!-- JavaScript -->
+    <!-- Enhanced JavaScript with Size Selection (Same as products/index.blade.php) -->
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('Wishlist page loaded');
-        
-        // Get CSRF token
-        const csrfToken = document.querySelector('meta[name="csrf-token"]');
-        if (!csrfToken) {
-            console.error('CSRF token not found');
+    console.log('🚀 Enhanced Wishlist JavaScript with Size Selection...');
+
+    window.addEventListener('load', function() {
+        setupSizeSelection();
+        setupWishlistActions();
+    });
+
+    function setupSizeSelection() {
+        document.addEventListener('click', handleClick);
+    }
+
+    function handleClick(e) {
+        // Size select button
+        if (e.target.closest('.size-select-btn')) {
+            e.preventDefault();
+            openSizeModal(e.target.closest('.size-select-btn'));
             return;
         }
         
-        const token = csrfToken.getAttribute('content');
-        console.log('CSRF token found:', token ? 'Yes' : 'No');
+        // Close modal
+        if (e.target.id === 'closeModalBtn' || e.target.closest('#closeModalBtn') || e.target.id === 'sizeSelectionModal') {
+            closeModal();
+            return;
+        }
         
-        // Initialize all event listeners
-        initializeEventListeners();
+        // Size option
+        if (e.target.closest('.size-option')) {
+            var option = e.target.closest('.size-option');
+            if (!option.classList.contains('disabled')) {
+                selectSize(option);
+            }
+            return;
+        }
+    }
+
+    function openSizeModal(button) {
+        var productId = button.getAttribute('data-product-id');
+        var productName = button.getAttribute('data-product-name');
+        var defaultPrice = button.getAttribute('data-price') || '0';
         
-        function initializeEventListeners() {
-            // Remove from wishlist buttons
-            const removeButtons = document.querySelectorAll('.remove-wishlist-btn');
-            console.log('Found remove buttons:', removeButtons.length);
+        console.log('Opening modal for:', productName, 'Price:', defaultPrice);
+        
+        var modal = document.getElementById('sizeSelectionModal');
+        var title = document.getElementById('modalProductName');
+        var container = document.getElementById('sizeOptionsContainer');
+        
+        if (!modal || !container) return;
+        
+        // Set title
+        if (title) title.textContent = 'Select Size - ' + productName;
+        
+        // Get sizes from product card
+        var productCard = button.closest('.product-card');
+        var sizeContainer = productCard ? productCard.querySelector('#sizeContainer-' + productId) : null;
+        
+        // Clear container
+        container.innerHTML = '';
+        
+        if (sizeContainer) {
+            var badges = sizeContainer.querySelectorAll('.size-badge');
             
-            removeButtons.forEach(button => {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    const productId = this.getAttribute('data-product-id');
-                    const productName = this.getAttribute('data-product-name');
-                    const wishlistItem = this.closest('.wishlist-item');
-                    
-                    console.log('Remove clicked:', productId, productName);
-                    
-                    if (productId && wishlistItem) {
-                        removeFromWishlist(productId, productName, wishlistItem);
-                    }
-                });
-            });
-
-            // Move to cart buttons
-            const moveButtons = document.querySelectorAll('.move-to-cart-btn');
-            console.log('Found move buttons:', moveButtons.length);
-            
-            moveButtons.forEach(button => {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    
-                    const productId = this.getAttribute('data-product-id');
-                    const productName = this.getAttribute('data-product-name');
-                    const wishlistItem = this.closest('.wishlist-item');
-                    
-                    console.log('Move to cart clicked:', productId, productName);
-                    
-                    if (productId && wishlistItem) {
-                        moveToCart(productId, productName, wishlistItem);
-                    }
-                });
-            });
-            
-            // Clear wishlist button
-            const clearBtn = document.getElementById('clearWishlistBtn');
-            if (clearBtn) {
-                clearBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    console.log('Clear wishlist clicked');
-                    clearWishlist();
-                });
-            }
-            
-            // Move all to cart button
-            const moveAllBtn = document.getElementById('moveAllToCartBtn');
-            if (moveAllBtn) {
-                moveAllBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    console.log('Move all to cart clicked');
-                    moveAllToCart();
-                });
-            }
-        }
-
-        // Remove from wishlist function
-        function removeFromWishlist(productId, productName, wishlistItem) {
-            console.log('Removing from wishlist:', productId);
-            
-            // Show loading state
-            const button = wishlistItem.querySelector('.remove-wishlist-btn');
-            if (button) {
-                button.classList.add('loading');
-                button.disabled = true;
-            }
-
-            fetch(`/wishlist/toggle/${productId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': token
-                }
-            })
-            .then(response => {
-                console.log('Remove response status:', response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Remove response data:', data);
+            badges.forEach(function(badge) {
+                var size = badge.getAttribute('data-size');
+                var stock = badge.getAttribute('data-stock');
+                var productVariantId = badge.getAttribute('data-product-id');
+                var available = badge.getAttribute('data-available') === 'true';
                 
-                if (data.success) {
-                    // Remove item with animation
+                var price = badge.getAttribute('data-price') || defaultPrice;
+                var originalPrice = badge.getAttribute('data-original-price') || defaultPrice;
+                
+                var div = document.createElement('div');
+                div.className = 'size-option cursor-pointer p-4 border-2 rounded-lg text-center transition-all ' + 
+                    (available ? 'border-gray-300 hover:border-blue-500' : 'disabled border-gray-200 bg-gray-50');
+                
+                div.setAttribute('data-product-id', productVariantId);
+                div.setAttribute('data-size', size);
+                div.setAttribute('data-stock', stock);
+                div.setAttribute('data-price', price);
+                div.setAttribute('data-original-price', originalPrice);
+                
+                div.innerHTML = `
+                    <div class="font-semibold text-lg ${available ? 'text-gray-900' : 'text-gray-400'}">${size}</div>
+                    <div class="text-xs mt-1 ${available ? 'text-gray-600' : 'text-gray-400'}">
+                        ${available ? stock + ' available' : 'Out of stock'}
+                    </div>
+                `;
+                
+                container.appendChild(div);
+            });
+        }
+        
+        // Show modal
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function selectSize(element) {
+        var productId = element.getAttribute('data-product-id');
+        var size = element.getAttribute('data-size');
+        var stock = element.getAttribute('data-stock');
+        var price = element.getAttribute('data-price');
+        
+        console.log('📏 Size selected:', size, 'Stock:', stock, 'Price:', price);
+        
+        // Remove previous selections
+        document.querySelectorAll('.size-option').forEach(function(opt) {
+            opt.classList.remove('selected');
+        });
+        
+        // Select current option
+        element.classList.add('selected');
+        
+        // Update UI elements
+        var sizeInfo = document.getElementById('selectedSizeInfo');
+        var sizeDisplay = document.getElementById('selectedSizeDisplay');
+        var sizeStock = document.getElementById('selectedSizeStock');
+        var sizePriceElement = document.getElementById('selectedSizePrice');
+        var form = document.getElementById('sizeAddToCartForm');
+        var productInput = document.getElementById('selectedProductId');
+        var sizeInput = document.getElementById('selectedSizeValue');
+        
+        if (sizeDisplay) sizeDisplay.textContent = size;
+        if (sizeStock) sizeStock.textContent = stock + ' available';
+        
+        // Update price
+        if (sizePriceElement) {
+            var formattedPrice = 'Rp ' + new Intl.NumberFormat('id-ID').format(parseInt(price));
+            sizePriceElement.textContent = formattedPrice;
+            console.log('💰 Price updated to:', formattedPrice);
+        }
+        
+        if (productInput) productInput.value = productId;
+        if (sizeInput) sizeInput.value = size;
+        
+        if (sizeInfo) sizeInfo.classList.remove('hidden');
+        if (form) form.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        var modal = document.getElementById('sizeSelectionModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+        
+        // Reset form
+        var form = document.getElementById('sizeAddToCartForm');
+        var sizeInfo = document.getElementById('selectedSizeInfo');
+        if (form) form.classList.add('hidden');
+        if (sizeInfo) sizeInfo.classList.add('hidden');
+        
+        // Clear selections
+        document.querySelectorAll('.size-option').forEach(function(opt) {
+            opt.classList.remove('selected');
+        });
+    }
+
+    function setupWishlistActions() {
+        const WISHLIST_CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+        // Remove from wishlist functionality
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.remove-wishlist-btn')) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const btn = e.target.closest('.remove-wishlist-btn');
+                const productId = btn.dataset.productId;
+                const productName = btn.dataset.productName || 'Product';
+                
+                if (!productId) return;
+                
+                if (!confirm(`Remove ${productName} from your wishlist?`)) return;
+                
+                btn.disabled = true;
+                const wishlistItem = btn.closest('.wishlist-item');
+                if (wishlistItem) {
                     wishlistItem.classList.add('removing');
-                    
-                    setTimeout(() => {
-                        wishlistItem.remove();
-                        updateWishlistCount();
-                        showToast(`${productName} removed from wishlist!`, 'info');
-                        
-                        // Check if empty
-                        const remainingItems = document.querySelectorAll('.wishlist-item').length;
-                        if (remainingItems === 0) {
-                            setTimeout(() => location.reload(), 1000);
-                        }
-                    }, 300);
-                    
-                } else {
-                    // Remove loading state on error
-                    if (button) {
-                        button.classList.remove('loading');
-                        button.disabled = false;
-                    }
-                    showToast(data.message || 'Failed to remove from wishlist', 'error');
                 }
-            })
-            .catch(error => {
-                console.error('Remove error:', error);
-                // Remove loading state on error
-                if (button) {
-                    button.classList.remove('loading');
-                    button.disabled = false;
-                }
-                showToast('Something went wrong. Please try again.', 'error');
-            });
-        }
 
-        // Move to cart function
-        function moveToCart(productId, productName, wishlistItem) {
-            console.log('Moving to cart:', productId);
-            
-            // Show loading state
-            const button = wishlistItem.querySelector('.move-to-cart-btn');
-            if (button) {
-                button.classList.add('loading');
-                button.disabled = true;
-                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Moving...';
-            }
-
-            fetch(`/wishlist/move-to-cart/${productId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': token
-                }
-            })
-            .then(response => {
-                console.log('Move response status:', response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Move response data:', data);
-                
-                if (data.success) {
-                    // Remove item with animation
-                    wishlistItem.classList.add('removing');
-                    
-                    setTimeout(() => {
-                        wishlistItem.remove();
-                        updateWishlistCount();
-                        updateCartCount(data.cart_count);
-                        showToast(`${productName} moved to cart!`, 'success');
-                        
-                        // Check if empty
-                        const remainingItems = document.querySelectorAll('.wishlist-item').length;
-                        if (remainingItems === 0) {
-                            setTimeout(() => location.reload(), 1000);
-                        }
-                    }, 300);
-                    
-                } else {
-                    // Remove loading state on error
-                    if (button) {
-                        button.classList.remove('loading');
-                        button.disabled = false;
-                        button.innerHTML = '<i class="fas fa-shopping-cart mr-1"></i>Move to Cart';
-                    }
-                    showToast(data.message || 'Failed to move to cart', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Move error:', error);
-                // Remove loading state on error
-                if (button) {
-                    button.classList.remove('loading');
-                    button.disabled = false;
-                    button.innerHTML = '<i class="fas fa-shopping-cart mr-1"></i>Move to Cart';
-                }
-                showToast('Something went wrong. Please try again.', 'error');
-            });
-        }
-
-        // Clear wishlist function
-        function clearWishlist() {
-            if (!confirm('Are you sure you want to clear your entire wishlist?')) {
-                return;
-            }
-            
-            console.log('Clearing wishlist');
-            
-            fetch('/wishlist/clear', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': token
-                }
-            })
-            .then(response => {
-                console.log('Clear response status:', response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Clear response data:', data);
-                
-                if (data.success) {
-                    showToast('Wishlist cleared successfully!', 'success');
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showToast(data.message || 'Failed to clear wishlist', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Clear error:', error);
-                showToast('Something went wrong. Please try again.', 'error');
-            });
-        }
-
-        // Move all to cart function
-        function moveAllToCart() {
-            if (!confirm('Move all available items to cart?')) {
-                return;
-            }
-            
-            const availableButtons = document.querySelectorAll('.move-to-cart-btn:not(:disabled)');
-            if (availableButtons.length === 0) {
-                showToast('No items available to move to cart', 'info');
-                return;
-            }
-            
-            console.log('Moving all to cart, items:', availableButtons.length);
-            
-            let completed = 0;
-            let errors = 0;
-            
-            availableButtons.forEach(button => {
-                const productId = button.getAttribute('data-product-id');
-                const productName = button.getAttribute('data-product-name');
-                
-                // Disable button
-                button.disabled = true;
-                button.classList.add('loading');
-                
-                fetch(`/wishlist/move-to-cart/${productId}`, {
-                    method: 'POST',
+                fetch(`/wishlist/remove/${productId}`, {
+                    method: 'DELETE',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-CSRF-TOKEN': token
+                        'X-CSRF-TOKEN': WISHLIST_CSRF,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
                 .then(response => response.json())
                 .then(data => {
-                    completed++;
-                    if (!data.success) errors++;
-                    
-                    if (completed === availableButtons.length) {
-                        if (errors === 0) {
-                            showToast('All items moved to cart successfully!', 'success');
-                        } else {
-                            showToast(`${completed - errors} items moved to cart, ${errors} failed`, 'info');
+                    if (data.success) {
+                        if (wishlistItem) {
+                            wishlistItem.remove();
                         }
-                        setTimeout(() => location.reload(), 1500);
+                        updateWishlistCount();
+                        showToast(`${productName} removed from wishlist`, 'success');
+                    } else {
+                        showToast(data.message || 'Failed to remove from wishlist', 'error');
+                        btn.disabled = false;
+                        if (wishlistItem) {
+                            wishlistItem.classList.remove('removing');
+                        }
                     }
                 })
                 .catch(error => {
-                    completed++;
-                    errors++;
-                    console.error('Move all error:', error);
-                    
-                    if (completed === availableButtons.length) {
-                        showToast(`${completed - errors} items moved to cart, ${errors} failed`, 'info');
-                        setTimeout(() => location.reload(), 1500);
+                    console.error('Remove wishlist error:', error);
+                    showToast('Failed to remove from wishlist', 'error');
+                    btn.disabled = false;
+                    if (wishlistItem) {
+                        wishlistItem.classList.remove('removing');
                     }
+                });
+            }
+        });
+
+        // Clear wishlist functionality
+        const clearBtn = document.getElementById('clearWishlistBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function() {
+                if (!confirm('Are you sure you want to clear your entire wishlist?')) return;
+                
+                this.disabled = true;
+                const originalText = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Clearing...';
+
+                fetch('/wishlist/clear', {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': WISHLIST_CSRF,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Wishlist cleared successfully', 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast(data.message || 'Failed to clear wishlist', 'error');
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                    }
+                })
+                .catch(error => {
+                    console.error('Clear wishlist error:', error);
+                    showToast('Failed to clear wishlist', 'error');
+                    this.disabled = false;
+                    this.innerHTML = originalText;
                 });
             });
         }
+    }
 
-        // Update wishlist count
-        function updateWishlistCount() {
-            const wishlistItems = document.querySelectorAll('.wishlist-item').length;
-            const countElement = document.getElementById('wishlistItemCount');
-            if (countElement) {
-                countElement.textContent = wishlistItems;
-            }
-            
-            // Update header badge
-            const headerBadge = document.getElementById('wishlistCount');
-            if (headerBadge) {
-                headerBadge.textContent = wishlistItems;
-                headerBadge.style.display = wishlistItems > 0 ? 'inline' : 'none';
-            }
+    // Update wishlist count
+    function updateWishlistCount() {
+        const wishlistItems = document.querySelectorAll('.wishlist-item').length;
+        const countElement = document.getElementById('wishlistItemCount');
+        if (countElement) {
+            countElement.textContent = wishlistItems;
         }
-
-        // Update cart count
-        function updateCartCount(count) {
-            const cartBadge = document.getElementById('cartCount');
-            if (cartBadge) {
-                cartBadge.textContent = count;
-                cartBadge.style.display = count > 0 ? 'inline' : 'none';
-            }
+        
+        // Update header badge
+        const headerBadge = document.getElementById('wishlistCount');
+        if (headerBadge) {
+            headerBadge.textContent = wishlistItems;
+            headerBadge.style.display = wishlistItems > 0 ? 'inline' : 'none';
         }
-
-        // Show toast notification
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toastNotification');
-            const icon = document.getElementById('toastIcon');
-            const messageEl = document.getElementById('toastMessage');
-            
-            if (!toast || !icon || !messageEl) {
-                console.error('Toast elements not found');
-                return;
-            }
-            
-            // Set message
-            messageEl.textContent = message;
-            
-            // Set icon based on type
-            icon.className = 'fas ';
-            switch(type) {
-                case 'success':
-                    icon.className += 'fa-check-circle text-green-500';
-                    break;
-                case 'error':
-                    icon.className += 'fa-exclamation-circle text-red-500';
-                    break;
-                case 'info':
-                    icon.className += 'fa-info-circle text-blue-500';
-                    break;
-                default:
-                    icon.className += 'fa-check-circle text-green-500';
-            }
-            
-            // Show toast
-            toast.classList.remove('hidden');
-            
-            // Auto hide after 3 seconds
-            setTimeout(() => hideToast(), 3000);
+        
+        // Show empty state if no items
+        if (wishlistItems === 0) {
+            setTimeout(() => location.reload(), 2000);
         }
+    }
 
-        // Hide toast notification
-        window.hideToast = function() {
-            const toast = document.getElementById('toastNotification');
-            if (toast) {
-                toast.classList.add('hidden');
+    // Toast notification functions
+    function showToast(message, type = 'success') {
+        const toast = document.getElementById('toastNotification');
+        const icon = document.getElementById('toastIcon');
+        const messageElement = document.getElementById('toastMessage');
+        
+        if (!toast || !icon || !messageElement) return;
+        
+        // Set message
+        messageElement.textContent = message;
+        
+        // Set icon based on type
+        icon.className = type === 'error' 
+            ? 'fas fa-exclamation-circle text-red-500'
+            : type === 'info'
+            ? 'fas fa-info-circle text-blue-500'
+            : 'fas fa-check-circle text-green-500';
+        
+        // Show toast
+        toast.classList.remove('hidden');
+        
+        // Auto hide after 3 seconds
+        setTimeout(() => {
+            hideToast();
+        }, 3000);
+    }
+
+    function hideToast() {
+        const toast = document.getElementById('toastNotification');
+        if (toast) {
+            toast.classList.add('hidden');
+        }
+    }
+
+    // Handle add to cart form submissions
+    document.addEventListener('submit', function(e) {
+        if (e.target.classList.contains('add-to-cart-form') || e.target.id === 'sizeAddToCartForm') {
+            e.preventDefault();
+            
+            const form = e.target;
+            const formData = new FormData(form);
+            const submitBtn = form.querySelector('button[type="submit"]');
+            
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
+                
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message || 'Product added to cart!', 'success');
+                        
+                        // Update cart count if provided
+                        if (data.cartCount !== undefined) {
+                            const cartBadge = document.getElementById('cartCount');
+                            if (cartBadge) {
+                                cartBadge.textContent = data.cartCount;
+                                cartBadge.style.display = data.cartCount > 0 ? 'inline' : 'none';
+                            }
+                        }
+                        
+                        // Close modal if it was from size selection
+                        if (form.id === 'sizeAddToCartForm') {
+                            closeModal();
+                        }
+                    } else {
+                        showToast(data.message || 'Failed to add product to cart', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Add to cart error:', error);
+                    showToast('Failed to add product to cart', 'error');
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                    }
+                });
             }
         }
     });
     </script>
+    {{-- sementara untuk debug --}}
+{{-- <pre>{{ print_r($product->size_variants, true) }}</pre> --}}
+
 @endsection

@@ -24,458 +24,571 @@
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     
-    <!-- Custom Styles -->
     <style>
-        /* Reset and Base Styles */
-        * {
-            box-sizing: border-box;
-        }
+    <!-- Custom Styles -->
+    /* Reset and Base Styles */
+* {
+    box-sizing: border-box;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
 
-        /* Exact Kick Avenue Colors - Background PUTIH */
-        .ka-header {
-            background: #ffffff;
-            border-bottom: 1px solid #e5e5e5;
-        }
-        
-        .ka-logo {
-            font-family: 'Arial Black', 'Helvetica', sans-serif;
-            font-weight: 900;
-            font-size: 24px;
-            letter-spacing: 2px;
-            color: #000000;
-            text-decoration: none;
-            font-style: italic;
-            transform: skew(-10deg);
-            display: inline-block;
-        }
+/* Exact Kick Avenue Colors - Background PUTIH */
+.ka-header {
+    background: #ffffff;
+    border-bottom: 1px solid #e5e5e5;
+}
 
-        /* Logo Image Styles */
-        .ka-logo-img {
-            height: 50px;
-            width: auto;
-            object-fit: contain;
-        }
-        
-        /* Search container dengan lebar custom 1500px */
-        .ka-search-custom {
-            max-width: 1500px;
-        }
-        
-        .ka-search-container {
-            background: #f8f9fa;
-            border-radius: 20px;
-            border: 1px solid #dee2e6;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .ka-search-input {
-            border: none !important;
-            outline: none !important;
-            box-shadow: none !important;
-            background: transparent;
-            padding: 12px 45px 12px 45px;
-            width: 100%;
-            font-size: 14px;
-            color: #495057;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-        
-        .ka-search-input:focus {
-            outline: none !important;
-            border: none !important;
-            box-shadow: none !important;
-        }
-        
-        .ka-search-input::placeholder {
-            color: #6c757d;
-            font-weight: 400;
-        }
-        
-        .ka-search-icon {
-            position: absolute;
-            left: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #6c757d;
-            font-size: 14px;
-            pointer-events: none;
-        }
-        
-        .ka-search-btn {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: #6c757d;
-            font-size: 16px;
-            cursor: pointer;
-            padding: 0;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .ka-search-btn:hover {
-            color: #495057;
-        }
-        
-        .ka-auth-btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            display: inline-block;
-        }
-        
-        .ka-login-btn {
-            color: #666;
-            border: 1px solid #ddd;
-            background: white;
-        }
-        
-        .ka-login-btn:hover {
-            background: #f0f0f0;
-            border-color: #ccc;
-        }
-        
-        .ka-register-btn {
-            background: #333;
-            color: white;
-            border: 1px solid #333;
-        }
-        
-        .ka-register-btn:hover {
-            background: #555;
-        }
+.ka-logo {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-weight: 900;
+    font-size: 24px;
+    letter-spacing: 2px;
+    color: #000000;
+    text-decoration: none;
+    font-style: italic;
+    transform: skew(-10deg);
+    display: inline-block;
+}
 
-        /* Cart & Wishlist Icon Styles */
-        .icon-btn {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #f8f9fa;
-            border: 1px solid #e5e5e5;
-            color: #666;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            font-size: 16px;
-        }
+/* Logo Image Styles */
+.ka-logo-img {
+    height: 50px;
+    width: auto;
+    object-fit: contain;
+}
 
-        .icon-btn:hover {
-            background: #e9ecef;
-            color: #333;
-            transform: translateY(-1px);
-        }
+/* Search container dengan lebar custom 1500px */
+.ka-search-custom {
+    max-width: 1500px;
+}
 
-        .icon-badge {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #ff4757;
-            color: white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            font-size: 11px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 20px;
-            line-height: 1;
-        }
-
-        /* User Menu Button */
-        .user-menu-btn {
-            display: flex;
-            align-items: center;
-            color: #666;
-            padding: 8px 12px;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            background: #f8f9fa;
-            border: 1px solid #e5e5e5;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-
-        .user-menu-btn:hover {
-            background: #e9ecef;
-            color: #333;
-        }
-
-        /* User dropdown positioning */
-        .user-dropdown {
-            position: absolute;
-            top: 100%;
-            right: 0;
-            background: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            min-width: 180px;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.2s ease;
-            margin-top: 10px;
-            pointer-events: none;
-        }
-
-        .user-dropdown.show {
-            opacity: 1;
-            visibility: visible;
-            pointer-events: auto;
-        }
-
-        /* Navigation dropdown styles */
-        .nav-dropdown {
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: white;
-            border: 1px solid #e5e5e5;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            min-width: 200px;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.2s ease;
-            margin-top: 10px;
-            pointer-events: none;
-        }
-
-        .nav-dropdown.show {
-            opacity: 1;
-            visibility: visible;
-            pointer-events: auto;
-        }
-
-        /* Navigation item container */
-        .nav-item-container {
-            position: relative;
-            display: inline-block;
-        }
-
-        /* Main navigation button styling */
-        .nav-main-btn {
-            color: #666666;
-            padding: 8px 20px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 16px;
-            font-family: 'Arial Black', 'Helvetica', sans-serif;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            text-align: center;
-            position: relative;
-            cursor: pointer;
-            z-index: 1001;
-            background: none;
-            border: none;
-        }
-        
-        .nav-main-btn:hover {
-            background-color: rgba(0,0,0,0.05);
-            color: #333;
-        }
-        
-        .nav-main-btn.special {
-            color: #ff4757 !important;
-            font-weight: 600;
-        }
-        
-        .nav-main-btn.special:hover {
-            color: #ff6b7d !important;
-        }
-
-        /* Dropdown arrow */
-        .nav-main-btn .dropdown-arrow {
-            margin-left: 5px;
-            font-size: 12px;
-            transition: transform 0.2s ease;
-        }
-
-        .nav-main-btn.active .dropdown-arrow {
-            transform: rotate(180deg);
-        }
-
-        /* Simple link styling for items without dropdowns */
-        .nav-simple-link {
-            color: #666666;
-            padding: 8px 20px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 16px;
-            font-family: 'Arial Black', 'Helvetica', sans-serif;
-            transition: all 0.3s ease;
-            display: block;
-            text-align: center;
-            position: relative;
-            cursor: pointer;
-            z-index: 1001;
-        }
-        
-        .nav-simple-link:hover {
-            background-color: rgba(0,0,0,0.05);
-            color: #333;
-        }
-        
-        .nav-simple-link.special {
-            color: #ff4757 !important;
-            font-weight: 600;
-        }
-        
-        .nav-simple-link.special:hover {
-            color: #ff6b7d !important;
-        }
-
-        .dropdown-item {
-            display: block;
-            padding: 12px 20px;
-            color: #666;
-            text-decoration: none;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 14px;
-            font-weight: 500;
-            border-bottom: 1px solid #f0f0f0;
-            transition: all 0.3s ease;
-            width: 100%;
-            text-align: left;
-            background: none;
-            border-left: none;
-            border-right: none;
-            border-top: none;
-        }
-
-        .dropdown-item:last-child {
-            border-bottom: none;
-        }
-
-        .dropdown-item:hover {
-            background: #f8f9fa;
-            color: #333;
-        }
-
-        .dropdown-header {
-            padding: 15px 20px 10px;
-            font-weight: 700;
-            font-size: 14px;
-            color: #333;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-bottom: 2px solid #f0f0f0;
-            margin-bottom: 5px;
-            font-family: 'Arial Black', 'Helvetica', sans-serif;
-        }
-
-        .dropdown-header-link {
-            display: block;
-            padding: 15px 20px 10px;
-            font-weight: 700;
-            font-size: 14px;
-            color: #333;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-bottom: 2px solid #f0f0f0;
-            margin-bottom: 5px;
-            font-family: 'Arial Black', 'Helvetica', sans-serif;
-            text-decoration: none;
-            transition: all 0.3s ease;
-        }
-
-        .dropdown-header-link:hover {
-            background: #f8f9fa;
-            color: #000;
-        }
-
-        /* Image Carousel Styles */
-        /* Image Carousel Styles - Updated with smaller height */
-.carousel-container {
-    position: relative;
-    width: 100%;
-    height: 180px; /* Reduced from 250px */
-    overflow: hidden;
+.ka-search-container {
     background: #f8f9fa;
+    border-radius: 20px;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.carousel-slide {
-    position: absolute;
-    top: 0;
-    left: 0;
+.ka-search-input {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent;
+    padding: 12px 45px 12px 45px;
     width: 100%;
-    height: 100%;
-    opacity: 0;
-    transition: opacity 0.5s ease-in-out;
+    font-size: 14px;
+    color: #495057;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-.carousel-slide.active {
-    opacity: 1;
+.ka-search-input:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
-.carousel-slide img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+.ka-search-input::placeholder {
+    color: #6c757d;
+    font-weight: 400;
 }
 
-.carousel-nav {
+.ka-search-icon {
     position: absolute;
+    left: 15px;
     top: 50%;
     transform: translateY(-50%);
-    background: rgba(255, 255, 255, 0.9);
+    color: #6c757d;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+.ka-search-btn {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
     border: none;
-    width: 40px; /* Reduced from 50px */
-    height: 40px; /* Reduced from 50px */
-    border-radius: 50%;
+    color: #6c757d;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    font-size: 16px; /* Reduced from 18px */
-    color: #333;
+}
+
+.ka-search-btn:hover {
+    color: #495057;
+}
+
+.ka-auth-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
     transition: all 0.3s ease;
-    z-index: 10;
+    display: inline-block;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-.carousel-nav:hover {
-    background: rgba(255, 255, 255, 1);
-    transform: translateY(-50%) scale(1.1);
+.ka-login-btn {
+    color: #666;
+    border: 1px solid #ddd;
+    background: white;
 }
 
-.carousel-nav.prev {
-    left: 15px; /* Reduced from 20px */
+.ka-login-btn:hover {
+    background: #f0f0f0;
+    border-color: #ccc;
 }
 
-.carousel-nav.next {
-    right: 15px; /* Reduced from 20px */
+.ka-register-btn {
+    background: #333;
+    color: white;
+    border: 1px solid #333;
+}
+
+.ka-register-btn:hover {
+    background: #555;
+}
+
+/* Cart & Wishlist Icon Styles */
+.icon-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #f8f9fa;
+    border: 1px solid #e5e5e5;
+    color: #666;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    font-size: 16px;
+}
+
+.icon-btn:hover {
+    background: #e9ecef;
+    color: #333;
+    transform: translateY(-1px);
+}
+
+.icon-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #ff4757;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    line-height: 1;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+/* User Menu Button */
+.user-menu-btn {
+    display: flex;
+    align-items: center;
+    color: #666;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    background: #f8f9fa;
+    border: 1px solid #e5e5e5;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.user-menu-btn:hover {
+    background: #e9ecef;
+    color: #333;
+}
+
+/* User dropdown positioning */
+.user-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    min-width: 180px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    pointer-events: none;
+}
+
+.user-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Navigation dropdown styles */
+.nav-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    min-width: 200px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    pointer-events: none;
+}
+
+.nav-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Navigation item container */
+.nav-item-container {
+    position: relative;
+    display: inline-block;
+}
+
+/* Main navigation button styling */
+.nav-main-btn {
+    color: #666666;
+    padding: 8px 20px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    cursor: pointer;
+    z-index: 1001;
+    background: none;
+    border: none;
+}
+
+.nav-main-btn:hover {
+    background-color: rgba(0,0,0,0.05);
+    color: #333;
+}
+
+.nav-main-btn.special {
+    color: #ff4757 !important;
+    font-weight: 700;
+}
+
+.nav-main-btn.special:hover {
+    color: #ff6b7d !important;
+}
+
+/* Dropdown arrow */
+.nav-main-btn .dropdown-arrow {
+    margin-left: 5px;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.nav-main-btn.active .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+/* Simple link styling for items without dropdowns */
+.nav-simple-link {
+    color: #666666;
+    padding: 8px 20px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    transition: all 0.3s ease;
+    display: block;
+    text-align: center;
+    position: relative;
+    cursor: pointer;
+    z-index: 1001;
+}
+
+.nav-simple-link:hover {
+    background-color: rgba(0,0,0,0.05);
+    color: #333;
+}
+
+.nav-simple-link.special {
+    color: #ff4757 !important;
+    font-weight: 700;
+}
+
+.nav-simple-link.special:hover {
+    color: #ff6b7d !important;
+}
+
+.dropdown-item {
+    display: block;
+    padding: 12px 20px;
+    color: #666;
+    text-decoration: none;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 1px solid #f0f0f0;
+    transition: all 0.3s ease;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:hover {
+    background: #f8f9fa;
+    color: #333;
+}
+
+.dropdown-header {
+    padding: 15px 20px 10px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 5px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.dropdown-header-link {
+    display: block;
+    padding: 15px 20px 10px;
+    font-weight: 700;
+    font-size: 14px;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 5px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.dropdown-header-link:hover {
+    background: #f8f9fa;
+    color: #000;
+}
+
+/* Image Carousel Styles - Updated with smaller height */
+/* === iBox-like Hero Banner (full-bleed) === */
+/* Full-bleed seperti iBox */
+.carousel-wrapper{
+ position:relative;
+ left:50%; right:50%;
+ margin-left:-50vw; margin-right:-50vw;
+ width:100vw;
+ margin-bottom:2rem;
+}
+
+/* Tinggi fix (desktop=550) */
+.carousel-container{
+ position:relative; width:100%;
+ height:550px;                       /* iBox desktop */
+ overflow:hidden;
+ background:transparent;               /* sama seperti iBox */
+ display:flex; align-items:center; justify-content:center;
+ padding-bottom:50px;                 /* Tambahkan ruang untuk dots */
+}
+
+/* Slide */
+.carousel-slide{ position:absolute; inset:0; opacity:0; transition:opacity .5s; }
+.carousel-slide.active{ opacity:1; }
+
+/* KUNCI: jangan dicrop, penuhi area setinggi 550, center */
+.carousel-slide img{
+ display:block;
+ width:100%; height:100% !important; /* penting: kalahkan img{height:auto} global */
+ object-fit:contain;                  /* biar tidak zoom/crop */
+ object-position:center;
+}
+
+/* panah & dots (boleh tetap) */
+.carousel-nav{
+ position:absolute; top:50%; transform:translateY(-50%);
+ background:rgba(255,255,255,.9); border:none;
+ width:48px; height:48px; border-radius:9999px;
+ display:flex; align-items:center; justify-content:center;
+ cursor:pointer; font-size:18px; color:#333; z-index:10;
+ box-shadow:0 2px 8px rgba(0,0,0,.15);
+}
+.carousel-nav:hover{ background:#fff; transform:translateY(-50%) scale(1.06); }
+.carousel-nav.prev{ left:24px; } .carousel-nav.next{ right:24px; }
+
+.carousel-indicators{
+ position:absolute; left:50%; transform:translateX(-50%);
+ bottom:15px; display:flex; gap:8px; z-index:10;
+}
+.carousel-dot{
+ width:10px; height:10px; border-radius:9999px; border:none;
+ background:rgba(255,255,255,.5); transition:all .2s; cursor:pointer;
+}
+.carousel-dot.active{ background:#fff; transform:scale(1.15); }
+
+/* Tablet & Mobile heights */
+@media screen and (min-width:768px) and (max-width:1023px){ 
+ .carousel-container{ height:430px !important; } 
+}
+
+@media screen and (max-width:767px){
+ .carousel-container{ 
+   height:370px !important; 
+   min-height:370px;
+   padding-bottom:40px;               /* Tambahkan ruang dots mobile */
+ }
+ .carousel-nav{ width:40px; height:40px; font-size:16px; }
+ .carousel-nav.prev{ left:14px; } .carousel-nav.next{ right:14px; }
+ .carousel-indicators{ bottom:10px; gap:6px; }
+ .carousel-dot{ width:8px; height:8px; }
+}
+
+/* Hindari scrollbar horizontal dari full-bleed */
+html, body { 
+    overflow-x: hidden; 
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 /* Mobile Styles */
+.mobile-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background: rgba(0,0,0,0.5);
+    z-index: 9998;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.mobile-menu-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.mobile-menu {
+    position: fixed;
+    top: 0;
+    left: -100%;
+    width: 300px;
+    height: 100vh;
+    background: white;
+    z-index: 9999;
+    transition: left 0.3s ease;
+    overflow-y: auto;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.mobile-menu.open {
+    left: 0;
+}
+
+.mobile-menu-header {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    text-align: center;
+}
+
+.mobile-menu-item {
+    display: block;
+    padding: 15px 20px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #f0f0f0;
+    font-weight: 500;
+    transition: background 0.3s ease;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.mobile-menu-item:hover {
+    background: #f8f9fa;
+}
+
+.mobile-menu-item.special {
+    color: #ff4757;
+    font-weight: 600;
+}
+
+.mobile-auth-buttons {
+    padding: 20px;
+    border-top: 1px solid #eee;
+}
+
+.mobile-auth-btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 10px;
+    text-align: center;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.mobile-login-btn {
+    background: white;
+    border: 2px solid #ddd;
+    color: #666;
+}
+
+.mobile-register-btn {
+    background: #333;
+    border: 2px solid #333;
+    color: white;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
     .carousel-container {
-        height: 140px; /* Reduced from 180px */
+        height: 180px;
     }
     
     .carousel-nav {
-        width: 35px; /* Reduced from 40px */
-        height: 35px; /* Reduced from 40px */
-        font-size: 14px; /* Reduced from 16px */
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
     }
     
     .carousel-nav.prev {
@@ -485,184 +598,194 @@
     .carousel-nav.next {
         right: 10px;
     }
+
+    .ka-logo-img {
+        height: 40px;
+    }
+
+    .icon-btn {
+        width: 35px;
+        height: 35px;
+        font-size: 14px;
+    }
+
+    .icon-badge {
+        width: 18px;
+        height: 18px;
+        font-size: 10px;
+        top: -3px;
+        right: -3px;
+    }
 }
 
-        /* Mobile Styles */
-        .mobile-menu-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100vh;
-            background: rgba(0,0,0,0.5);
-            z-index: 9998;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
+/* Loading spinner untuk button */
+.loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
 
-        .mobile-menu-overlay.open {
-            opacity: 1;
-            visibility: visible;
-        }
+.loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin: auto;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
 
-        .mobile-menu {
-            position: fixed;
-            top: 0;
-            left: -100%;
-            width: 300px;
-            height: 100vh;
-            background: white;
-            z-index: 9999;
-            transition: left 0.3s ease;
-            overflow-y: auto;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-        }
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
 
-        .mobile-menu.open {
-            left: 0;
-        }
+/* Hilangkan spacing antara search dan banner seperti iBox */
+.md\:hidden.bg-white.border-b {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
 
-        .mobile-menu-header {
-            padding: 20px;
-            border-bottom: 1px solid #eee;
-            text-align: center;
-        }
+.carousel-wrapper {
+    margin-top: 0 !important;
+}
 
-        .mobile-menu-item {
-            display: block;
-            padding: 15px 20px;
-            color: #333;
-            text-decoration: none;
-            border-bottom: 1px solid #f0f0f0;
-            font-weight: 500;
-            transition: background 0.3s ease;
-        }
+/* Khusus untuk mobile cart & wishlist section juga */
+.md\:hidden.bg-white.border-b.px-4.py-3:last-of-type {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
 
-        .mobile-menu-item:hover {
-            background: #f8f9fa;
-        }
+/* Override spacing yang mungkin ada */
+@media (max-width: 767px) {
+    .md\:hidden {
+        margin-bottom: 0 !important;
+    }
+    
+    .carousel-wrapper {
+        margin-top: 0 !important;
+    }
+}
 
-        .mobile-menu-item.special {
-            color: #ff4757;
-            font-weight: 600;
-        }
+/* Hilangkan spacing dan border pada mobile search */
+.md\:hidden.bg-white.border-b.px-4.py-3 {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    border-bottom: none !important; /* Hilangkan garis border */
+}
 
-        .mobile-auth-buttons {
-            padding: 20px;
-            border-top: 1px solid #eee;
-        }
+/* Hilangkan spacing pada mobile cart & wishlist jika ada */
+.md\:hidden.bg-white.border-b.px-4.py-3:last-of-type {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    border-bottom: none !important;
+}
 
-        .mobile-auth-btn {
-            display: block;
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 10px;
-            text-align: center;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
+/* Pastikan carousel langsung menempel */
+.carousel-wrapper {
+    margin-top: 0 !important;
+}
 
-        .mobile-login-btn {
-            background: white;
-            border: 2px solid #ddd;
-            color: #666;
-        }
+/* Override semua border-b pada mobile sections */
+@media (max-width: 767px) {
+    .md\:hidden.border-b {
+        border-bottom: none !important;
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    
+    .carousel-wrapper {
+        margin-top: 0 !important;
+    }
+}
 
-        .mobile-register-btn {
-            background: #333;
-            border: 2px solid #333;
-            color: white;
-        }
+/* Mobile Bottom Navigation Styles */
+.mobile-bottom-nav {
+    height: 70px;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
 
-        /* Responsive */
-        @media (max-width: 768px) {
-            .carousel-container {
-                height: 180px;
-            }
-            
-            .carousel-nav {
-                width: 40px;
-                height: 40px;
-                font-size: 16px;
-            }
-            
-            .carousel-nav.prev {
-                left: 10px;
-            }
-            
-            .carousel-nav.next {
-                right: 10px;
-            }
+.mobile-bottom-nav a {
+    transition: color 0.2s ease;
+    min-width: 60px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
 
-            .ka-logo-img {
-                height: 40px;
-            }
+.mobile-bottom-nav a:hover {
+    color: #2563eb;
+}
 
-            .icon-btn {
-                width: 35px;
-                height: 35px;
-                font-size: 14px;
-            }
+/* Add padding to body to prevent content being hidden behind bottom nav */
+@media (max-width: 767px) {
+    body {
+        padding-bottom: 70px;
+    }
+}
 
-            .icon-badge {
-                width: 18px;
-                height: 18px;
-                font-size: 10px;
-                top: -3px;
-                right: -3px;
-            }
-        }
+/* Active state styling */
+.mobile-bottom-nav a.text-blue-600 i {
+    transform: scale(1.1);
+}
 
-        /* Loading spinner untuk button */
-        .loading {
-            opacity: 0.7;
-            cursor: not-allowed;
-        }
-        
-        .loading::after {
-            content: "";
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            margin: auto;
-            border: 2px solid transparent;
-            border-top-color: currentColor;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+/* Cart badge animation */
+.mobile-bottom-nav .bg-red-500 {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
     </style>
 
     <script>
         function carousel() {
-            return {
-                currentSlide: 0,
-                slides: [
-                    { image: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=1200&h=250&fit=crop', alt: 'Sneaker Collection 1' },
-                    { image: 'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=1200&h=250&fit=crop', alt: 'Sneaker Collection 2' },
-                    { image: 'https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?w=1200&h=250&fit=crop', alt: 'Sneaker Collection 3' },
-                    { image: 'https://images.unsplash.com/photo-1512374382149-233c42b6a83b?w=1200&h=250&fit=crop', alt: 'Sneaker Collection 4' }
-                ],
-                nextSlide() {
-                    this.currentSlide = (this.currentSlide + 1) % this.slides.length;
-                },
-                prevSlide() {
-                    this.currentSlide = this.currentSlide === 0 ? this.slides.length - 1 : this.currentSlide - 1;
-                },
-                init() {
-                    setInterval(() => {
-                        this.nextSlide();
-                    }, 5000);
-                }
+    return {
+        currentSlide: 0,
+        slides: [
+            { 
+              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FjFvohNn3y1zzxdl6qtkYvDZSJHzuCFebM5uvIS2x.jpg&w=1920&q=85', 
+              alt: 'Sneaker Collection 1',
+              bg: '#000000' // background hitam
+            },
+            { 
+              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FxFb3N6fjOOjG3kKfh3HTpol6AZPajfpDCv9k8eCd.webp&w=1920&q=85', 
+              alt: 'Sneaker Collection 2',
+              bg: '#ffffffff' // abu muda
+            },
+            { 
+              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2F5bSAF4TEXHOtoyWIhIGmS7JNiIJeGlrAy5dFxw4r.webp&w=1920&q=85', 
+              alt: 'Sneaker Collection 3',
+              bg: '#ffffffff' // putih
+            },
+            { 
+              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FM2g1EP6xGtyehbWO5jHCWQTSBXASk36dgp79OtNJ.webp&w=1920&q=85', 
+              alt: 'Sneaker Collection 4',
+              bg: '#CFEAF6' // abu gelap
             }
+        ],
+        autoPlay: true,
+        autoPlayInterval: 5000,
+        init() {
+            if (this.autoPlay) {
+                setInterval(() => { this.nextSlide(); }, this.autoPlayInterval);
+            }
+        },
+        nextSlide() {
+            this.currentSlide = (this.currentSlide + 1) % this.slides.length;
+        },
+        prevSlide() {
+            this.currentSlide = this.currentSlide === 0 ? this.slides.length - 1 : this.currentSlide - 1;
         }
+    }
+}
+
+
 
         // Navigation dropdown functionality
         function navigationDropdown() {
@@ -1098,22 +1221,34 @@
 </div>
 
     <!-- Image Carousel Slider -->
-    <div class="carousel-container" x-data="carousel()">
-        <!-- Carousel Slides -->
-        <template x-for="(slide, index) in slides" :key="index">
-            <div class="carousel-slide" :class="{ 'active': currentSlide === index }">
-                <img :src="slide.image" :alt="slide.alt" />
-            </div>
-        </template>
+<div class="carousel-wrapper">
+  <div class="carousel-container" x-data="carousel()" x-init="init()">
+<template x-for="(slide, index) in slides" :key="index">
+  <div class="carousel-slide"
+       :class="{ 'active': currentSlide === index }"
+       :style="slide.bg ? { backgroundColor: slide.bg } : {}">
+    <img :src="slide.image" :alt="slide.alt" loading="lazy">
+  </div>
+</template>
 
-        <!-- Navigation Arrows -->
-        <button class="carousel-nav prev" @click="prevSlide()">
-            <i class="fas fa-chevron-left"></i>
-        </button>
-        <button class="carousel-nav next" @click="nextSlide()">
-            <i class="fas fa-chevron-right"></i>
-        </button>
+
+    <button class="carousel-nav prev" @click="prevSlide()" aria-label="Previous">
+      <i class="fas fa-chevron-left"></i>
+    </button>
+    <button class="carousel-nav next" @click="nextSlide()" aria-label="Next">
+      <i class="fas fa-chevron-right"></i>
+    </button>
+
+    <div class="carousel-indicators">
+      <template x-for="(slide, index) in slides" :key="'dot-'+index">
+        <button class="carousel-dot" :class="{ 'active': currentSlide === index }"
+                @click="currentSlide = index" :aria-label="'Go to slide ' + (index + 1)"></button>
+      </template>
     </div>
+  </div>
+</div>
+
+
 
     <!-- Flash Messages -->
     @if(session('success'))
@@ -1206,5 +1341,90 @@
             </div>
         </div>
     </footer>
+    <!-- Mobile Bottom Navigation - Add this to your main layout file (layouts/app.blade.php) before closing body tag -->
+<div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
+    <div class="flex items-center justify-around py-2">
+        <!-- Home -->
+        <a href="/" class="flex flex-col items-center py-2 px-4 {{ request()->is('/') ? 'text-blue-600' : 'text-gray-600' }}">
+            <div class="relative">
+                <i class="fas fa-home text-xl mb-1"></i>
+            </div>
+            <span class="text-xs font-medium">Home</span>
+        </a>
+
+        <!-- Cart -->
+        <a href="{{ route('cart.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('cart*') ? 'text-blue-600' : 'text-gray-600' }}">
+            <div class="relative">
+                <i class="fas fa-shopping-cart text-xl mb-1"></i>
+                @if(isset($cartCount) && $cartCount > 0)
+                    <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                        {{ $cartCount > 99 ? '99+' : $cartCount }}
+                    </span>
+                @endif
+            </div>
+            <span class="text-xs font-medium">Cart</span>
+        </a>
+
+        <!-- Account/Profile -->
+        @auth
+            <a href="{{ route('profile.show') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') ? 'text-blue-600' : 'text-gray-600' }}">
+                <div class="relative">
+                    <i class="fas fa-user text-xl mb-1"></i>
+                </div>
+                <span class="text-xs font-medium">Account</span>
+            </a>
+        @else
+            <a href="/login" class="flex flex-col items-center py-2 px-4 {{ request()->is('login*') || request()->is('register*') ? 'text-blue-600' : 'text-gray-600' }}">
+                <div class="relative">
+                    <i class="fas fa-user text-xl mb-1"></i>
+                </div>
+                <span class="text-xs font-medium">Account</span>
+            </a>
+        @endauth
+    </div>
+</div>
+
+<!-- Add bottom padding to body content to prevent overlap with fixed bottom nav -->
+<style>
+.mobile-bottom-nav {
+    height: 70px;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-bottom-nav a {
+    transition: color 0.2s ease;
+    min-width: 60px;
+}
+
+.mobile-bottom-nav a:hover {
+    color: #2563eb;
+}
+
+/* Add padding to body to prevent content being hidden behind bottom nav */
+@media (max-width: 767px) {
+    body {
+        padding-bottom: 70px;
+    }
+}
+
+/* Active state styling */
+.mobile-bottom-nav a.text-blue-600 i {
+    transform: scale(1.1);
+}
+
+/* Cart badge animation */
+.mobile-bottom-nav .bg-red-500 {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+</style>
 </body>
 </html>
