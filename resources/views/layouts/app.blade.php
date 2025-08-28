@@ -1313,31 +1313,33 @@ html, body {
                 </ul>
             </div>
 
-            <!-- Section 2: Contact Us -->
-            <div class="px-4 lg:px-0 group" style="margin-right: -24px !important; padding-right: 0 !important;">
-                <h4 class="font-semibold mb-2 text-white">Contact Us</h4>
-                <div class="w-8 h-px bg-gray-400 mb-4 transition-all duration-300 group-hover:w-20"></div>
-                <div class="space-y-3 text-sm" style="margin-right: -16px !important;">
-                    <!-- Location -->
-                    <div class="flex items-start space-x-2">
-                        <i class="fas fa-map-marker-alt text-gray-300 mt-1 flex-shrink-0 text-xs"></i>
-                        <span class="text-gray-300 leading-tight">West Jakarta, Indonesia</span>
-                    </div>
-                    
-                    <!-- Phone -->
-                    <div class="flex items-center space-x-2">
-                        <i class="fas fa-phone text-gray-300 flex-shrink-0 text-xs"></i>
-                        <a href="tel:0812345678" class="text-gray-300 hover:text-white">0812345678</a>
-                    </div>
-                    
-                    <!-- Email -->
-                    <div class="flex items-start space-x-2" style="max-width: calc(100vw - 80px);">
-                        <i class="fas fa-envelope text-gray-300 flex-shrink-0 text-xs mt-1"></i>
-                        <a href="mailto:hello@sneakersflash.com" class="text-gray-300 hover:text-white leading-tight break-words" style="word-break: break-all; overflow-wrap: anywhere;">hello@sneakersflash.com</a>
-                    </div>
-                </div>
+<div class="px-2 lg:px-0 group">
+    <h4 class="font-semibold mb-2 text-white">Contact Us</h4>
+    <div class="w-8 h-px bg-gray-400 mb-4 transition-all duration-300 group-hover:w-20"></div>
+    <div class="space-y-3 text-sm pr-2">
+        <!-- Location - SEKARANG RATA -->
+        <div class="flex items-center space-x-2">
+            <i class="fas fa-map-marker-alt text-gray-300 flex-shrink-0 text-xs w-3 text-center"></i>
+            <span class="text-gray-300 leading-tight">West Jakarta, Indonesia</span>
+        </div>
+        
+        <!-- Phone - TETAP RATA -->
+        <div class="flex items-center space-x-2">
+            <i class="fas fa-phone text-gray-300 flex-shrink-0 text-xs w-3 text-center"></i>
+            <a href="tel:0812345678" class="text-gray-300 hover:text-white">0812345678</a>
+        </div>
+        
+        <!-- Email - SEKARANG RATA -->
+        <div class="flex items-center space-x-2">
+            <i class="fas fa-envelope text-gray-300 flex-shrink-0 text-xs w-3 text-center"></i>
+            <div class="min-w-0 flex-1">
+                <a href="mailto:hello@sneakersflash.com" class="text-gray-300 hover:text-white leading-tight break-all text-xs sm:text-sm">hello@sneakersflash.com</a>
             </div>
         </div>
+    </div>
+</div>
+</div>
+
 
         <!-- Social Media Icons -->
         <div class="border-t border-gray-700 mt-8 pt-8 text-center">
@@ -1398,7 +1400,7 @@ html, body {
 
         <!-- Account/Profile -->
         @auth
-            <a href="{{ route('profile.show') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
+            <a href="{{ route('profile.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
                 <div class="relative">
                     <i class="fas fa-user text-xl mb-1"></i>
                 </div>
