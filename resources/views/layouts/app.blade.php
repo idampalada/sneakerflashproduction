@@ -1465,5 +1465,6 @@ html, body {
     }
 }
 </style>
+@stack('scripts')
 </body>
 </html>

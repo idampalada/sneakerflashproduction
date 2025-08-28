@@ -49,6 +49,15 @@
                        placeholder="Enter your email">
                 @error('email')
                     <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
+                    {{-- Simple resend link jika akun belum diaktivasi --}}
+                    @if(session('show_verification_help') && session('unverified_email'))
+                        <p class="text-sm mt-2">
+                            <a href="#" onclick="resendVerification('{{ session('unverified_email') }}')" 
+                               class="text-blue-600 hover:text-blue-800 underline">
+                                Resend activation email
+                            </a>
+                        </p>
+                    @endif
                 @enderror
             </div>
             
@@ -131,6 +140,31 @@ function togglePassword() {
         passwordInput.type = 'password';
         eyeIcon.classList.remove('fa-eye-slash');
         eyeIcon.classList.add('fa-eye');
+    }
+}
+
+{{-- Simple resend verification function --}}
+function resendVerification(email) {
+    if (confirm('Kirim ulang email aktivasi ke ' + email + '?')) {
+        // Buat form dan submit
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/email/resend-verification';
+        
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = '_token';
+        csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        
+        const emailInput = document.createElement('input');
+        emailInput.type = 'hidden';
+        emailInput.name = 'email';
+        emailInput.value = email;
+        
+        form.appendChild(csrfInput);
+        form.appendChild(emailInput);
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 

@@ -1,12 +1,12 @@
 <?php
 // File: app/Http/Controllers/Auth/LoginController.php
-// FIXED VERSION - Same pattern as working RegisterController
 
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Models\User;
 
 class LoginController extends Controller
 {
@@ -15,7 +15,6 @@ class LoginController extends Controller
      */
     public function showLoginForm()
     {
-        // Check if user is already logged in (same as RegisterController)
         if (Auth::check()) {
             return redirect('/');
         }
@@ -24,11 +23,10 @@ class LoginController extends Controller
     }
 
     /**
-     * Handle user login.
+     * Handle user login with email verification check.
      */
     public function login(Request $request)
     {
-        // Check if user is already logged in (same as RegisterController)
         if (Auth::check()) {
             return redirect('/');
         }
@@ -41,6 +39,29 @@ class LoginController extends Controller
         $credentials = $request->only('email', 'password');
         $remember = $request->boolean('remember');
 
+        // Cek apakah user dengan email ini ada
+        $user = User::where('email', $credentials['email'])->first();
+        
+        if ($user) {
+            // Cek apakah password benar
+            if (!Auth::validate($credentials)) {
+                return back()->withErrors([
+                    'email' => 'These credentials do not match our records.',
+                ])->withInput($request->except('password'));
+            }
+            
+            // Password benar, tapi cek apakah email sudah diverifikasi
+            if (!$user->hasVerifiedEmail()) {
+                // Email belum diverifikasi, berikan pesan error khusus
+                return back()->withErrors([
+                    'email' => 'Akun Anda belum diaktivasi.'
+                ])->withInput($request->except('password'))
+                  ->with('unverified_email', $credentials['email'])
+                  ->with('show_verification_help', true);
+            }
+        }
+
+        // Login normal jika email sudah verified atau user tidak ditemukan (akan error di Auth::attempt)
         if (Auth::attempt($credentials, $remember)) {
             $request->session()->regenerate();
 

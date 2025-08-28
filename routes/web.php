@@ -18,8 +18,10 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
-
+use App\Http\Controllers\Auth\VerificationController;
+use App\Http\Controllers\Auth\PasswordResetController;
 /*
 |--------------------------------------------------------------------------
 | Web Routes - CLEANED & FIXED
@@ -163,10 +165,15 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::post('/logout', [GoogleController::class, 'logout'])->name('logout')->middleware('auth');
-Route::get('/password/reset', function() {
-    return view('auth.passwords.email');
-})->name('password.request');
-
+// =====================================
+// PASSWORD RESET ROUTES
+// =====================================
+Route::middleware('guest')->group(function () {
+    Route::get('/password/reset', [PasswordResetController::class, 'showResetForm'])->name('password.request');
+    Route::post('/password/send', [PasswordResetController::class, 'sendResetEmail'])->name('password.send')->middleware(['throttle:5,1']);
+    Route::get('/password/reset/{token}', [PasswordResetController::class, 'showResetPasswordForm'])->name('password.reset.form');
+    Route::post('/password/update', [PasswordResetController::class, 'resetPassword'])->name('password.update');
+});
 // =====================================
 // CHECKOUT & PAYMENT ROUTES - ALL PAYMENT METHODS HERE
 // =====================================
@@ -197,7 +204,7 @@ Route::prefix('checkout')->name('checkout.')->group(function () {
 // =====================================
 // AUTHENTICATED USER ROUTES
 // =====================================
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'verified'])->group(function () {
     // Orders - NO PAYMENT METHODS, ONLY ORDER MANAGEMENT
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{orderNumber}', [OrderController::class, 'show'])->name('orders.show');
@@ -266,6 +273,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/test-endpoints', [GineeSyncController::class, 'testEndpoints'])->name('test.endpoints');
     });
 });
+
 
 // =====================================
 // API ROUTES - CONSOLIDATED
@@ -474,3 +482,25 @@ Route::get('/product/{slug}', function($slug) { return redirect()->route('produc
 Route::fallback(function() {
     abort(404);
 });
+
+// =====================================
+// EMAIL VERIFICATION ROUTES  
+// =====================================
+Route::middleware(['auth'])->group(function () {
+    // Halaman notifikasi email verification
+    Route::get('/email/verify', [VerificationController::class, 'notice'])
+        ->name('verification.notice');
+
+    // Handle verification link yang diklik dari email (simple version)
+    Route::get('/email/verify/{id}/{hash}', [VerificationController::class, 'verify'])
+        ->middleware(['signed'])->name('verification.verify');
+
+    // Resend verification email (untuk user yang sudah login)
+    Route::post('/email/verification-notification', [VerificationController::class, 'resend'])
+        ->middleware(['throttle:6,1'])->name('verification.send');
+});
+
+// Route untuk resend verification dari halaman login (tanpa auth)
+Route::post('/email/resend-verification', [VerificationController::class, 'resend'])
+    ->name('verification.resend')
+    ->middleware(['throttle:3,1']);

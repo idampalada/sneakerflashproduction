@@ -41,15 +41,29 @@
         <form method="POST" action="{{ route('register.submit') }}" id="registerForm">
             @csrf
             
-            <div class="mb-4">
-                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <input type="text" name="name" id="name" required 
-                       value="{{ old('name') }}"
-                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                       placeholder="Enter your full name">
-                @error('name')
-                    <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
-                @enderror
+            {{-- PERUBAHAN 1: Ganti Full Name dengan First Name + Last Name --}}
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                    <label for="first_name" class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                    <input type="text" name="first_name" id="first_name" required 
+                           value="{{ old('first_name') }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="First name">
+                    @error('first_name')
+                        <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+                
+                <div>
+                    <label for="last_name" class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                    <input type="text" name="last_name" id="last_name" required 
+                           value="{{ old('last_name') }}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Last name">
+                    @error('last_name')
+                        <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
             </div>
             
             <div class="mb-4">
@@ -63,11 +77,24 @@
                 @enderror
             </div>
             
+            {{-- PERUBAHAN 2: Tambah Phone Number --}}
+            <div class="mb-4">
+                <label for="phone" class="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                <input type="tel" name="phone" id="phone" required 
+                       value="{{ old('phone') }}"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                       placeholder="08xxxxxxxxxx">
+                @error('phone')
+                    <p class="text-red-600 text-sm mt-1">{{ $message }}</p>
+                @enderror
+            </div>
+            
+            {{-- PERUBAHAN 3: Fix Password Toggle --}}
             <div class="mb-4">
                 <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
                 <div class="relative">
                     <input type="password" name="password" id="password" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
                            placeholder="Create a password">
                     <button type="button" onclick="togglePassword('password')" 
                             class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
@@ -84,11 +111,12 @@
                 @enderror
             </div>
             
+            {{-- PERUBAHAN 4: Fix Password Confirmation Toggle --}}
             <div class="mb-6">
                 <label for="password_confirmation" class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
                 <div class="relative">
                     <input type="password" name="password_confirmation" id="password_confirmation" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
                            placeholder="Confirm your password">
                     <button type="button" onclick="togglePassword('password_confirmation')" 
                             class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
@@ -159,38 +187,66 @@
 
 @push('scripts')
 <script>
+// Fixed Password Toggle Function
 function togglePassword(fieldId) {
+    console.log('togglePassword called with:', fieldId); // Debug log
+    
     const passwordInput = document.getElementById(fieldId);
     const eyeIcon = document.getElementById(fieldId === 'password' ? 'passwordEye' : 'confirmEye');
     
-    if (passwordInput.type === 'password') {
-        passwordInput.type = 'text';
-        eyeIcon.classList.remove('fa-eye');
-        eyeIcon.classList.add('fa-eye-slash');
+    console.log('Elements found:', {
+        passwordInput: !!passwordInput,
+        eyeIcon: !!eyeIcon,
+        eyeIconId: fieldId === 'password' ? 'passwordEye' : 'confirmEye'
+    }); // Debug log
+    
+    if (passwordInput && eyeIcon) {
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeIcon.classList.remove('fa-eye');
+            eyeIcon.classList.add('fa-eye-slash');
+            console.log('Password shown'); // Debug log
+        } else {
+            passwordInput.type = 'password';
+            eyeIcon.classList.remove('fa-eye-slash');
+            eyeIcon.classList.add('fa-eye');
+            console.log('Password hidden'); // Debug log
+        }
     } else {
-        passwordInput.type = 'password';
-        eyeIcon.classList.remove('fa-eye-slash');
-        eyeIcon.classList.add('fa-eye');
+        console.error('Password toggle error: Elements not found');
     }
 }
 
-// Password confirmation validation
-document.getElementById('password_confirmation').addEventListener('input', function() {
-    const password = document.getElementById('password').value;
-    const confirmPassword = this.value;
-    
-    if (confirmPassword && password !== confirmPassword) {
-        this.setCustomValidity('Passwords do not match');
-        this.classList.add('border-red-500');
-    } else {
-        this.setCustomValidity('');
-        this.classList.remove('border-red-500');
-    }
-});
-
-// Auto-focus on name input
+// Wait for DOM to load before adding event listeners
 document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('name').focus();
+    console.log('DOM loaded'); // Debug log
+    
+    // Password confirmation validation
+    const passwordConfirmInput = document.getElementById('password_confirmation');
+    if (passwordConfirmInput) {
+        passwordConfirmInput.addEventListener('input', function() {
+            const password = document.getElementById('password').value;
+            const confirmPassword = this.value;
+            
+            if (confirmPassword && password !== confirmPassword) {
+                this.setCustomValidity('Passwords do not match');
+                this.classList.add('border-red-500');
+            } else {
+                this.setCustomValidity('');
+                this.classList.remove('border-red-500');
+            }
+        });
+    }
+
+    // Auto-focus on first name input
+    const firstNameInput = document.getElementById('first_name');
+    if (firstNameInput) {
+        firstNameInput.focus();
+    }
+    
+    // Test if toggle buttons work
+    const toggleButtons = document.querySelectorAll('button[onclick*="togglePassword"]');
+    console.log('Toggle buttons found:', toggleButtons.length);
 });
 </script>
 @endpush

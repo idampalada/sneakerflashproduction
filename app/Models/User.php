@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Auth\MustVerifyEmail; // TAMBAHKAN INI
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Log;
  * @method bool addToWishlist(int $productId)
  * @method int removeFromWishlist(int $productId)
  */
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 {
     use HasFactory, Notifiable;
 
@@ -36,6 +37,8 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $fillable = [
         'name',
+            'first_name',    // TAMBAHKAN INI
+    'last_name',     // TAMBAHKAN INI
         'email',
         'password',
         'phone',

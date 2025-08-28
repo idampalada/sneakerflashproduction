@@ -13,7 +13,21 @@
             <p class="text-gray-600">Enter your email to receive reset instructions</p>
         </div>
 
-        <form method="POST" action="#" id="resetForm">
+        {{-- Success message --}}
+        @if (session('status'))
+            <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-check-circle text-green-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-green-800">{{ session('status') }}</p>
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        <form method="POST" action="{{ route('password.send') }}" id="resetForm">
             @csrf
             
             <div class="mb-6">
@@ -42,15 +56,29 @@
         </div>
 
         <!-- Info -->
-        <div class="mt-8 p-4 bg-blue-50 rounded-lg">
-            <div class="flex">
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <div class="flex items-start">
                 <i class="fas fa-info-circle text-blue-600 mt-1 mr-2"></i>
-                <div class="text-sm text-blue-800">
-                    <p class="font-medium mb-1">Password reset is currently not configured.</p>
-                    <p>Please contact support or use Google login for now.</p>
+                <div class="text-sm text-gray-600">
+                    <p class="font-medium mb-1">Cara Reset Password:</p>
+                    <ol class="list-decimal list-inside space-y-1 text-xs">
+                        <li>Masukkan email Anda di atas</li>
+                        <li>Cek email untuk link reset password</li>
+                        <li>Klik link dan buat password baru</li>
+                        <li>Login dengan password baru</li>
+                    </ol>
                 </div>
             </div>
         </div>
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+// Auto-focus on email input
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('email').focus();
+});
+</script>
+@endpush
