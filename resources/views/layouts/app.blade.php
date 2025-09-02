@@ -419,10 +419,10 @@
  margin-bottom:2rem;
 }
 
-/* Tinggi fix (desktop=550) */
+/* Tinggi banner (desktop=480) */
 .carousel-container{
  position:relative; width:100%;
- height:550px;                       /* iBox desktop */
+ height:480px;                       /* iBox desktop */
  overflow:hidden;
  background:transparent;               /* sama seperti iBox */
  display:flex; align-items:center; justify-content:center;
