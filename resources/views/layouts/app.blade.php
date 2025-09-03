@@ -262,6 +262,63 @@
     margin-top: 10px;
     pointer-events: none;
 }
+/* Brand Dropdown Grid Layout - 4 Kolom */
+.brand-dropdown-grid {
+    display: flex !important;
+    min-width: 600px !important;
+    max-width: 700px !important;
+    padding: 15px !important;
+}
+
+.brand-column {
+    flex: 1;
+    min-width: 150px;
+    margin-right: 15px;
+}
+
+.brand-column:last-child {
+    margin-right: 0;
+}
+
+.brand-column .dropdown-item {
+    padding: 8px 12px;
+    margin-bottom: 2px;
+    font-size: 13px;
+    border-bottom: none;
+}
+
+.brand-column .dropdown-item:hover {
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+/* Responsive untuk tablet */
+@media (max-width: 768px) {
+    .brand-dropdown-grid {
+        flex-wrap: wrap;
+        min-width: 400px !important;
+    }
+    
+    .brand-column {
+        flex: 0 0 50%; /* 2 kolom di tablet */
+        margin-bottom: 10px;
+    }
+}
+
+/* Mobile tetap 1 kolom */
+@media (max-width: 480px) {
+    .brand-dropdown-grid {
+        flex-direction: column;
+        min-width: 200px !important;
+    }
+    
+    .brand-column {
+        flex: none;
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 0;
+    }
+}
 
 .nav-dropdown.show {
     opacity: 1;
@@ -850,168 +907,248 @@ html, body {
             }
         }
 
-        function updateWishlistCount(count) {
-            const wishlistBadge = document.getElementById('wishlistCount');
-            if (wishlistBadge) {
-                if (count > 0) {
-                    wishlistBadge.textContent = count;
-                    wishlistBadge.style.display = 'flex';
-                } else {
-                    wishlistBadge.style.display = 'none';
-                }
-            }
-        }
+
     </script>
 </head>
 <body class="bg-gray-50">
     <!-- Header dengan navigation menu menyatu - background PUTIH -->
-    <header class="ka-header sticky top-0 z-50" x-data="{ mobileMenuOpen: false }">
+    <header class="ka-header sticky top-0 z-50" x-data="{ mobileMenuOpen: false, showMobileSearch: false }">
         <!-- Mobile Menu Overlay -->
         <div class="mobile-menu-overlay" :class="{ 'open': mobileMenuOpen }" @click="mobileMenuOpen = false"></div>
         
-        <!-- Mobile Slide Menu -->
-        <div class="mobile-menu" :class="{ 'open': mobileMenuOpen }">
-            <!-- Menu Header -->
-            <div class="mobile-menu-header">
-                <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img mx-auto">
+        <!-- Mobile Slide Menu - DENGAN CART & PROFILE FEATURES -->
+<div class="mobile-menu" :class="{ 'open': mobileMenuOpen }">
+    <!-- Menu Header -->
+    <div class="mobile-menu-header">
+        <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img mx-auto">
+        @auth
+            <div class="mt-3 text-center">
+                <p class="text-gray-600 text-sm">Hello, <span class="font-semibold text-gray-800">{{ auth()->user()->name }}</span></p>
             </div>
-            
-            <!-- Menu Items -->
-            <div class="mobile-menu-content">
-                <a href="/products?category=mens" class="mobile-menu-item">MENS</a>
-                <a href="/products?category=womens" class="mobile-menu-item">WOMENS</a>
-                <a href="/products?category=unisex" class="mobile-menu-item">UNISEX</a>
-                <a href="/products?brands[]=Nike" class="mobile-menu-item">NIKE</a>
-                <a href="/products?brands[]=Adidas" class="mobile-menu-item">ADIDAS</a>
-                <a href="/products?category=accessories" class="mobile-menu-item">ACCESSORIES</a>
-                <a href="/products?sale=true" class="mobile-menu-item special">SALE</a>
+        @endauth
+    </div>
+    
+    <!-- Menu Items -->
+    <div class="mobile-menu-content">
+        <!-- Navigation Menu -->
+        <a href="/products?category=mens" class="mobile-menu-item">MENS</a>
+        <a href="/products?category=womens" class="mobile-menu-item">WOMENS</a>
+        <a href="/products?category=unisex" class="mobile-menu-item">UNISEX</a>
+        <a href="/products?brands[]=Nike" class="mobile-menu-item">NIKE</a>
+        <a href="/products?brands[]=Adidas" class="mobile-menu-item">ADIDAS</a>
+        <a href="/products?category=accessories" class="mobile-menu-item">ACCESSORIES</a>
+        <a href="/products?sale=true" class="mobile-menu-item special">SALE</a>
+        
+        @auth
+            <!-- My Account Section - DENGAN CART & PROFILE -->
+            <div class="border-t border-gray-200 mt-4 pt-4">
+                <div class="px-4 pb-2">
+                    <h5 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">My Account</h5>
+                </div>
+                <a href="{{ route('cart.index') }}" class="mobile-menu-item flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-shopping-cart mr-3 text-gray-500"></i>My Cart
+                    </div>
+                    @php $cartCount = count(session('cart', [])); @endphp
+                    @if($cartCount > 0)
+                        <span class="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">{{ $cartCount }}</span>
+                    @endif
+                </a>
+                <a href="{{ route('orders.index') }}" class="mobile-menu-item">
+                    <i class="fas fa-shopping-bag mr-3 text-gray-500"></i>My Orders
+                </a>
+                <a href="{{ route('profile.index') }}" class="mobile-menu-item">
+                    <i class="fas fa-user mr-3 text-gray-500"></i>Profile Settings
+                </a>
             </div>
-            
-            <!-- Auth Buttons -->
-            <div class="mobile-auth-buttons">
+        @else
+            <!-- Guest Cart -->
+            <div class="border-t border-gray-200 mt-4 pt-4">
+                <a href="{{ route('cart.index') }}" class="mobile-menu-item flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-shopping-cart mr-3 text-gray-500"></i>My Cart
+                    </div>
+                    @php $cartCount = count(session('cart', [])); @endphp
+                    @if($cartCount > 0)
+                        <span class="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">{{ $cartCount }}</span>
+                    @endif
+                </a>
+            </div>
+        @endauth
+    </div>
+    
+    <!-- Auth Buttons -->
+    <div class="mobile-auth-buttons">
+        @auth
+            <form action="{{ route('logout') }}" method="POST">
+                @csrf
+                <button type="submit" class="mobile-auth-btn mobile-register-btn w-full">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                </button>
+            </form>
+        @else
+            <a href="/login" class="mobile-auth-btn mobile-login-btn">Login</a>
+            <a href="/register" class="mobile-auth-btn mobile-register-btn">Register</a>
+        @endauth
+    </div>
+</div>
+
+        <!-- Baris pertama: Mobile Layout Baru + Desktop tetap sama -->
+<div class="max-w-full mx-auto px-4">
+    <div class="flex items-center py-4">
+        
+        <!-- MOBILE LAYOUT: Hamburger - Logo - Search - Cart -->
+<div class="md:hidden mobile-header-layout">
+    <!-- Mobile Hamburger (KIRI) -->
+    <div class="mobile-hamburger">
+        <button @click="mobileMenuOpen = !mobileMenuOpen" class="text-gray-600 hover:text-gray-800 p-2">
+            <i class="fas fa-bars text-xl"></i>
+        </button>
+    </div>
+    
+    <!-- Mobile Logo (TENGAH) -->
+    <div class="mobile-logo-center">
+        <a href="/">
+            <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img">
+        </a>
+    </div>
+    
+    <!-- Mobile Icons (KANAN): Search + Cart -->
+    <div class="mobile-icons-right">
+        <!-- Search Button -->
+        <button @click="showMobileSearch = !showMobileSearch" class="icon-btn mr-2" title="Search Products">
+            <i class="fas fa-search"></i>
+        </button>
+        
+        <!-- Cart Button -->
+        <a href="{{ route('cart.index') }}" class="icon-btn" title="Shopping Cart">
+            <i class="fas fa-shopping-cart"></i>
+            @php
+                $cartCount = count(session('cart', []));
+            @endphp
+            @if($cartCount > 0)
+                <span class="icon-badge" id="cartCount">{{ $cartCount }}</span>
+            @else
+                <span class="icon-badge" id="cartCount" style="display: none;">0</span>
+            @endif
+        </a>
+    </div>
+</div>
+        <!-- DESKTOP LAYOUT: Logo - Search - User Menu (TETAP SAMA) -->
+        <div class="hidden md:flex items-center justify-between w-full">
+            <!-- Desktop Logo -->
+            <div class="flex items-center">
+                <a href="/">
+                    <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img">
+                </a>
+            </div>
+
+            <!-- Desktop Search Bar -->
+            <div class="flex-1 max-w-2xl mx-8">
+                <form action="/products" method="GET" class="w-full ka-search-custom mx-auto">
+                    <div class="ka-search-container">
+                        <div class="relative flex items-center">
+                            <i class="fas fa-search ka-search-icon"></i>
+                            <input type="text" 
+                                   name="search" 
+                                   placeholder="Type any products here"
+                                   value="{{ request('search') }}"
+                                   class="ka-search-input flex-1">
+                            <button type="submit" class="ka-search-btn">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Desktop User Menu -->
+            <div class="flex items-center space-x-3">
                 @auth
-                    <a href="/orders" class="mobile-menu-item">
-                        <i class="fas fa-shopping-bag mr-2"></i>My Orders
-                    </a>
-                    <form action="{{ route('logout') }}" method="POST">
-                        @csrf
-                        <button type="submit" class="mobile-menu-item w-full text-left">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    <!-- Desktop User Dropdown -->
+                    <div class="relative" x-data="userDropdown()" @click.away="close()">
+                        <button @click="toggle()" class="user-menu-btn">
+                            <i class="fas fa-user-circle text-xl"></i>
+                            <span class="text-sm ml-2">{{ auth()->user()->name }}</span>
+                            <i class="fas fa-chevron-down text-sm ml-1"></i>
                         </button>
-                    </form>
+
+                        <!-- Desktop Dropdown Menu (dengan cart) -->
+                        <div class="user-dropdown" :class="{ 'show': open }">
+                            <a href="{{ route('cart.index') }}" class="dropdown-item">
+                                <i class="fas fa-shopping-cart mr-2"></i>My Cart
+                                @php $cartCount = count(session('cart', [])); @endphp
+                                @if($cartCount > 0)
+                                    <span class="ml-auto text-xs bg-blue-500 text-white px-2 py-1 rounded-full">{{ $cartCount }}</span>
+                                @endif
+                            </a>
+                            <a href="{{ route('orders.index') }}" class="dropdown-item">
+                                <i class="fas fa-shopping-bag mr-2"></i>My Orders
+                            </a>
+                            <a href="{{ route('profile.index') }}" class="dropdown-item">
+                                <i class="fas fa-user mr-2"></i>Profile
+                            </a>
+                            <div style="border-top: 1px solid #f0f0f0; margin: 5px 0;"></div>
+                            <form action="{{ route('logout') }}" method="POST" class="block">
+                                @csrf
+                                <button type="submit" class="dropdown-item">
+                                    <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                                </button>
+                            </form>
+                        </div>
+                    </div>
                 @else
-                    <a href="/login" class="mobile-auth-btn mobile-login-btn">Login</a>
-                    <a href="/register" class="mobile-auth-btn mobile-register-btn">Register</a>
+                    <!-- Login/Register untuk guest -->
+                    <a href="{{ route('login') }}" class="ka-auth-btn ka-login-btn">Login</a>
+                    <a href="{{ route('register') }}" class="ka-auth-btn ka-register-btn">Register</a>
                 @endauth
             </div>
         </div>
-
-        <!-- Baris pertama: Logo, Search, dan Auth -->
-        <div class="max-w-full mx-auto px-4">
-            <div class="flex items-center justify-between py-4">
-                <!-- Logo -->
-                <div class="flex items-center">
-                    <a href="/">
-                        <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img">
-                    </a>
-                </div>
-
-                <!-- Search Bar - hanya tampil di desktop -->
-                <div class="hidden md:flex flex-1 max-w-2xl mx-8">
-                    <form action="/products" method="GET" class="w-full ka-search-custom mx-auto">
-                        <div class="ka-search-container">
-                            <div class="relative flex items-center">
-                                <i class="fas fa-search ka-search-icon"></i>
-                                <input type="text" 
-                                       name="search" 
-                                       placeholder="Type any products here"
-                                       value="{{ request('search') }}"
-                                       class="ka-search-input flex-1">
-                                <button type="submit" class="ka-search-btn">
-                                    <i class="fas fa-search"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- User Menu / Auth - UPDATED with Cart & Wishlist -->
-                <div class="flex items-center space-x-3">
-                    @auth
-                        <!-- Wishlist Icon -->
-                        <a href="{{ route('wishlist.index') }}" class="icon-btn" title="Wishlist">
-                            <i class="fas fa-heart"></i>
-                            @php
-                                $wishlistCount = auth()->user()->getWishlistCount();
-                            @endphp
-                            @if($wishlistCount > 0)
-                                <span class="icon-badge" id="wishlistCount">{{ $wishlistCount }}</span>
-                            @else
-                                <span class="icon-badge" id="wishlistCount" style="display: none;">0</span>
-                            @endif
-                        </a>
-
-                        <!-- Cart Icon -->
-                        <a href="{{ route('cart.index') }}" class="icon-btn" title="Shopping Cart">
-                            <i class="fas fa-shopping-cart"></i>
-                            @php
-                                $cartCount = count(session('cart', []));
-                            @endphp
-                            @if($cartCount > 0)
-                                <span class="icon-badge" id="cartCount">{{ $cartCount }}</span>
-                            @else
-                                <span class="icon-badge" id="cartCount" style="display: none;">0</span>
-                            @endif
-                        </a>
-
-                        <!-- User Dropdown -->
-                        <div class="relative" x-data="userDropdown()" @click.away="close()">
-                            <button @click="toggle()" class="user-menu-btn">
-                                <i class="fas fa-user-circle text-xl"></i>
-                                <span class="hidden md:inline text-sm ml-2">{{ auth()->user()->name }}</span>
-                                <i class="fas fa-chevron-down text-sm ml-1"></i>
-                            </button>
-
-                            <!-- Dropdown Menu -->
-                            <div class="user-dropdown" :class="{ 'show': open }">
-                                <a href="{{ route('wishlist.index') }}" class="dropdown-item">
-                                    <i class="fas fa-heart mr-2"></i>My Wishlist
-                                    @if($wishlistCount > 0)
-                                        <span class="ml-auto text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">{{ $wishlistCount }}</span>
-                                    @endif
-                                </a>
-                                <a href="{{ route('orders.index') }}" class="dropdown-item">
-                                    <i class="fas fa-shopping-bag mr-2"></i>My Orders
-                                </a>
-                                <a href="{{ route('profile.index') }}" class="dropdown-item">
-                                    <i class="fas fa-user mr-2"></i>Profile
-                                </a>
-                                <div style="border-top: 1px solid #f0f0f0; margin: 5px 0;"></div>
-                                <form action="{{ route('logout') }}" method="POST" class="block">
-                                    @csrf
-                                    <button type="submit" class="dropdown-item">
-                                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    @else
-                        <!-- Login/Register untuk guest -->
-                        <a href="{{ route('login') }}" class="ka-auth-btn ka-login-btn">
-                            Login
-                        </a>
-                        <a href="{{ route('register') }}" class="ka-auth-btn ka-register-btn">
-                            Register
-                        </a>
-                    @endauth
-                </div>
-                <!-- Mobile Menu Button -->
-                <button @click="mobileMenuOpen = !mobileMenuOpen" class="md:hidden text-gray-600 hover:text-gray-800 ml-3">
-                    <i class="fas fa-bars text-xl"></i>
-                </button>
+    </div>
+</div>
+<!-- Mobile Bottom Navigation - 3 Items: Home, Cart, Profile -->
+<div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
+    <div class="flex items-center justify-around py-2">
+        <!-- Home -->
+        <a href="/" class="flex flex-col items-center py-2 px-4 {{ request()->is('/') ? 'text-black font-bold' : 'text-gray-400' }}">
+            <div class="relative">
+                <i class="fas fa-home text-xl mb-1"></i>
             </div>
-        </div>
+            <span class="text-xs font-medium">Home</span>
+        </a>
 
+        <!-- Cart -->
+        <a href="{{ route('cart.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('cart*') ? 'text-black font-bold' : 'text-gray-400' }}">
+            <div class="relative">
+                <i class="fas fa-shopping-cart text-xl mb-1"></i>
+                @php $cartCount = count(session('cart', [])); @endphp
+                @if($cartCount > 0)
+                    <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                        {{ $cartCount > 99 ? '99+' : $cartCount }}
+                    </span>
+                @endif
+            </div>
+            <span class="text-xs font-medium">Cart</span>
+        </a>
+
+        <!-- Profile/Account -->
+        @auth
+            <a href="{{ route('profile.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') || request()->is('orders*') ? 'text-black font-bold' : 'text-gray-400' }}">
+                <div class="relative">
+                    <i class="fas fa-user text-xl mb-1"></i>
+                </div>
+                <span class="text-xs font-medium">Profile</span>
+            </a>
+        @else
+            <a href="{{ route('login') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('login*') || request()->is('register*') ? 'text-black font-bold' : 'text-gray-400' }}">
+                <div class="relative">
+                    <i class="fas fa-user text-xl mb-1"></i>
+                </div>
+                <span class="text-xs font-medium">Login</span>
+            </a>
+        @endauth
+    </div>
+</div>
         <!-- Baris kedua: Navigation Menu dengan Dropdown -->
         <div class="max-w-full px-4">
             <!-- Desktop Navigation -->
@@ -1080,58 +1217,68 @@ html, body {
                 </div>
 
                 <!-- BRAND Dropdown -->
-                <div class="nav-item-container">
-                    <button @click="toggleDropdown('brand')" 
-                            class="nav-main-btn" 
-                            :class="{ 'active': isDropdownActive('brand') }">
-                        BRAND
-                        <i class="fas fa-chevron-down dropdown-arrow"></i>
-                    </button>
-                    <div class="nav-dropdown" :class="{ 'show': isDropdownActive('brand') }">
-                        <a href="/products?brands[]=Nike" class="dropdown-item">
-                            <i class="fab fa-nike mr-2"></i>NIKE
-                        </a>
-                        <a href="/products?brands[]=Adidas" class="dropdown-item">
-                            <i class="fab fa-adidas mr-2"></i>ADIDAS
-                        </a>
-                        <a href="/products?brands[]=Puma" class="dropdown-item">
-                            <i class="fab fa-puma mr-2"></i>PUMA
-                        </a>
-                        <a href="/products?brands[]=Converse" class="dropdown-item">
-                            <i class="fas fa-star mr-2"></i>CONVERSE
-                        </a>
-                        <a href="/products?brands[]=Vans" class="dropdown-item">
-                            <i class="fas fa-skateboard mr-2"></i>VANS
-                        </a>
-                        <a href="/products?brands[]=New Balance" class="dropdown-item">
-                            <i class="fas fa-balance-scale mr-2"></i>NEW BALANCE
-                        </a>
-                        <a href="/products?brands[]=Jordan" class="dropdown-item">
-                            <i class="fas fa-basketball-ball mr-2"></i>JORDAN
-                        </a>
-                        <a href="/products?brands[]=Reebok" class="dropdown-item">
-                            <i class="fas fa-running mr-2"></i>REEBOK
-                        </a>
-                        <a href="/products?brands[]=ASICS" class="dropdown-item">
-                            <i class="fas fa-shoe-prints mr-2"></i>ASICS
-                        </a>
-                        <a href="/products?brands[]=Under Armour" class="dropdown-item">
-                            <i class="fas fa-shield-alt mr-2"></i>UNDER ARMOUR
-                        </a>
-                        <a href="/products?brands[]=Skechers" class="dropdown-item">
-                            <i class="fas fa-walking mr-2"></i>SKECHERS
-                        </a>
-                        <a href="/products?brands[]=Fila" class="dropdown-item">
-                            <i class="fas fa-mountain mr-2"></i>FILA
-                        </a>
-                        <a href="/products?brands[]=DC Shoes" class="dropdown-item">
-                            <i class="fas fa-skateboard mr-2"></i>DC SHOES
-                        </a>
-                        <a href="/products?brands[]=Timberland" class="dropdown-item">
-                            <i class="fas fa-tree mr-2"></i>TIMBERLAND
-                        </a>
-                    </div>
-                </div>
+                <!-- BRAND Dropdown -->
+<div class="nav-item-container">
+    <button @click="toggleDropdown('brand')" 
+            class="nav-main-btn" 
+            :class="{ 'active': isDropdownActive('brand') }">
+        BRAND
+        <i class="fas fa-chevron-down dropdown-arrow"></i>
+    </button>
+    <div class="nav-dropdown brand-dropdown-grid" :class="{ 'show': isDropdownActive('brand') }">
+        <!-- Kolom 1 -->
+        <div class="brand-column">
+            <a href="/products?brands[]=Nike" class="dropdown-item">
+                <i class="fab fa-nike mr-2"></i>NIKE
+            </a>
+            <a href="/products?brands[]=Adidas" class="dropdown-item">
+                <i class="fab fa-adidas mr-2"></i>ADIDAS
+            </a>
+            <a href="/products?brands[]=Puma" class="dropdown-item">
+                <i class="fab fa-puma mr-2"></i>PUMA
+            </a>
+        </div>
+        
+        <!-- Kolom 2 -->
+        <div class="brand-column">
+            <a href="/products?brands[]=Converse" class="dropdown-item">
+                <i class="fas fa-star mr-2"></i>CONVERSE
+            </a>
+            <a href="/products?brands[]=Vans" class="dropdown-item">
+                <i class="fas fa-skateboard mr-2"></i>VANS
+            </a>
+            <a href="/products?brands[]=New Balance" class="dropdown-item">
+                <i class="fas fa-balance-scale mr-2"></i>NEW BALANCE
+            </a>
+        </div>
+        
+        <!-- Kolom 3 -->
+        <div class="brand-column">
+            <a href="/products?brands[]=Jordan" class="dropdown-item">
+                <i class="fas fa-basketball-ball mr-2"></i>JORDAN
+            </a>
+            <a href="/products?brands[]=Reebok" class="dropdown-item">
+                <i class="fas fa-running mr-2"></i>REEBOK
+            </a>
+            <a href="/products?brands[]=ASICS" class="dropdown-item">
+                <i class="fas fa-shoe-prints mr-2"></i>ASICS
+            </a>
+        </div>
+        
+        <!-- Kolom 4 -->
+        <div class="brand-column">
+            <a href="/products?brands[]=Under Armour" class="dropdown-item">
+                <i class="fas fa-shield-alt mr-2"></i>UNDER ARMOUR
+            </a>
+            <a href="/products?brands[]=Skechers" class="dropdown-item">
+                <i class="fas fa-walking mr-2"></i>SKECHERS
+            </a>
+            <a href="/products?brands[]=Fila" class="dropdown-item">
+                <i class="fas fa-mountain mr-2"></i>FILA
+            </a>
+        </div>
+    </div>
+</div>
 
                 <!-- ACCESSORIES Dropdown (Updated with new product types) -->
                 <div class="nav-item-container">
@@ -1168,58 +1315,88 @@ html, body {
         </div>
     </header>
 
-    <!-- Mobile Search (tampil di mobile saja) -->
-    <div class="md:hidden bg-white border-b px-4 py-3">
-        <form action="/products" method="GET">
-            <div class="ka-search-container">
-                <div class="relative flex items-center">
-                    <i class="fas fa-search ka-search-icon"></i>
-                    <input type="text" 
-                           name="search" 
-                           placeholder="Type any products here"
-                           value="{{ request('search') }}"
-                           class="ka-search-input flex-1">
-                    <button type="submit" class="ka-search-btn">
-                        <i class="fas fa-search"></i>
-                    </button>
-                </div>
+    <!-- Mobile Search Dropdown (tampil saat button diklik) -->
+<div class="md:hidden bg-white border-b px-4 py-3" x-show="showMobileSearch" x-transition style="display: none;">
+    <form action="/products" method="GET">
+        <div class="ka-search-container">
+            <div class="relative flex items-center">
+                <i class="fas fa-search ka-search-icon"></i>
+                <input type="text" 
+                       name="search" 
+                       placeholder="Type any products here"
+                       value="{{ request('search') }}"
+                       class="ka-search-input flex-1"
+                       x-ref="searchInput">
+                <button type="submit" class="ka-search-btn">
+                    <i class="fas fa-search"></i>
+                </button>
             </div>
-        </form>
-    </div>
-
-    <!-- Mobile Cart & Wishlist (tampil di mobile) -->
-    <div class="md:hidden bg-white border-b px-4 py-3">
-    @auth
-        <div class="flex justify-center space-x-6">
-            <!-- Mobile Wishlist -->
-            <a href="{{ route('wishlist.index') }}" class="flex items-center space-x-2 text-gray-600 hover:text-gray-800">
-                <div class="relative">
-                    <i class="fas fa-heart text-lg"></i>
-                    @if($wishlistCount > 0)
-                        <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                            {{ $wishlistCount }}
-                        </span>
-                    @endif
-                </div>
-                <span class="text-sm font-medium">Wishlist</span>
-            </a>
-
-            <!-- Mobile Cart -->
-            <a href="{{ route('cart.index') }}" class="flex items-center space-x-2 text-gray-600 hover:text-gray-800">
-                <div class="relative">
-                    <i class="fas fa-shopping-cart text-lg"></i>
-                    @if($cartCount > 0)
-                        <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                            {{ $cartCount }}
-                        </span>
-                    @endif
-                </div>
-                <span class="text-sm font-medium">Cart</span>
-            </a>
         </div>
-    @endauth
+    </form>
 </div>
 
+    <!-- Mobile Cart & Wishlist (tampil di mobile) -->
+    <!-- Mobile Menu dengan Dropdown -->
+<div class="md:hidden bg-white border-b px-0 py-0" x-data="mobileDropdown()">
+    <div class="overflow-x-auto" style="-webkit-overflow-scrolling: touch; scrollbar-width: none;">
+        <div class="flex px-4 py-3 min-w-max space-x-0">
+            <!-- MENS dengan dropdown -->
+            <div class="relative">
+                <button @click="toggleDropdown('mens')" class="px-4 py-2 text-black font-bold text-sm whitespace-nowrap hover:bg-gray-50 transition-colors flex items-center">
+                    MENS
+                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div x-show="activeDropdown === 'mens'" @click.away="closeDropdown()" class="absolute top-full left-0 bg-white border border-gray-200 rounded-lg shadow-lg min-w-48 z-50">
+                    <a href="/products?category=mens&type=lifestyle" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Lifestyle/Casual</a>
+                    <a href="/products?category=mens&type=running" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Running</a>
+                    <a href="/products?category=mens&type=basketball" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Basketball</a>
+                </div>
+            </div>
+            
+            <!-- WOMENS dengan dropdown -->
+            <div class="relative">
+                <button @click="toggleDropdown('womens')" class="px-4 py-2 text-black font-bold text-sm whitespace-nowrap hover:bg-gray-50 transition-colors flex items-center">
+                    WOMENS
+                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
+                </button>
+                <div x-show="activeDropdown === 'womens'" @click.away="closeDropdown()" class="absolute top-full left-0 bg-white border border-gray-200 rounded-lg shadow-lg min-w-48 z-50">
+                    <a href="/products?category=womens&type=lifestyle" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Lifestyle/Casual</a>
+                    <a href="/products?category=womens&type=running" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Running</a>
+                </div>
+            </div>
+            
+            <!-- Menu lainnya tanpa dropdown -->
+            <a href="/products?category=unisex" class="px-4 py-2 text-black font-bold text-sm whitespace-nowrap hover:bg-gray-50 transition-colors">
+                UNISEX
+            </a>
+            <a href="/products?brands" class="px-4 py-2 text-black font-bold text-sm whitespace-nowrap hover:bg-gray-50 transition-colors">
+                BRAND
+            </a>
+            <a href="/products?category=accessories" class="px-4 py-2 text-black font-bold text-sm whitespace-nowrap hover:bg-gray-50 transition-colors">
+                ACCESSORIES
+            </a>
+            <a href="/products?sale=true" class="px-4 py-2 text-red-600 font-bold text-sm whitespace-nowrap hover:bg-red-50 transition-colors">
+                SALE
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+function mobileDropdown() {
+    return {
+        activeDropdown: null,
+        
+        toggleDropdown(menu) {
+            this.activeDropdown = this.activeDropdown === menu ? null : menu;
+        },
+        
+        closeDropdown() {
+            this.activeDropdown = null;
+        }
+    }
+}
+</script>
     <!-- Image Carousel Slider -->
 <div class="carousel-wrapper">
   <div class="carousel-container" x-data="carousel()" x-init="init()">
@@ -1373,52 +1550,103 @@ html, body {
     margin-left: -2rem;
 }
 </style>
-    <!-- Mobile Bottom Navigation - Add this to your main layout file (layouts/app.blade.php) before closing body tag -->
-<!-- Mobile Bottom Navigation - Updated dengan warna hitam bold -->
-<div class="mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
-    <div class="flex items-center justify-around py-2">
-        <!-- Home -->
-        <a href="/" class="flex flex-col items-center py-2 px-4 {{ request()->is('/') ? 'text-black font-bold' : 'text-gray-400' }}">
-            <div class="relative">
-                <i class="fas fa-home text-xl mb-1"></i>
-            </div>
-            <span class="text-xs font-medium">Home</span>
-        </a>
-
-        <!-- Cart -->
-        <a href="{{ route('cart.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('cart*') ? 'text-black font-bold' : 'text-gray-400' }}">
-            <div class="relative">
-                <i class="fas fa-shopping-cart text-xl mb-1"></i>
-                @if(isset($cartCount) && $cartCount > 0)
-                    <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                        {{ $cartCount > 99 ? '99+' : $cartCount }}
-                    </span>
-                @endif
-            </div>
-            <span class="text-xs font-medium">Cart</span>
-        </a>
-
-        <!-- Account/Profile -->
-        @auth
-            <a href="{{ route('profile.index') }}" class="flex flex-col items-center py-2 px-4 {{ request()->is('profile*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
-                <div class="relative">
-                    <i class="fas fa-user text-xl mb-1"></i>
-                </div>
-                <span class="text-xs font-medium">Account</span>
-            </a>
-        @else
-            <a href="/login" class="flex flex-col items-center py-2 px-4 {{ request()->is('login*') || request()->is('register*') || request()->is('account*') ? 'text-black font-bold' : 'text-gray-400' }}">
-                <div class="relative">
-                    <i class="fas fa-user text-xl mb-1"></i>
-                </div>
-                <span class="text-xs font-medium">Account</span>
-            </a>
-        @endauth
-    </div>
-</div>
+    
 
 <!-- Updated CSS Styles -->
 <style>
+    /* Mobile Icons Right */
+@media (max-width: 767px) {
+    .mobile-icons-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    /* Search button styling sama seperti cart */
+    .mobile-icons-right .icon-btn {
+        width: 35px !important;
+        height: 35px !important;
+        font-size: 14px !important;
+    }
+    
+    /* Adjust logo positioning karena ada 2 icon di kanan */
+    .mobile-logo-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-30%, -50%); /* Geser sedikit ke kiri karena ada 2 icon */
+    }
+    
+    .mobile-logo-center .ka-logo-img {
+        height: 70px !important;  
+        width: 220px !important;  
+        object-fit: contain !important;
+        max-width: none !important;
+    }
+}
+    /* Mobile Header Layout Fixes */
+@media (max-width: 767px) {
+    /* Pastikan mobile layout menggunakan space-between */
+    .mobile-header-layout {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        width: 100% !important;
+    }
+    
+    /* Hamburger button di kiri */
+    .mobile-hamburger {
+        flex: 0 0 auto;
+        margin-right: auto;
+    }
+    
+    /* Logo di tengah dengan flex-grow */
+    .mobile-logo-center {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    /* Cart icon di kanan */
+    .mobile-cart-right {
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+    
+    /* Override icon-btn size untuk mobile */
+    .icon-btn {
+        width: 35px !important;
+        height: 35px !important;
+        font-size: 14px !important;
+    }
+    
+    /* Pastikan tidak ada margin/padding yang mengganggu */
+    .mobile-header-layout > * {
+        margin: 0 !important;
+    }
+}
+/* Perbesar dan perpanjang logo mobile */
+@media (max-width: 767px) {
+    .mobile-header-layout {
+        position: relative;
+    }
+    
+    .mobile-logo-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-20%, -50%);
+    }
+    
+    /* Perbesar dan perpanjang logo */
+    .mobile-logo-center .ka-logo-img {
+        height: 80px !important;  /* Tinggi diperbesar dari 40px ke 50px */
+        width: 250px !important;  /* Lebar diperpanjang, sesuaikan dengan kebutuhan */
+        object-fit: contain !important;
+        max-width: none !important;
+    }
+}
 .mobile-bottom-nav {
     height: 70px;
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
@@ -1465,6 +1693,186 @@ html, body {
     }
 }
 </style>
+<!-- WhatsApp Floating Button -->
+<div id="whatsapp-button" class="whatsapp-float-btn">
+    <a href="https://wa.me/6281287809468?text=Halo%20SneakerFlash!%20Saya%20ingin%20bertanya%20tentang%20produk%20sneakers" 
+       target="_blank" 
+       rel="noopener noreferrer"
+       class="whatsapp-btn-link">
+        <i class="fab fa-whatsapp"></i>
+        <span class="whatsapp-text">Chat WhatsApp</span>
+    </a>
+</div>
+
+<!-- CSS Styles untuk WhatsApp Button -->
+<style>
+/* WhatsApp Floating Button */
+.whatsapp-float-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.whatsapp-btn-link {
+    display: flex;
+    align-items: center;
+    background: #25D366;
+    color: white;
+    padding: 15px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    box-shadow: 0 4px 15px rgba(37, 211, 102, 0.4);
+    transition: all 0.3s ease;
+    font-weight: 600;
+    font-size: 16px;
+    white-space: nowrap;
+    min-width: 60px;
+    justify-content: center;
+}
+
+.whatsapp-btn-link:hover {
+    background: #20b954;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(37, 211, 102, 0.6);
+    color: white;
+}
+
+.whatsapp-btn-link i {
+    font-size: 24px;
+    margin-right: 8px;
+}
+
+.whatsapp-text {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .whatsapp-float-btn {
+        bottom: 90px; /* Adjust untuk mobile bottom nav */
+        right: 15px;
+    }
+    
+    .whatsapp-btn-link {
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+    
+    .whatsapp-btn-link i {
+        font-size: 22px;
+        margin-right: 6px;
+    }
+    
+    .whatsapp-text {
+        font-size: 13px;
+    }
+}
+
+/* Extra small screens - Show only icon */
+@media (max-width: 480px) {
+    .whatsapp-text {
+        display: none;
+    }
+    
+    .whatsapp-btn-link {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        padding: 0;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .whatsapp-btn-link i {
+        margin: 0;
+        font-size: 28px;
+    }
+}
+
+/* Animation on load */
+@keyframes whatsappBounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.whatsapp-float-btn {
+    animation: whatsappBounce 2s infinite;
+}
+
+/* Pulse animation */
+.whatsapp-btn-link::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 0;
+    height: 0;
+    background: rgba(37, 211, 102, 0.3);
+    border-radius: 50%;
+    animation: whatsappPulse 2s infinite;
+    z-index: -1;
+}
+
+@keyframes whatsappPulse {
+    0% {
+        width: 0;
+        height: 0;
+        opacity: 1;
+    }
+    100% {
+        width: 100px;
+        height: 100px;
+        opacity: 0;
+    }
+}
+
+/* Hide on print */
+@media print {
+    .whatsapp-float-btn {
+        display: none !important;
+    }
+}
+</style>
+
+<!-- Optional: JavaScript untuk additional functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const whatsappBtn = document.getElementById('whatsapp-button');
+    
+    // Optional: Hide/show based on scroll
+    let lastScrollTop = 0;
+    window.addEventListener('scroll', function() {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        
+        if (scrollTop > lastScrollTop) {
+            // Scrolling down
+            whatsappBtn.style.transform = 'translateY(100px)';
+            whatsappBtn.style.opacity = '0.7';
+        } else {
+            // Scrolling up
+            whatsappBtn.style.transform = 'translateY(0)';
+            whatsappBtn.style.opacity = '1';
+        }
+        lastScrollTop = scrollTop;
+    });
+    
+    // Optional: Click tracking (untuk analytics)
+    whatsappBtn.addEventListener('click', function() {
+        console.log('WhatsApp button clicked');
+        // Tambahkan Google Analytics atau tracking lainnya di sini
+        // gtag('event', 'click', { 'event_category': 'WhatsApp', 'event_label': 'Floating Button' });
+    });
+});
+</script>
 @stack('scripts')
+
 </body>
 </html>
