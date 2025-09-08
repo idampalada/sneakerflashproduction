@@ -87,10 +87,11 @@ return [
         'province' => env('STORE_PROVINCE'),
         'rajaongkir_location_id' => env('STORE_RAJAONGKIR_LOCATION_ID'),
     ],
-        'ginee' => [
-    'base'       => env('GINEE_API_URL', 'https://api.ginee.com'),
-    'access_key' => env('GINEE_ACCESS_KEY'),
-    'secret_key' => env('GINEE_SECRET_KEY'),
-    'country'    => env('GINEE_COUNTRY', 'ID'),
-    ],
+'ginee' => [
+    'base'         => env('GINEE_API_URL', 'https://api.ginee.com'),
+    'access_key'   => env('GINEE_ACCESS_KEY'),
+    'secret_key'   => env('GINEE_SECRET_KEY'),
+    'country'      => env('GINEE_COUNTRY', 'ID'),
+    'warehouse_id' => env('GINEE_WAREHOUSE_ID'),
+],
 ];

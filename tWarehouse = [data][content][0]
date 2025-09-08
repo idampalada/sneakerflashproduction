@@ -1,0 +1,18 @@
+Available warehouse fields:
+Array
+(
+    [0] => id
+    [1] => userId
+    [2] => code
+    [3] => name
+    [4] => areaId
+    [5] => address
+    [6] => status
+    [7] => type
+    [8] => provider
+    [9] => isDefault
+    [10] => externalId
+    [11] => enableCalibrate
+    [12] => createDatetime
+    [13] => updateDatetime
+)
