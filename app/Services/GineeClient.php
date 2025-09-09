@@ -946,5 +946,377 @@ public function restockFromSpare(string $sku, int $quantity): array
         ]
     ];
 }
+public function getWarehouseInventoryBulk(array $params = []): array
+{
+    $page = $params['page'] ?? 0;
+    $size = min($params['size'] ?? 200, 500); // Max 500 items per page for performance
+    
+    $body = [
+        'page' => $page,
+        'size' => $size
+    ];
+    
+    Log::info('📦 [Ginee] Getting bulk warehouse inventory', [
+        'page' => $page,
+        'size' => $size
+    ]);
+    
+    return $this->request('POST', '/openapi/warehouse-inventory/v1/product/search', $body);
+}
+
+/**
+ * 🔍 OPTIMIZED: Search products by SKU filter (if available)
+ */
+public function searchProductsBySku(array $skus, array $params = []): array
+{
+    $body = [
+        'page' => $params['page'] ?? 0,
+        'size' => $params['size'] ?? 100,
+        'masterSkus' => $skus, // Try to filter by SKUs directly
+        'status' => 'ACTIVE'
+    ];
+    
+    Log::info('🔍 [Ginee] Searching products by SKU filter', [
+        'sku_count' => count($skus),
+        'page' => $body['page'],
+        'size' => $body['size']
+    ]);
+    
+    return $this->request('POST', '/openapi/master-product/v1/product/search', $body);
+}
+
+/**
+ * 📊 Get ALL warehouse inventory efficiently
+ */
+public function getAllWarehouseInventory(array $options = []): array
+{
+    $maxPages = $options['max_pages'] ?? 50;
+    $pageSize = $options['page_size'] ?? 200;
+    $stopOnEmpty = $options['stop_on_empty'] ?? true;
+    
+    Log::info('📊 [Ginee] Getting ALL warehouse inventory', [
+        'max_pages' => $maxPages,
+        'page_size' => $pageSize
+    ]);
+    
+    $allItems = [];
+    $page = 0;
+    $totalFetched = 0;
+    $errors = [];
+    
+    do {
+        try {
+            $result = $this->getWarehouseInventoryBulk([
+                'page' => $page,
+                'size' => $pageSize
+            ]);
+            
+            if (($result['code'] ?? null) !== 'SUCCESS') {
+                $errors[] = [
+                    'page' => $page,
+                    'error' => $result['message'] ?? 'Unknown error'
+                ];
+                Log::warning("❌ Failed to get inventory page {$page}: " . ($result['message'] ?? 'Unknown'));
+                
+                // Try smaller page size on error
+                if ($pageSize > 50) {
+                    $pageSize = 50;
+                    Log::info("📉 Reducing page size to {$pageSize} and retrying...");
+                    continue;
+                }
+                break;
+            }
+            
+            $items = $result['data']['content'] ?? [];
+            $pageItemCount = count($items);
+            
+            if ($pageItemCount === 0 && $stopOnEmpty) {
+                Log::info("✅ No more items on page {$page}, stopping");
+                break;
+            }
+            
+            $allItems = array_merge($allItems, $items);
+            $totalFetched += $pageItemCount;
+            
+            Log::info("📦 Page {$page}: Got {$pageItemCount} items (Total: {$totalFetched})");
+            
+            $page++;
+            
+            // Safety break
+            if ($page >= $maxPages) {
+                Log::warning("⚠️ Reached max pages limit ({$maxPages}), stopping");
+                break;
+            }
+            
+            // Rate limiting
+            usleep(100000); // 0.1 second between pages
+            
+        } catch (\Exception $e) {
+            $errors[] = [
+                'page' => $page,
+                'error' => $e->getMessage()
+            ];
+            Log::error("💥 Exception getting inventory page {$page}: " . $e->getMessage());
+            break;
+        }
+        
+    } while (true);
+    
+    Log::info('🏁 [Ginee] Finished getting ALL inventory', [
+        'total_items' => count($allItems),
+        'pages_fetched' => $page,
+        'errors' => count($errors)
+    ]);
+    
+    return [
+        'code' => 'SUCCESS',
+        'message' => 'All inventory fetched',
+        'data' => [
+            'content' => $allItems,
+            'total' => count($allItems),
+            'pages_fetched' => $page,
+            'errors' => $errors,
+            'performance' => [
+                'items_per_page_avg' => $page > 0 ? round(count($allItems) / $page, 2) : 0,
+                'total_items' => count($allItems)
+            ]
+        ]
+    ];
+}
+
+/**
+ * 🎯 Smart SKU search with multiple strategies
+ */
+public function smartSkuSearch(array $targetSkus, array $options = []): array
+{
+    $strategies = $options['strategies'] ?? [
+        'sku_filter',      // Try to search with SKU filter first
+        'bulk_inventory',  // Get all inventory and filter
+        'master_products'  // Fallback to master products
+    ];
+    
+    Log::info('🎯 [Ginee] Smart SKU search starting', [
+        'target_skus' => count($targetSkus),
+        'strategies' => $strategies
+    ]);
+    
+    $foundItems = [];
+    $notFound = $targetSkus;
+    $strategyResults = [];
+    
+    foreach ($strategies as $strategy) {
+        if (empty($notFound)) {
+            Log::info("✅ All SKUs found, stopping search");
+            break;
+        }
+        
+        Log::info("🔍 Trying strategy: {$strategy} for " . count($notFound) . " remaining SKUs");
+        
+        switch ($strategy) {
+            case 'sku_filter':
+                $result = $this->searchUsingSKUFilter($notFound);
+                break;
+                
+            case 'bulk_inventory':
+                $result = $this->searchUsingBulkInventory($notFound, $options);
+                break;
+                
+            case 'master_products':
+                $result = $this->searchUsingMasterProducts($notFound);
+                break;
+                
+            default:
+                continue 2;
+        }
+        
+        if ($result['success']) {
+            $strategyFound = $result['found'];
+            $foundItems = array_merge($foundItems, $strategyFound);
+            
+            // Remove found SKUs from not found list
+            $foundSkus = array_keys($strategyFound);
+            $notFound = array_diff($notFound, $foundSkus);
+            
+            $strategyResults[$strategy] = [
+                'found_count' => count($strategyFound),
+                'success' => true
+            ];
+            
+            Log::info("✅ Strategy '{$strategy}' found " . count($strategyFound) . " SKUs");
+        } else {
+            $strategyResults[$strategy] = [
+                'found_count' => 0,
+                'success' => false,
+                'error' => $result['error'] ?? 'Unknown error'
+            ];
+            Log::warning("❌ Strategy '{$strategy}' failed: " . ($result['error'] ?? 'Unknown'));
+        }
+    }
+    
+    Log::info('🏁 [Ginee] Smart SKU search completed', [
+        'total_requested' => count($targetSkus),
+        'total_found' => count($foundItems),
+        'not_found' => count($notFound),
+        'strategies_used' => array_keys($strategyResults)
+    ]);
+    
+    return [
+        'code' => 'SUCCESS',
+        'message' => 'Smart search completed',
+        'data' => [
+            'found_items' => $foundItems,
+            'not_found_skus' => $notFound,
+            'strategy_results' => $strategyResults,
+            'summary' => [
+                'total_requested' => count($targetSkus),
+                'found_count' => count($foundItems),
+                'not_found_count' => count($notFound),
+                'success_rate' => round((count($foundItems) / count($targetSkus)) * 100, 2) . '%'
+            ]
+        ]
+    ];
+}
+
+/**
+ * Strategy 1: Search using SKU filter
+ */
+private function searchUsingSKUFilter(array $skus): array
+{
+    try {
+        $result = $this->searchProductsBySku($skus);
+        
+        if (($result['code'] ?? null) === 'SUCCESS') {
+            $products = $result['data']['list'] ?? [];
+            $found = [];
+            
+            foreach ($products as $product) {
+                $masterSku = $product['masterSku'] ?? '';
+                if (in_array($masterSku, $skus)) {
+                    $found[$masterSku] = $this->convertProductToStockData($product, 'sku_filter');
+                }
+            }
+            
+            return ['success' => true, 'found' => $found];
+        }
+        
+        return ['success' => false, 'error' => $result['message'] ?? 'API failed'];
+        
+    } catch (\Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Strategy 2: Search using bulk inventory
+ */
+private function searchUsingBulkInventory(array $skus, array $options): array
+{
+    try {
+        $maxPages = min($options['max_pages'] ?? 20, 30); // Limit for performance
+        $result = $this->getAllWarehouseInventory([
+            'max_pages' => $maxPages,
+            'page_size' => 200
+        ]);
+        
+        if (($result['code'] ?? null) === 'SUCCESS') {
+            $items = $result['data']['content'] ?? [];
+            $found = [];
+            
+            foreach ($items as $item) {
+                $masterVariation = $item['masterVariation'] ?? [];
+                $itemSku = strtoupper($masterVariation['masterSku'] ?? '');
+                
+                if (in_array($itemSku, $skus)) {
+                    $found[$itemSku] = $this->convertInventoryItemToStockData($item, 'bulk_inventory');
+                }
+            }
+            
+            return ['success' => true, 'found' => $found];
+        }
+        
+        return ['success' => false, 'error' => $result['message'] ?? 'Inventory fetch failed'];
+        
+    } catch (\Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Strategy 3: Search using master products
+ */
+private function searchUsingMasterProducts(array $skus): array
+{
+    try {
+        $found = [];
+        $page = 0;
+        $maxPages = 10; // Limit for performance
+        
+        do {
+            $result = $this->getMasterProducts(['page' => $page, 'size' => 100]);
+            
+            if (($result['code'] ?? null) !== 'SUCCESS') {
+                break;
+            }
+            
+            $products = $result['data']['list'] ?? [];
+            
+            if (empty($products)) {
+                break;
+            }
+            
+            foreach ($products as $product) {
+                $masterSku = $product['masterSku'] ?? '';
+                if (in_array($masterSku, $skus)) {
+                    $found[$masterSku] = $this->convertProductToStockData($product, 'master_products');
+                }
+            }
+            
+            $page++;
+            
+        } while ($page < $maxPages && count($found) < count($skus));
+        
+        return ['success' => true, 'found' => $found];
+        
+    } catch (\Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Convert product data to standardized stock format
+ */
+private function convertProductToStockData(array $product, string $source): array
+{
+    return [
+        'sku' => $product['masterSku'] ?? '',
+        'product_name' => $product['name'] ?? $product['productName'] ?? 'Unknown Product',
+        'warehouse_stock' => $product['stockQuantity'] ?? 0,
+        'available_stock' => $product['stockQuantity'] ?? 0,
+        'locked_stock' => 0,
+        'total_stock' => $product['stockQuantity'] ?? 0,
+        'last_updated' => now(),
+        'api_source' => $source
+    ];
+}
+
+/**
+ * Convert inventory item to standardized stock format
+ */
+private function convertInventoryItemToStockData(array $item, string $source): array
+{
+    $masterVariation = $item['masterVariation'] ?? [];
+    $warehouseInventory = $item['warehouseInventory'] ?? [];
+    
+    return [
+        'sku' => $masterVariation['masterSku'] ?? '',
+        'product_name' => $masterVariation['name'] ?? 'Unknown Product',
+        'warehouse_stock' => $warehouseInventory['stock'] ?? 0,
+        'available_stock' => $warehouseInventory['availableStock'] ?? 0,
+        'locked_stock' => $warehouseInventory['lockedStock'] ?? 0,
+        'total_stock' => ($warehouseInventory['stock'] ?? 0) + ($warehouseInventory['lockedStock'] ?? 0),
+        'last_updated' => $warehouseInventory['updateDatetime'] ?? now(),
+        'api_source' => $source
+    ];
+}
 
 }

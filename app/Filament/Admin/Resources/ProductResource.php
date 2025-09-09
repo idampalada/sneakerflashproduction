@@ -1112,81 +1112,90 @@ Tables\Actions\ActionGroup::make([
 
     // 📥 SYNC STOCK FROM GINEE - Enhanced
     Tables\Actions\Action::make('sync_stock_from_ginee')
-        ->label('📥 Sync from Ginee')
-        ->icon('heroicon-o-arrow-down-circle')
-        ->color('info')
-        ->requiresConfirmation()
-        ->modalHeading('Sync Stock from Ginee to Local Database')
-        ->modalDescription('This will update local stock quantities with current stock from Ginee. All operations will be logged.')
-        ->form([
-            Forms\Components\Section::make('Sync Information')
-                ->schema([
-                    Forms\Components\Placeholder::make('sync_info')
-                        ->content('This will fetch current stock from Ginee Master Products API (READ-ONLY) and update your local database. Only products with Ginee mappings will be processed.'),
-                ]),
-                
-            Forms\Components\Section::make('Options')
-                ->schema([
-                    Forms\Components\Toggle::make('dry_run')
-                        ->label('🧪 Dry Run (Preview Only)')
-                        ->default(true)
-                        ->helperText('Enable to preview changes without updating database'),
-                        
-                    Forms\Components\Toggle::make('only_mapped')
-                        ->label('📋 Only Mapped Products')
-                        ->default(true)
-                        ->helperText('Sync only products that have Ginee mappings'),
-                        
-                    Forms\Components\TextInput::make('batch_size')
-                        ->label('Batch Size')
-                        ->numeric()
-                        ->default(20)
-                        ->minValue(1)
-                        ->maxValue(100)
-                        ->helperText('Number of products to process per batch'),
-                ]),
-        ])
-        ->action(function (array $data) {
-            try {
-                $dryRun = $data['dry_run'] ?? true;
-                $onlyMapped = $data['only_mapped'] ?? true;
-                $batchSize = $data['batch_size'] ?? 20;
-                
-                $syncService = new \App\Services\GineeStockSyncService();
-                
-                $result = $syncService->syncStockFromGinee([
-                    'dry_run' => $dryRun,
-                    'only_active' => $onlyMapped,
-                    'batch_size' => $batchSize
-                ]);
-                
-                if ($result['success']) {
-                    $data_result = $result['data'];
+    ->label('📥 Sync from Ginee')
+    ->icon('heroicon-o-arrow-down-circle')
+    ->color('info')
+    ->requiresConfirmation()
+    ->modalHeading('Sync Stock from Ginee to Local Database')
+    ->modalDescription('This will update local stock quantities with current stock from Ginee. All operations will be logged.')
+    ->form([
+        Forms\Components\Section::make('Sync Information')
+            ->schema([
+                Forms\Components\Placeholder::make('sync_info')
+                    ->content('This will fetch current stock from Ginee Warehouse Inventory API (READ-ONLY) and update your local database. All products will be processed regardless of mappings.'),
+            ]),
+            
+        Forms\Components\Section::make('Options')
+            ->schema([
+                Forms\Components\Toggle::make('dry_run')
+                    ->label('🧪 Dry Run (Preview Only)')
+                    ->default(true)
+                    ->helperText('Enable to preview changes without updating database'),
                     
-                    $message = ($dryRun ? '🧪 DRY RUN - ' : '') . "Sync completed!\n\n";
-                    $message .= "✅ Successful: {$data_result['successful_updates']}\n";
-                    $message .= "❌ Failed: {$data_result['failed_updates']}\n";
-                    $message .= "📊 Total Processed: {$data_result['total_processed']}\n";
-                    $message .= "🔍 Not Found: {$data_result['not_found_in_ginee']}";
+                // ✅ HILANGKAN OPTION "Only Mapped Products" 
+                // Forms\Components\Toggle::make('only_mapped')
+                //     ->label('📋 Only Mapped Products')
+                //     ->default(true)
+                //     ->helperText('Sync only products that have Ginee mappings'),
                     
-                    Notification::make()
-                        ->title($dryRun ? '🧪 Sync Preview Completed' : '✅ Sync Completed')
-                        ->body($message)
-                        ->success()
-                        ->duration(15000)
-                        ->send();
-                } else {
-                    throw new \Exception($result['message']);
+                Forms\Components\TextInput::make('batch_size')
+                    ->label('Batch Size')
+                    ->numeric()
+                    ->default(100)
+                    ->minValue(1)
+                    ->maxValue(2000)
+                    ->helperText('Number of products to process per batch (Max: 2000)'),
+            ]),
+    ])
+    ->action(function (array $data) {
+        try {
+            $dryRun = $data['dry_run'] ?? true;
+            // $onlyMapped = $data['only_mapped'] ?? true; // ✅ HILANGKAN INI
+            $batchSize = $data['batch_size'] ?? 100;
+            
+            $syncService = new \App\Services\GineeStockSyncService();
+            
+            $result = $syncService->syncStockFromGinee([
+                'dry_run' => $dryRun,
+                // 'only_active' => $onlyMapped, // ✅ HILANGKAN INI
+                'batch_size' => $batchSize
+            ]);
+            
+            if ($result['success']) {
+                $data_result = $result['data'];
+                
+                $message = ($dryRun ? '🧪 DRY RUN - ' : '') . "Sync completed!\n\n";
+                $message .= "✅ Successful: {$data_result['successful']}\n";
+                $message .= "❌ Failed: {$data_result['failed']}\n";
+                $message .= "🔍 Not Found: {$data_result['not_found']}\n";
+                $message .= "🔗 No Mapping: {$data_result['no_mapping']}\n";
+                $message .= "📊 Total Processed: {$data_result['total_requested']}";
+                
+                if ($data_result['failed'] > 0) {
+                    $message .= "\n\nFirst few errors:\n" . 
+                               implode("\n", array_slice($data_result['errors'], 0, 3));
                 }
-
-            } catch (\Exception $e) {
+                
+                $message .= "\n\n🔍 Session ID: {$data_result['session_id']}";
+                
                 Notification::make()
-                    ->title('❌ Stock Sync Error')
-                    ->body('Error: ' . $e->getMessage())
-                    ->danger()
+                    ->title($dryRun ? '🧪 Sync Preview Completed' : '✅ Sync FROM Ginee Completed')
+                    ->body($message)
+                    ->success()
+                    ->duration(25000)
                     ->send();
+            } else {
+                throw new \Exception($result['message'] ?? 'Sync failed');
             }
-        }),
+            
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('❌ Sync FROM Ginee Failed')
+                ->body('Error: ' . $e->getMessage())
+                ->danger()
+                ->send();
+        }
+    }),
         
     // 📤 PUSH STOCK TO GINEE - Enhanced
     Tables\Actions\Action::make('push_stock_to_ginee')

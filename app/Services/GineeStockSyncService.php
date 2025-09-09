@@ -472,10 +472,15 @@ public function updateLocalProductStock(string $sku, array $gineeStockData, bool
      */
 public function syncMultipleSkusIndividually(array $skus, array $options = [])
 {
+    // ✅ INCREASE EXECUTION TIME UNTUK BULK OPERATIONS
+    set_time_limit(0); // Unlimited execution time
+    ini_set('memory_limit', '1G'); // Increase memory limit
+    
     Log::info('📥 Starting bulk sync FROM Ginee (READ-ONLY)', [
         'total_skus' => count($skus),
         'batch_size' => $options['batch_size'] ?? 20,
-        'dry_run' => $options['dry_run'] ?? false
+        'dry_run' => $options['dry_run'] ?? false,
+        'execution_limit' => 'unlimited'
     ]);
     
     $sessionId = \Illuminate\Support\Str::uuid();
@@ -682,23 +687,51 @@ public function syncStockFromGinee(array $options = []): array
 {
     Log::info('📥 Starting bulk sync stock FROM Ginee (READ-ONLY)');
     
-    // Ambil semua products yang punya ginee mapping
-    $products = Product::whereHas('gineeMappings', function($query) {
-        $query->where('sync_enabled', true);
-    })->get();
+    $onlyMapped = $options['only_active'] ?? true;
+    $batchSize = $options['batch_size'] ?? 100;
+    $dryRun = $options['dry_run'] ?? false;
     
+    // ✅ LOGIC SAMA SEPERTI BULK ACTION YANG BERHASIL
+    // LANGSUNG AMBIL SEMUA PRODUCTS (tanpa cek mapping)
+    $query = Product::whereNotNull('sku')->where('sku', '!=', '');
+    
+    // TIDAK PERLU CEK MAPPING - langsung ambil semua SKU
+    // if ($onlyMapped) {
+    //     $query->whereHas('gineeMappings', function($q) {
+    //         $q->where('sync_enabled', true);
+    //     });
+    // }
+    
+    $products = $query->get();
     $skus = $products->pluck('sku')->filter()->toArray();
     
     if (empty($skus)) {
         return [
             'success' => false,
-            'message' => 'No products with Ginee mappings found',
-            'data' => []
+            'message' => 'No products found to sync',
+            'data' => [
+                'total_requested' => 0,
+                'successful' => 0,
+                'failed' => 0,
+                'not_found' => 0,
+                'no_mapping' => 0,
+                'errors' => ['No products found'],
+                'session_id' => \Illuminate\Support\Str::uuid()
+            ]
         ];
     }
     
-    // Gunakan sync individual yang sudah diperbaiki
-    return $this->syncMultipleSkusIndividually($skus, $options);
+    Log::info("🎯 Found {count} products to sync from Ginee (WITHOUT mapping check)", [
+        'count' => count($skus),
+        'sample_skus' => array_slice($skus, 0, 5)
+    ]);
+    
+    // ✅ GUNAKAN LOGIC YANG SAMA DENGAN BULK ACTION
+    return $this->syncMultipleSkusIndividually($skus, [
+        'dry_run' => $dryRun,
+        'batch_size' => $batchSize,
+        'total_products' => count($skus)
+    ]);
 }
 
 public function pushStockToGinee(array $options = []): array
@@ -711,7 +744,53 @@ public function pushStockToGinee(array $options = []): array
         'data' => []
     ];
 }
-
+public function syncStockFromGineeAll(array $options = []): array
+{
+    Log::info('🌍 Starting sync ALL products FROM Ginee (READ-ONLY)');
+    
+    $onlyMapped = $options['only_mapped'] ?? true;
+    $dryRun = $options['dry_run'] ?? false;
+    
+    // Get ALL products (tidak pakai limit)
+    $query = Product::query();
+    
+    if ($onlyMapped) {
+        $query->whereHas('gineeMappings', function($q) {
+            $q->where('sync_enabled', true);
+        });
+    }
+    
+    $products = $query->get();
+    $skus = $products->pluck('sku')->filter()->toArray();
+    
+    if (empty($skus)) {
+        return [
+            'success' => false,
+            'message' => 'No products found to sync',
+            'data' => [
+                'total_requested' => 0,
+                'successful' => 0,
+                'failed' => 0,
+                'not_found' => 0,
+                'no_mapping' => 0,
+                'errors' => ['No products found'],
+                'session_id' => \Illuminate\Support\Str::uuid()
+            ]
+        ];
+    }
+    
+    Log::info("🎯 Found {count} products to sync from Ginee", ['count' => count($skus)]);
+    
+    // Process dengan batch internal kecil (untuk menghindari timeout)
+    // Tapi dari UI terlihat seperti sync all
+    $internalBatchSize = 50; // Internal batch size untuk API calls
+    
+    return $this->syncMultipleSkusIndividually($skus, [
+        'dry_run' => $dryRun,
+        'batch_size' => $internalBatchSize,
+        'total_products' => count($skus)
+    ]);
+}
 }
 
 ?>
