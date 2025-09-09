@@ -25,25 +25,23 @@ class GineeStockSyncService
 public function getStockFromGinee(string $sku): ?array
 {
     try {
-        $sku = strtoupper(trim($sku)); // Normalize search term
-        Log::info("🔍 Starting comprehensive search for SKU: {$sku}");
+        $sku = strtoupper(trim($sku));
+        Log::info("🔍 [Stock Sync] Searching SKU using Warehouse Inventory API: {$sku}");
         
         $page = 0;
         $pageSize = 100;
         $totalChecked = 0;
-        $totalVariations = 0;
-        $foundSkus = []; // Track all SKUs we find
         
         while (true) {
-            Log::info("📄 Fetching page {$page} (batch size: {$pageSize})...");
+            Log::info("📄 Fetching warehouse inventory page {$page} (batch size: {$pageSize})...");
             
-            $result = $this->gineeClient->getMasterProducts([
+            $result = $this->gineeClient->getWarehouseInventory([
                 'page' => $page,
                 'size' => $pageSize
             ]);
 
             if (($result['code'] ?? null) !== 'SUCCESS') {
-                Log::error("❌ API failed on page {$page}: " . ($result['message'] ?? 'Unknown'));
+                Log::error("❌ Warehouse Inventory API failed on page {$page}: " . ($result['message'] ?? 'Unknown'));
                 break;
             }
 
@@ -56,64 +54,81 @@ public function getStockFromGinee(string $sku): ?array
             }
             
             $totalChecked += $itemCount;
+            Log::info("🔍 Page {$page}: Checking {$itemCount} inventory items...");
             
-            // Process each product in this page
             foreach ($items as $itemIndex => $item) {
-                $variations = $item['variationBriefs'] ?? [];
-                $variationCount = count($variations);
-                $totalVariations += $variationCount;
+                // ✅ STRUKTUR RESPONSE YANG BENAR (berdasarkan log):
+                // $item['masterVariation']['masterSku']
+                // $item['warehouseInventory']['availableStock'] ← INI YANG BENAR!
                 
-                Log::info("🔍 Page {$page}, Product " . ($itemIndex + 1) . "/{$itemCount}: '{$item['name']}' ({$variationCount} variations)");
+                $masterVariation = $item['masterVariation'] ?? [];
+                $warehouseInventory = $item['warehouseInventory'] ?? [];
+                $itemSku = strtoupper(trim($masterVariation['masterSku'] ?? ''));
                 
-                foreach ($variations as $varIndex => $variation) {
-                    $variationSku = strtoupper(trim($variation['sku'] ?? ''));
-                    $foundSkus[] = $variationSku; // Track all SKUs
+                Log::debug("   Item " . ($itemIndex + 1) . "/{$itemCount}: SKU '{$itemSku}'");
+                
+                if ($itemSku === $sku) {
+                    Log::info("🎯 MATCH FOUND! SKU: {$sku} in Warehouse Inventory", [
+                        'raw_item_data' => $item,
+                        'warehouse_inventory' => $warehouseInventory,
+                        'master_variation' => $masterVariation
+                    ]);
                     
-                    Log::info("   Variation " . ($varIndex + 1) . "/{$variationCount}: SKU '{$variationSku}'");
-                    
-                    if ($variationSku === $sku) {
-                        $stock = $variation['stock'] ?? [];
+                    // ✅ MAPPING FIELD YANG BENAR BERDASARKAN LOG RESPONSE
+                    return [
+                        'sku' => $itemSku,
+                        'product_name' => $masterVariation['name'] ?? 'Unknown',
                         
-                        Log::info("🎯 MATCH FOUND! SKU '{$sku}' found on page {$page}");
-                        Log::info("📊 Final stats: Checked {$totalChecked} products, {$totalVariations} variations total");
+                        // 🏭 Warehouse Stock (dari warehouseInventory object)
+                        'warehouse_stock' => $warehouseInventory['warehouseStock'] ?? 0,
                         
-                        return [
-                            'sku' => $sku,
-                            'product_name' => $item['name'] ?? 'Unknown',
-                            'warehouse_stock' => $stock['warehouseStock'] ?? 0,
-                            'available_stock' => $stock['availableStock'] ?? 0,
-                            'spare_stock' => $stock['spareStock'] ?? 0,
-                            'locked_stock' => $stock['lockedStock'] ?? 0,
-                            'product_status' => $item['status'] ?? 'unknown',
-                            'found_on_page' => $page,
-                            'total_products_checked' => $totalChecked,
-                            'total_variations_checked' => $totalVariations,
-                            'method' => 'comprehensive_scan'
-                        ];
-                    }
+                        // 🛒 Available Stock (INI YANG HARUS DIGUNAKAN!) 
+                        'available_stock' => $warehouseInventory['availableStock'] ?? 0,
+                        
+                        // 🎯 Stock lainnya
+                        'spare_stock' => $warehouseInventory['spareStock'] ?? 0,
+                        'locked_stock' => $warehouseInventory['lockedStock'] ?? 0,
+                        'transport_stock' => $warehouseInventory['transportStock'] ?? 0,
+                        'promotion_stock' => $warehouseInventory['promotionStock'] ?? 0,
+                        'safety_stock' => $warehouseInventory['safetyStock'] ?? 0,
+                        'safety_alert' => $warehouseInventory['safetyAlert'] ?? false,
+                        
+                        // 🏪 Warehouse Info
+                        'warehouse_id' => $warehouseInventory['warehouseId'] ?? 'Unknown',
+                        
+                        // 📊 Calculations
+                        'total_physical_stock' => ($warehouseInventory['warehouseStock'] ?? 0) + 
+                                                 ($warehouseInventory['transportStock'] ?? 0),
+                        
+                        'total_reserved_stock' => $warehouseInventory['lockedStock'] ?? 0,
+                        'total_available_for_sale' => $warehouseInventory['availableStock'] ?? 0,
+                        
+                        // 🕒 Metadata
+                        'last_updated' => $warehouseInventory['updateDatetime'] ?? now(),
+                        'api_source' => 'warehouse_inventory',
+                        'master_variation_id' => $masterVariation['id'] ?? 'Unknown',
+                        'product_status' => 'ACTIVE'
+                    ];
                 }
             }
             
-            Log::info("📊 Page {$page} complete: {$itemCount} products, running total: {$totalChecked} products, {$totalVariations} variations");
             $page++;
             
-            // Safety break - prevent infinite loops
             if ($page > 50) {
-                Log::warning("⚠️ Reached safety limit of 50 pages");
+                Log::warning("⚠️ Stopped search after 50 pages for safety");
                 break;
             }
         }
-
-        Log::warning("❌ SKU '{$sku}' NOT FOUND");
-        Log::info("📊 Search complete: {$totalChecked} products, {$totalVariations} variations checked across {$page} pages");
         
-        // Log first 20 SKUs found for debugging
-        Log::info("🔍 Sample SKUs found: " . implode(', ', array_slice($foundSkus, 0, 20)));
+        Log::warning("❌ SKU '{$sku}' NOT FOUND in Warehouse Inventory after searching {$totalChecked} items", [
+            'total_pages_checked' => $page,
+            'api_used' => 'warehouse_inventory'
+        ]);
         
         return null;
         
     } catch (\Exception $e) {
-        Log::error("💥 Exception during comprehensive search: " . $e->getMessage());
+        Log::error("💥 Exception during Warehouse Inventory search: " . $e->getMessage());
         return null;
     }
 }
@@ -170,117 +185,143 @@ public function getStockFromGinee(string $sku): ?array
     /**
      * Update stock produk lokal berdasarkan data dari Ginee
      */
-    public function updateLocalProductStock(string $sku, array $gineeStockData, bool $dryRun = false): bool
-    {
-        try {
-            $product = Product::where('sku', $sku)->first();
+public function updateLocalProductStock(string $sku, array $gineeStockData, bool $dryRun = false): bool
+{
+    try {
+        $product = Product::where('sku', $sku)->first();
+        
+        if (!$product) {
+            Log::warning('⚠️ [Ginee Stock Sync] Product not found locally', ['sku' => $sku]);
             
-            if (!$product) {
-                Log::warning('⚠️ [Ginee Stock Sync] Product not found locally', ['sku' => $sku]);
-                
-                // Log not found
-                GineeSyncLog::create([
-                    'type' => 'stock_push',
-                    'status' => 'failed',
-                    'operation_type' => 'sync',
-                    'sku' => $sku,
-                    'product_name' => $gineeStockData['product_name'] ?? 'Unknown',
-                    'message' => "Product not found in local database",
-                    'dry_run' => $dryRun,
-                    'session_id' => GineeSyncLog::generateSessionId()
-                ]);
-                
-                return false;
-            }
-
-            $oldStock = $product->stock_quantity ?? 0;
-            
-            // GUNAKAN AVAILABLE STOCK (yang ditampilkan di dashboard)
-            $newStock = $gineeStockData['available_stock'] ?? 0;
-            
-            if ($dryRun) {
-                Log::info('🧪 [Ginee Stock Sync] DRY RUN - Would update stock', [
-                    'sku' => $sku,
-                    'product_id' => $product->id,
-                    'old_stock' => $oldStock,
-                    'new_stock' => $newStock,
-                    'ginee_data' => $gineeStockData
-                ]);
-                
-                // Log dry run
-                GineeSyncLog::create([
-                    'type' => 'stock_push',
-                    'status' => 'skipped',
-                    'operation_type' => 'sync',
-                    'sku' => $sku,
-                    'product_name' => $product->name,
-                    'old_stock' => $oldStock,
-                    'new_stock' => $newStock,
-                    'message' => "Dry run - would update from {$oldStock} to {$newStock}",
-                    'dry_run' => true,
-                    'session_id' => GineeSyncLog::generateSessionId()
-                ]);
-                
-                return true;
-            }
-
-            // UPDATE STOCK
-            $product->stock_quantity = $newStock;
-            
-            if (isset($gineeStockData['warehouse_stock'])) {
-                $product->warehouse_stock = $gineeStockData['warehouse_stock'];
-            }
-            
-            $product->ginee_last_sync = now();
-            $product->ginee_sync_status = 'synced';
-            $product->save();
-
-            // Log success
-            GineeSyncLog::create([
-                'type' => 'stock_push',
-                'status' => 'success',
-                'operation_type' => 'sync',
-                'sku' => $sku,
-                'product_name' => $product->name,
-                'old_stock' => $oldStock,
-                'new_stock' => $newStock,
-                'message' => "Successfully updated from {$oldStock} to {$newStock}",
-                'ginee_response' => $gineeStockData,
-                'dry_run' => false,
-                'session_id' => GineeSyncLog::generateSessionId()
-            ]);
-
-            Log::info('✅ [Ginee Stock Sync] Updated product stock', [
-                'sku' => $sku,
-                'product_id' => $product->id,
-                'old_stock' => $oldStock,
-                'new_stock' => $newStock,
-                'change' => $newStock - $oldStock
-            ]);
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error('❌ [Ginee Stock Sync] Failed to update local product', [
-                'sku' => $sku,
-                'error' => $e->getMessage()
-            ]);
-            
-            // Log error
             GineeSyncLog::create([
                 'type' => 'stock_push',
                 'status' => 'failed',
                 'operation_type' => 'sync',
                 'sku' => $sku,
                 'product_name' => $gineeStockData['product_name'] ?? 'Unknown',
-                'message' => "Exception: " . $e->getMessage(),
+                'message' => "Product not found in local database",
                 'dry_run' => $dryRun,
                 'session_id' => GineeSyncLog::generateSessionId()
             ]);
             
             return false;
         }
+
+        $oldStock = $product->stock_quantity ?? 0;
+        $oldWarehouseStock = $product->warehouse_stock ?? 0;
+        
+        // ✅ GUNAKAN AVAILABLE STOCK YANG BENAR (1299 dari log)
+        $newStock = $gineeStockData['available_stock'] ?? 0;
+        $newWarehouseStock = $gineeStockData['warehouse_stock'] ?? 0;
+        
+        // ✅ DEBUG: Log values untuk memastikan mapping benar
+        Log::info('🔍 [Debug] Stock values from Ginee data', [
+            'sku' => $sku,
+            'ginee_available_stock' => $gineeStockData['available_stock'] ?? 'NULL',
+            'ginee_warehouse_stock' => $gineeStockData['warehouse_stock'] ?? 'NULL',
+            'new_stock_to_set' => $newStock,
+            'old_stock_current' => $oldStock,
+            'raw_ginee_data_keys' => array_keys($gineeStockData)
+        ]);
+        
+        if ($dryRun) {
+            Log::info('🧪 [Ginee Stock Sync] DRY RUN - Would update stock', [
+                'sku' => $sku,
+                'product_id' => $product->id,
+                'old_stock' => $oldStock,
+                'new_stock' => $newStock,
+                'old_warehouse_stock' => $oldWarehouseStock,
+                'new_warehouse_stock' => $newWarehouseStock,
+                'api_source' => 'warehouse_inventory',
+                'stock_breakdown' => [
+                    'available' => $gineeStockData['available_stock'] ?? 0,
+                    'warehouse' => $gineeStockData['warehouse_stock'] ?? 0,
+                    'spare' => $gineeStockData['spare_stock'] ?? 0,
+                    'locked' => $gineeStockData['locked_stock'] ?? 0,
+                ]
+            ]);
+            
+            GineeSyncLog::create([
+                'type' => 'stock_push',
+                'status' => 'skipped',
+                'operation_type' => 'sync',
+                'sku' => $sku,
+                'product_name' => $product->name,
+                'old_stock' => $oldStock,
+                'new_stock' => $newStock,
+                'old_warehouse_stock' => $oldWarehouseStock,
+                'new_warehouse_stock' => $newWarehouseStock,
+                'message' => "Dry run - would update from {$oldStock} to {$newStock} (available_stock from warehouse_inventory)",
+                'dry_run' => true,
+                'ginee_response' => $gineeStockData,
+                'session_id' => GineeSyncLog::generateSessionId()
+            ]);
+            
+            return true;
+        }
+
+        // ✅ UPDATE STOCK dengan available_stock yang benar
+        $product->stock_quantity = $newStock;
+        $product->warehouse_stock = $newWarehouseStock;
+        $product->ginee_last_sync = now();
+        $product->ginee_sync_status = 'synced';
+        $product->save();
+
+        // Log success dengan detail lengkap
+        GineeSyncLog::create([
+            'type' => 'stock_push',
+            'status' => 'success',
+            'operation_type' => 'sync',
+            'sku' => $sku,
+            'product_name' => $product->name,
+            'old_stock' => $oldStock,
+            'new_stock' => $newStock,
+            'old_warehouse_stock' => $oldWarehouseStock,
+            'new_warehouse_stock' => $newWarehouseStock,
+            'message' => "SUCCESS: Updated from {$oldStock} to {$newStock} (using availableStock: {$newStock} from warehouseInventory)",
+            'ginee_response' => $gineeStockData,
+            'dry_run' => false,
+            'session_id' => GineeSyncLog::generateSessionId()
+        ]);
+
+        Log::info('✅ [Ginee Stock Sync] Updated product stock (Warehouse Inventory API)', [
+            'sku' => $sku,
+            'product_id' => $product->id,
+            'old_stock' => $oldStock,
+            'new_stock' => $newStock,
+            'change' => $newStock - $oldStock,
+            'api_source' => 'warehouse_inventory',
+            'stock_breakdown' => [
+                'available_used' => $newStock,
+                'warehouse_reference' => $newWarehouseStock,
+                'spare' => $gineeStockData['spare_stock'] ?? 0,
+                'locked' => $gineeStockData['locked_stock'] ?? 0,
+                'warehouse_id' => $gineeStockData['warehouse_id'] ?? 'Unknown'
+            ]
+        ]);
+
+        return true;
+
+    } catch (\Exception $e) {
+        Log::error('❌ [Ginee Stock Sync] Failed to update local product', [
+            'sku' => $sku,
+            'error' => $e->getMessage()
+        ]);
+        
+        GineeSyncLog::create([
+            'type' => 'stock_push',
+            'status' => 'failed',
+            'operation_type' => 'sync',
+            'sku' => $sku,
+            'product_name' => $gineeStockData['product_name'] ?? 'Unknown',
+            'message' => "Exception: " . $e->getMessage(),
+            'dry_run' => $dryRun,
+            'session_id' => GineeSyncLog::generateSessionId()
+        ]);
+        
+        return false;
     }
+}
 
     /**
      * Push single SKU to Ginee with force parameter
@@ -431,29 +472,124 @@ public function getStockFromGinee(string $sku): ?array
      */
 public function syncMultipleSkusIndividually(array $skus, array $options = [])
 {
-    // SAFETY: Disable bulk operations until fix is verified
-    Log::warning('🚫 Bulk sync temporarily disabled for safety');
+    Log::info('📥 Starting bulk sync FROM Ginee (READ-ONLY)', [
+        'total_skus' => count($skus),
+        'batch_size' => $options['batch_size'] ?? 20,
+        'dry_run' => $options['dry_run'] ?? false
+    ]);
     
+    $sessionId = \Illuminate\Support\Str::uuid();
+    $dryRun = $options['dry_run'] ?? false;
+    $batchSize = min($options['batch_size'] ?? 20, 50); // Max 50 untuk keamanan
+    
+    $stats = [
+        'session_id' => $sessionId,
+        'total_requested' => count($skus),
+        'successful' => 0,
+        'failed' => 0,
+        'not_found' => 0,
+        'no_mapping' => 0,
+        'details' => [],
+        'errors' => [],
+        'processed_skus' => []
+    ];
+
+    // Process dalam batch untuk menghindari timeout
+    $chunks = array_chunk($skus, $batchSize);
+    
+    foreach ($chunks as $chunkIndex => $chunk) {
+        Log::info("📦 Processing batch " . ($chunkIndex + 1) . "/" . count($chunks), [
+            'chunk_size' => count($chunk),
+            'session_id' => $sessionId
+        ]);
+        
+        foreach ($chunk as $sku) {
+            try {
+                // HANYA SYNC FROM GINEE - READ ONLY
+                $result = $this->syncSingleSku($sku, $dryRun);
+                
+                if ($result['success']) {
+                    $stats['successful']++;
+                    $stats['details'][] = [
+                        'sku' => $sku,
+                        'status' => 'success',
+                        'message' => $result['message']
+                    ];
+                } else {
+                    $stats['failed']++;
+                    $errorCategory = $this->categorizeError($result['message']);
+                    
+                    switch ($errorCategory) {
+                        case 'product_not_found':
+                            $stats['not_found']++;
+                            break;
+                        case 'no_ginee_mapping':
+                            $stats['no_mapping']++;
+                            break;
+                    }
+                    
+                    $stats['errors'][] = "SKU {$sku}: " . $result['message'];
+                    $stats['details'][] = [
+                        'sku' => $sku,
+                        'status' => 'failed',
+                        'message' => $result['message'],
+                        'category' => $errorCategory
+                    ];
+                }
+                
+                $stats['processed_skus'][] = $sku;
+                
+                // Rate limiting - jeda kecil antar request
+                usleep(100000); // 0.1 detik
+                
+            } catch (\Exception $e) {
+                $stats['failed']++;
+                $errorMessage = "Exception for SKU {$sku}: " . $e->getMessage();
+                $stats['errors'][] = $errorMessage;
+                $stats['details'][] = [
+                    'sku' => $sku,
+                    'status' => 'exception',
+                    'message' => $errorMessage
+                ];
+                
+                Log::error("❌ Exception in bulk sync for SKU: {$sku}", [
+                    'error' => $e->getMessage(),
+                    'session_id' => $sessionId
+                ]);
+            }
+        }
+        
+        // Jeda antar batch
+        if ($chunkIndex < count($chunks) - 1) {
+            sleep(1); // 1 detik jeda antar batch
+        }
+    }
+
+    // Log summary
+    $summary = "📥 Bulk sync FROM Ginee completed - Session: {$sessionId}\n";
+    $summary .= "✅ Successful: {$stats['successful']}\n";
+    $summary .= "❌ Failed: {$stats['failed']}\n";
+    $summary .= "🔍 Not Found: {$stats['not_found']}\n";
+    $summary .= "🔗 No Mapping: {$stats['no_mapping']}\n";
+    $summary .= "📊 Total: {$stats['total_requested']}";
+    
+    if ($dryRun) {
+        $summary = "🧪 DRY RUN - " . $summary;
+    }
+    
+    Log::info($summary, ['session_id' => $sessionId]);
+
     return [
-        'success' => false,
-        'data' => [
-            'session_id' => \Illuminate\Support\Str::uuid(),
-            'total_requested' => count($skus),
-            'successful' => 0,
-            'failed' => count($skus),
-            'not_found' => 0,
-            'no_mapping' => 0,
-            'details' => [],
-            'errors' => ['Bulk sync temporarily disabled for safety - use individual sync only'],
-            'processed_skus' => []
-        ]
+        'success' => true,
+        'message' => $summary,
+        'data' => $stats
     ];
 }
 
 public function pushMultipleSkusIndividually(array $skus, array $options = [])
 {
-    // SAFETY: Disable bulk operations until fix is verified
-    Log::warning('🚫 Bulk push temporarily disabled for safety');
+    // TETAP DISABLED UNTUK KEAMANAN - WRITING OPERATIONS
+    Log::warning('🚫 Bulk PUSH still disabled for safety - use individual push only');
     
     return [
         'success' => false,
@@ -466,7 +602,7 @@ public function pushMultipleSkusIndividually(array $skus, array $options = [])
             'not_found' => 0,
             'no_mapping' => 0,
             'details' => [],
-            'errors' => ['Bulk push temporarily disabled for safety - use individual actions only'],
+            'errors' => ['Bulk PUSH temporarily disabled for safety - use individual push only'],
             'processed_skus' => []
         ]
     ];
@@ -474,8 +610,8 @@ public function pushMultipleSkusIndividually(array $skus, array $options = [])
 
 public function bidirectionalSyncMultipleSkus(array $skus, array $options = [])
 {
-    // SAFETY: Disable bulk operations until fix is verified
-    Log::warning('🚫 Bidirectional sync temporarily disabled for safety');
+    // TETAP DISABLED karena ada komponen PUSH/WRITING
+    Log::warning('🚫 Bidirectional sync still disabled for safety - contains PUSH operations');
     
     return [
         'success' => false,
@@ -490,7 +626,8 @@ public function bidirectionalSyncMultipleSkus(array $skus, array $options = [])
                 'push_successful' => 0,
                 'push_failed' => count($skus),
                 'push_skipped' => 0,
-            ]
+            ],
+            'errors' => ['Bidirectional sync disabled for safety - contains PUSH operations']
         ]
     ];
 }
@@ -521,43 +658,60 @@ public function bidirectionalSyncMultipleSkus(array $skus, array $options = [])
     /**
      * Categorize error messages for better reporting
      */
-    private function categorizeError(string $message): string
-    {
-        if (str_contains($message, 'not found in database')) {
-            return 'product_not_found';
-        } elseif (str_contains($message, 'no mapping') || str_contains($message, 'not mapped')) {
-            return 'no_ginee_mapping';
-        } elseif (str_contains($message, 'API error') || str_contains($message, 'HTTP')) {
-            return 'api_error';
-        } elseif (str_contains($message, 'already in sync')) {
-            return 'already_synced';
-        } elseif (str_contains($message, 'rate limit')) {
-            return 'rate_limited';
-        } elseif (str_contains($message, 'timeout')) {
-            return 'timeout';
-        } else {
-            return 'unknown';
-        }
+private function categorizeError(string $message): string
+{
+    if (str_contains($message, 'not found in database')) {
+        return 'product_not_found';
+    } elseif (str_contains($message, 'no mapping') || str_contains($message, 'not mapped')) {
+        return 'no_ginee_mapping';
+    } elseif (str_contains($message, 'API error') || str_contains($message, 'HTTP')) {
+        return 'api_error';
+    } elseif (str_contains($message, 'already in sync')) {
+        return 'already_synced';
+    } elseif (str_contains($message, 'rate limit')) {
+        return 'rate_limited';
+    } elseif (str_contains($message, 'timeout')) {
+        return 'timeout';
+    } else {
+        return 'unknown';
     }
+}
 
     // Bulk operations - simplified for safety
-    public function syncStockFromGinee(array $options = []): array
-    {
+public function syncStockFromGinee(array $options = []): array
+{
+    Log::info('📥 Starting bulk sync stock FROM Ginee (READ-ONLY)');
+    
+    // Ambil semua products yang punya ginee mapping
+    $products = Product::whereHas('gineeMappings', function($query) {
+        $query->where('sync_enabled', true);
+    })->get();
+    
+    $skus = $products->pluck('sku')->filter()->toArray();
+    
+    if (empty($skus)) {
         return [
-            'success' => true,
-            'message' => 'Use single SKU sync for safety',
+            'success' => false,
+            'message' => 'No products with Ginee mappings found',
             'data' => []
         ];
     }
+    
+    // Gunakan sync individual yang sudah diperbaiki
+    return $this->syncMultipleSkusIndividually($skus, $options);
+}
 
-    public function pushStockToGinee(array $options = []): array
-    {
-        return [
-            'success' => true,
-            'message' => 'Use single SKU push for safety',
-            'data' => []
-        ];
-    }
+public function pushStockToGinee(array $options = []): array
+{
+    Log::warning('🚫 Bulk push to Ginee still disabled for safety');
+    
+    return [
+        'success' => false,
+        'message' => 'Bulk push temporarily disabled for safety - use individual SKU push only',
+        'data' => []
+    ];
+}
+
 }
 
 ?>
