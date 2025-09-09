@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Database\Eloquent\Collection;
 use Exception;
 
 class ProductResource extends Resource
@@ -888,540 +889,512 @@ class ProductResource extends Resource
       ->button(),
     
     // 🔄 GINEE SYNC GROUP
-    Tables\Actions\ActionGroup::make([
-        
-        Tables\Actions\Action::make('individual_stock_update')
-    ->label('🎯 Update Stock (Individual)')
-    ->icon('heroicon-o-pencil-square')
-    ->color('warning')
-    ->requiresConfirmation()
-    ->modalHeading('Update Individual Product Stock')
-    ->modalDescription('Select a product and update its stock quantity for pushing to Ginee.')
-    ->form([
-        Forms\Components\Section::make('Product Selection')
-            ->schema([
-                Forms\Components\Select::make('selected_product_id')
-                    ->label('Select Product')
-                    ->placeholder('Choose a product to update...')
-                    ->searchable()
-                    ->preload()
-                    ->required()
-                    ->options(function () {
-                        return \App\Models\Product::whereNotNull('sku')
-                            ->where('sku', '!=', '')
-                            ->orderBy('name')
-                            ->pluck('name', 'id')
-                            ->map(function ($name, $id) {
-                                $product = \App\Models\Product::find($id);
-                                return "{$name} (SKU: {$product->sku}) - Stock: {$product->stock_quantity}";
-                            });
-                    })
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, callable $set) {
-                        if ($state) {
-                            $product = \App\Models\Product::find($state);
-                            if ($product) {
-                                $set('current_stock', $product->stock_quantity ?? 0);
-                                $set('current_sku', $product->sku);
-                                $set('current_name', $product->name);
+Tables\Actions\ActionGroup::make([
+    
+    // 🎯 INDIVIDUAL STOCK UPDATE - Enhanced Version
+    Tables\Actions\Action::make('individual_stock_update')
+        ->label('🎯 Update Stock (Individual)')
+        ->icon('heroicon-o-pencil-square')
+        ->color('warning')
+        ->requiresConfirmation()
+        ->modalHeading('Individual Product Stock Sync')
+        ->modalDescription('Select a product and choose sync direction for individual processing.')
+        ->form([
+            Forms\Components\Section::make('Product Selection')
+                ->schema([
+                    Forms\Components\Select::make('selected_product_id')
+                        ->label('Select Product')
+                        ->placeholder('Choose a product to sync...')
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->options(function () {
+                            return \App\Models\Product::whereNotNull('sku')
+                                ->where('sku', '!=', '')
+                                ->with('gineeMappings')
+                                ->orderBy('name')
+                                ->get()
+                                ->mapWithKeys(function ($product) {
+                                    $mapping = $product->gineeMappings->first();
+                                    $gineeInfo = $mapping ? " | MSKU: {$mapping->ginee_master_sku}" : ' | ⚠️ No mapping';
+                                    return [$product->id => "{$product->name} (SKU: {$product->sku}) - Stock: {$product->stock_quantity}{$gineeInfo}"];
+                                });
+                        })
+                        ->reactive()
+                        ->afterStateUpdated(function ($state, callable $set) {
+                            if ($state) {
+                                $product = \App\Models\Product::with('gineeMappings')->find($state);
+                                if ($product) {
+                                    $set('current_stock', $product->stock_quantity ?? 0);
+                                    $set('current_sku', $product->sku);
+                                    $set('current_name', $product->name);
+                                    $mapping = $product->gineeMappings->first();
+                                    $set('has_mapping', $mapping ? true : false);
+                                    $set('ginee_msku', $mapping?->ginee_master_sku ?? '');
+                                    $set('last_sync', $product->ginee_last_sync?->diffForHumans() ?? 'Never');
+                                }
                             }
-                        }
-                    }),
-            ]),
-            
-        Forms\Components\Section::make('Current Product Information')
-            ->schema([
-                Forms\Components\Placeholder::make('product_info')
-                    ->label('Product Details')
-                    ->content(function (callable $get) {
-                        $productId = $get('selected_product_id');
-                        if (!$productId) {
-                            return 'Please select a product first.';
-                        }
-                        
-                        $product = \App\Models\Product::find($productId);
-                        if (!$product) {
-                            return 'Product not found.';
-                        }
-                        
-                        return "📦 **{$product->name}**\n" .
-                               "🏷️ SKU: `{$product->sku}`\n" .
-                               "📊 Current Stock: **{$product->stock_quantity}**\n" .
-                               "💰 Price: Rp " . number_format($product->price ?? 0) . "\n" .
-                               "🔄 Last Ginee Sync: " . ($product->ginee_last_sync ? $product->ginee_last_sync->format('d/m/Y H:i') : 'Never');
-                    }),
-                    
-                Forms\Components\Hidden::make('current_stock'),
-                Forms\Components\Hidden::make('current_sku'),
-                Forms\Components\Hidden::make('current_name'),
-            ])
-            ->visible(fn (callable $get) => $get('selected_product_id')),
-            
-        Forms\Components\Section::make('Stock Update')
-            ->schema([
-                Forms\Components\TextInput::make('new_stock_quantity')
-                    ->label('New Stock Quantity')
-                    ->numeric()
-                    ->required()
-                    ->minValue(0)
-                    ->placeholder('Enter new stock quantity...')
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, callable $get, callable $set) {
-                        $currentStock = $get('current_stock') ?? 0;
-                        $newStock = (int) $state;
-                        $difference = $newStock - $currentStock;
-                        $set('stock_difference', $difference);
-                    }),
-                    
-                Forms\Components\Placeholder::make('stock_change_preview')
-                    ->label('Stock Change Preview')
-                    ->content(function (callable $get) {
-                        $currentStock = $get('current_stock') ?? 0;
-                        $newStock = $get('new_stock_quantity');
-                        
-                        if ($newStock === null || $newStock === '') {
-                            return 'Enter new stock quantity to see preview.';
-                        }
-                        
-                        $difference = (int) $newStock - $currentStock;
-                        $changeText = $difference > 0 ? "+{$difference}" : (string) $difference;
-                        $emoji = $difference > 0 ? '📈' : ($difference < 0 ? '📉' : '➖');
-                        
-                        return "{$emoji} **{$currentStock}** → **{$newStock}** ({$changeText})";
-                    })
-                    ->visible(fn (callable $get) => $get('new_stock_quantity') !== null),
-                    
-                Forms\Components\Hidden::make('stock_difference'),
-            ])
-            ->visible(fn (callable $get) => $get('selected_product_id')),
-            
-        Forms\Components\Section::make('Push Options')
-            ->schema([
-                Forms\Components\Toggle::make('dry_run')
-                    ->label('🧪 Dry Run (Preview Only)')
-                    ->helperText('Enable to preview changes without actually updating')
-                    ->default(false),
-                    
-                Forms\Components\Toggle::make('update_local_first')
-                    ->label('💾 Update Local Database First')
-                    ->helperText('Update local stock before pushing to Ginee')
-                    ->default(true),
-                    
-                Forms\Components\Toggle::make('force_push')
-                    ->label('🚀 Force Push to Ginee')
-                    ->helperText('Push to Ginee even if stock quantity is the same')
-                    ->default(false),
-            ])
-            ->visible(fn (callable $get) => $get('selected_product_id')),
-    ])
-    ->action(function (array $data) {
-        try {
-            $productId = $data['selected_product_id'];
-            $newStockQuantity = (int) $data['new_stock_quantity'];
-            $dryRun = $data['dry_run'] ?? false;
-            $updateLocalFirst = $data['update_local_first'] ?? true;
-            $forcePush = $data['force_push'] ?? false;
-            
-            $product = \App\Models\Product::findOrFail($productId);
-            $oldStock = $product->stock_quantity ?? 0;
-            $sessionId = \App\Models\GineeSyncLog::generateSessionId();
-            
-            // Validasi: cek apakah stock berubah
-            if (!$forcePush && $oldStock == $newStockQuantity) {
-                Notification::make()
-                    ->title('ℹ️ No Changes Detected')
-                    ->body("Stock quantity is already {$newStockQuantity}. Use 'Force Push' option if you want to push anyway.")
-                    ->info()
-                    ->send();
-                return;
-            }
-            
-            $mode = $dryRun ? 'DRY RUN - ' : '';
-            
-            // Step 1: Update local database first (jika diaktifkan)
-            if ($updateLocalFirst && !$dryRun) {
-                $product->stock_quantity = $newStockQuantity;
-                $product->save();
+                        }),
+                ]),
                 
-                \App\Models\GineeSyncLog::create([
-                    'type' => 'stock_push',
-                    'status' => 'success',
-                    'operation_type' => 'local_update',
-                    'sku' => $product->sku,
-                    'product_name' => $product->name,
-                    'old_stock' => $oldStock,
-                    'new_stock' => $newStockQuantity,
-                    'message' => "Local stock updated from {$oldStock} to {$newStockQuantity}",
-                    'dry_run' => false,
-                    'session_id' => $sessionId,
-                ]);
-            }
-            
-            // Step 2: Push to Ginee
-            $gineeClient = new \App\Services\GineeClient();
-            $stockUpdate = $gineeClient->createStockUpdate($product->sku, $newStockQuantity);
-            
-            if ($dryRun) {
-                // Dry run - hanya log preview
-                \App\Models\GineeSyncLog::create([
-                    'type' => 'stock_push',
-                    'status' => 'skipped',
-                    'operation_type' => 'ginee_push',
-                    'sku' => $product->sku,
-                    'product_name' => $product->name,
-                    'old_stock' => $oldStock,
-                    'new_stock' => $newStockQuantity,
-                    'message' => "DRY RUN - Would push stock {$newStockQuantity} to Ginee",
-                    'dry_run' => true,
-                    'session_id' => $sessionId,
-                ]);
+            Forms\Components\Section::make('Current Product Information')
+                ->schema([
+                    Forms\Components\Placeholder::make('product_info')
+                        ->label('Product Details')
+                        ->content(function (callable $get) {
+                            $productId = $get('selected_product_id');
+                            if (!$productId) {
+                                return 'Please select a product first.';
+                            }
+                            
+                            $product = \App\Models\Product::with('gineeMappings')->find($productId);
+                            if (!$product) {
+                                return 'Product not found.';
+                            }
+                            
+                            $mapping = $product->gineeMappings->first();
+                            $syncStatus = $mapping ? '✅ Mapped' : '❌ Not mapped';
+                            $gineeStock = $mapping?->stock_quantity_ginee ?? 'N/A';
+                            
+                            return "📦 **{$product->name}**\n" .
+                                   "🏷️ SKU: `{$product->sku}`\n" .
+                                   "📊 Local Stock: **{$product->stock_quantity}**\n" .
+                                   "🎯 Ginee MSKU: " . ($mapping?->ginee_master_sku ?? 'Not mapped') . "\n" .
+                                   "📈 Ginee Stock: **{$gineeStock}**\n" .
+                                   "🔄 Mapping Status: {$syncStatus}\n" .
+                                   "⏰ Last Sync: " . ($product->ginee_last_sync ? $product->ginee_last_sync->format('d/m/Y H:i') : 'Never');
+                        }),
+                        
+                    Forms\Components\Hidden::make('current_stock'),
+                    Forms\Components\Hidden::make('current_sku'),
+                    Forms\Components\Hidden::make('current_name'),
+                    Forms\Components\Hidden::make('has_mapping'),
+                    Forms\Components\Hidden::make('ginee_msku'),
+                    Forms\Components\Hidden::make('last_sync'),
+                ])
+                ->visible(fn (callable $get) => $get('selected_product_id')),
                 
-                Notification::make()
-                    ->title('🧪 Dry Run Complete')
-                    ->body("Preview: Would update {$product->name} stock from {$oldStock} to {$newStockQuantity} and push to Ginee.")
-                    ->info()
-                    ->duration(8000)
-                    ->send();
-                    
-            } else {
-                // Actual push to Ginee
-                $result = $gineeClient->updateStock([$stockUpdate]);
+            Forms\Components\Section::make('Sync Options')
+                ->schema([
+                    Forms\Components\Select::make('sync_direction')
+                        ->label('Sync Direction')
+                        ->options([
+                            'from_ginee' => '📥 FROM Ginee → Local (Get current stock from Ginee)',
+                            'to_ginee' => '📤 TO Ginee ← Local (Push local stock to Ginee)',
+                            'bidirectional' => '🔄 Bidirectional (Sync both ways)',
+                            'manual_update' => '✏️ Manual Update (Set specific stock amount)',
+                        ])
+                        ->default('from_ginee')
+                        ->required()
+                        ->reactive()
+                        ->helperText('Choose sync direction based on your needs'),
+                        
+                    Forms\Components\TextInput::make('manual_stock_amount')
+                        ->label('Set Stock Amount')
+                        ->numeric()
+                        ->minValue(0)
+                        ->placeholder('Enter stock quantity to set...')
+                        ->helperText('This will update local stock and push to Ginee')
+                        ->visible(fn (callable $get) => $get('sync_direction') === 'manual_update'),
+                        
+                    Forms\Components\Toggle::make('dry_run')
+                        ->label('🧪 Dry Run (Preview Only)')
+                        ->default(true)
+                        ->helperText('Enable to preview changes without making actual updates')
+                        ->reactive(),
+                        
+                    Forms\Components\Toggle::make('force_update')
+                        ->label('🔄 Force Update')
+                        ->default(false)
+                        ->helperText('Force update even if stock appears to be already in sync')
+                        ->visible(fn (callable $get) => in_array($get('sync_direction'), ['to_ginee', 'bidirectional'])),
+                ])
+                ->visible(fn (callable $get) => $get('selected_product_id') && $get('has_mapping')),
                 
-                if (($result['code'] ?? null) === 'SUCCESS') {
-                    // Update last push timestamp
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'ginee_last_stock_push')) {
-                        $product->ginee_last_stock_push = now();
-                        $product->save();
-                    }
-                    
-                    \App\Models\GineeSyncLog::create([
-                        'type' => 'stock_push',
-                        'status' => 'success',
-                        'operation_type' => 'ginee_push',
-                        'sku' => $product->sku,
-                        'product_name' => $product->name,
-                        'old_stock' => $oldStock,
-                        'new_stock' => $newStockQuantity,
-                        'message' => "Successfully pushed stock {$newStockQuantity} to Ginee",
-                        'ginee_response' => $result,
-                        'dry_run' => false,
-                        'session_id' => $sessionId,
+            Forms\Components\Section::make('⚠️ Setup Required')
+                ->schema([
+                    Forms\Components\Placeholder::make('no_mapping_warning')
+                        ->content('This product is not mapped to Ginee. Please set up Ginee mapping first before syncing.')
+                        ->columnSpanFull(),
+                        
+                    Forms\Components\TextInput::make('setup_ginee_msku')
+                        ->label('Ginee Master SKU')
+                        ->placeholder('Enter Ginee Master SKU...')
+                        ->helperText('Get this from Ginee OMS'),
+                        
+                    Forms\Components\Toggle::make('create_mapping')
+                        ->label('Create Ginee Mapping')
+                        ->default(false)
+                        ->helperText('Create mapping and then perform sync'),
+                ])
+                ->visible(fn (callable $get) => $get('selected_product_id') && !$get('has_mapping'))
+                ->collapsed(false),
+        ])
+        ->action(function (array $data) {
+            try {
+                $productId = $data['selected_product_id'];
+                $syncDirection = $data['sync_direction'];
+                $dryRun = $data['dry_run'] ?? true;
+                $forceUpdate = $data['force_update'] ?? false;
+                $manualStock = $data['manual_stock_amount'] ?? null;
+                
+                $product = \App\Models\Product::with('gineeMappings')->findOrFail($productId);
+                $mapping = $product->gineeMappings->first();
+                
+                // Handle mapping creation if needed
+                if (!$mapping && ($data['create_mapping'] ?? false) && !empty($data['setup_ginee_msku'])) {
+                    $mapping = $product->gineeMappings()->create([
+                        'ginee_master_sku' => $data['setup_ginee_msku'],
+                        'sync_enabled' => true,
+                        'stock_sync_enabled' => true,
                     ]);
+                }
+                
+                if (!$mapping) {
+                    throw new \Exception('Product is not mapped to Ginee. Please set up mapping first.');
+                }
+                
+                $syncService = new \App\Services\GineeStockSyncService();
+                $results = [];
+                
+                // Handle manual stock update
+                if ($syncDirection === 'manual_update' && $manualStock !== null) {
+                    $oldStock = $product->stock_quantity;
+                    if (!$dryRun) {
+                        $product->update(['stock_quantity' => $manualStock]);
+                    }
+                    $results[] = ($dryRun ? '🧪 Would update' : '✅ Updated') . " local stock: {$oldStock} → {$manualStock}";
                     
-                    Notification::make()
-                        ->title('✅ Stock Update Successful!')
-                        ->body("Updated {$product->name} stock from {$oldStock} to {$newStockQuantity} and pushed to Ginee.")
-                        ->success()
-                        ->duration(8000)
-                        ->send();
-                        
+                    // Also push to Ginee
+                    $pushResult = $syncService->pushSingleSkuToGinee($product->sku, $dryRun, true);
+                    $results[] = ($pushResult['success'] ? '✅' : '❌') . " Push to Ginee: " . $pushResult['message'];
+                    
                 } else {
-                    \App\Models\GineeSyncLog::create([
-                        'type' => 'stock_push',
-                        'status' => 'failed',
-                        'operation_type' => 'ginee_push',
-                        'sku' => $product->sku,
-                        'product_name' => $product->name,
-                        'old_stock' => $oldStock,
-                        'new_stock' => $newStockQuantity,
-                        'message' => 'Failed to push to Ginee: ' . ($result['message'] ?? 'Unknown error'),
-                        'ginee_response' => $result,
-                        'dry_run' => false,
-                        'session_id' => $sessionId,
-                    ]);
-                    
-                    throw new Exception('Ginee push failed: ' . ($result['message'] ?? 'Unknown error'));
+                    // Handle other sync directions
+                    switch ($syncDirection) {
+                        case 'from_ginee':
+                            $result = $syncService->syncSingleSku($product->sku, $dryRun);
+                            $results[] = ($result['success'] ? '✅' : '❌') . " FROM Ginee: " . $result['message'];
+                            break;
+                            
+                        case 'to_ginee':
+                            $result = $syncService->pushSingleSkuToGinee($product->sku, $dryRun, $forceUpdate);
+                            $results[] = ($result['success'] ? '✅' : '❌') . " TO Ginee: " . $result['message'];
+                            break;
+                            
+                        case 'bidirectional':
+                            $syncResult = $syncService->syncSingleSku($product->sku, $dryRun);
+                            $results[] = ($syncResult['success'] ? '✅' : '❌') . " FROM Ginee: " . $syncResult['message'];
+                            
+                            $pushResult = $syncService->pushSingleSkuToGinee($product->sku, $dryRun, $forceUpdate);
+                            $results[] = ($pushResult['success'] ? '✅' : '❌') . " TO Ginee: " . $pushResult['message'];
+                            break;
+                    }
                 }
-            }
-            
-        } catch (Exception $e) {
-            Notification::make()
-                ->title('❌ Stock Update Failed')
-                ->body('Error: ' . $e->getMessage())
-                ->danger()
-                ->duration(10000)
-                ->send();
                 
-            // Log error jika belum di-log
-            if (isset($product) && isset($sessionId)) {
-                \App\Models\GineeSyncLog::create([
-                    'type' => 'stock_push',
-                    'status' => 'failed',
-                    'operation_type' => 'error',
-                    'sku' => $product->sku ?? 'unknown',
-                    'product_name' => $product->name ?? 'Unknown',
-                    'message' => 'Exception: ' . $e->getMessage(),
-                    'dry_run' => $dryRun ?? false,
-                    'session_id' => $sessionId,
-                ]);
+                $message = ($dryRun ? '🧪 PREVIEW RESULTS\n\n' : '✅ SYNC COMPLETED\n\n') . implode("\n", $results);
+                
+                Notification::make()
+                    ->title($dryRun ? '🧪 Individual Sync Preview' : '✅ Individual Sync Completed')
+                    ->body($message)
+                    ->success()
+                    ->duration(15000)
+                    ->send();
+                    
+            } catch (\Exception $e) {
+                Notification::make()
+                    ->title('❌ Individual Sync Failed')
+                    ->body('Error: ' . $e->getMessage())
+                    ->danger()
+                    ->send();
             }
-        }
-    }),
-        // 📥 SYNC STOCK FROM GINEE
-        Tables\Actions\Action::make('sync_stock_from_ginee')
-            ->label('📥 Sync from Ginee')
-            ->icon('heroicon-o-arrow-down-circle')
-            ->color('info')
-            ->requiresConfirmation()
-            ->modalHeading('Sync Stock from Ginee to Local Database')
-            ->modalDescription('This will update local stock quantities with current stock from Ginee. All operations will be logged.')
-            ->form([
-                Forms\Components\Placeholder::make('sync_info')
-                    ->label('📊 Stock Sync Information')
-                    ->content('This will fetch current stock from Ginee Master Products API (READ-ONLY) and update your local database.'),
-                Forms\Components\Toggle::make('dry_run')
-                    ->label('Dry Run (Preview Only)')
-                    ->default(true),
-                Forms\Components\TextInput::make('batch_size')
-                    ->label('Batch Size')
-                    ->numeric()
-                    ->default(20),
-            ])
-            ->action(function (array $data) {
-                try {
-                    $dryRun = $data['dry_run'] ?? true;
-                    $batchSize = $data['batch_size'] ?? 20;
-                    $sessionId = \App\Models\GineeSyncLog::generateSessionId();
-                    
-                    $products = \App\Models\Product::whereNotNull('sku')
-                        ->where('sku', '!=', '')
-                        ->limit($batchSize)
-                        ->get();
-                    
-                    if ($products->isEmpty()) {
-                        Notification::make()
-                            ->title('ℹ️ No Products Found')
-                            ->body('No products with SKU found to sync.')
-                            ->info()
-                            ->send();
-                        return;
-                    }
-                    
-                    $ginee = new \App\Services\GineeClient();
-                    $successCount = 0;
-                    $failCount = 0;
-                    
-                    foreach ($products as $product) {
-                        $oldStock = $product->stock_quantity ?? 0;
-                        
-                        $result = $ginee->getMasterProducts([
-                            'page' => 0,
-                            'size' => 5,
-                            'sku' => $product->sku
-                        ]);
-                        
-                        if (($result['code'] ?? null) === 'SUCCESS') {
-                            $items = $result['data']['content'] ?? [];
-                            
-                            foreach ($items as $item) {
-                                $variations = $item['variationBriefs'] ?? [];
-                                
-                                foreach ($variations as $variation) {
-                                    if (($variation['sku'] ?? null) === $product->sku) {
-                                        $stock = $variation['stock'] ?? [];
-                                        $availableStock = $stock['availableStock'] ?? 0;
-                                        
-                                        if (!$dryRun) {
-                                            $product->stock_quantity = $availableStock;
-                                            $product->warehouse_stock = $stock['warehouseStock'] ?? 0;
-                                            $product->ginee_last_stock_sync = now();
-                                            $product->save();
-                                        }
-                                        
-                                        // Log the operation
-                                        \App\Models\GineeSyncLog::logSync([
-                                            'sku' => $product->sku,
-                                            'product_name' => $item['name'] ?? 'Unknown',
-                                            'status' => $dryRun ? 'skipped' : 'success',
-                                            'old_stock' => $oldStock,
-                                            'new_stock' => $availableStock,
-                                            'message' => $dryRun ? "Dry run - would update from {$oldStock} to {$availableStock}" : "Updated from {$oldStock} to {$availableStock}",
-                                            'dry_run' => $dryRun,
-                                            'session_id' => $sessionId,
-                                        ]);
-                                        
-                                        $successCount++;
-                                        break 2;
-                                    }
-                                }
-                            }
-                        } else {
-                            $failCount++;
-                        }
-                        
-                        usleep(200000); // 0.2 second delay
-                    }
-                    
-                    $mode = $dryRun ? 'DRY RUN - ' : '';
-                    Notification::make()
-                        ->title("✅ {$mode}Stock Sync Completed!")
-                        ->body("Success: {$successCount}, Failed: {$failCount}. Check Ginee Sync Logs for details.")
-                        ->success()
-                        ->duration(10000)
-                        ->send();
+        }),
 
-                } catch (Exception $e) {
-                    Notification::make()
-                        ->title('❌ Stock Sync Error')
-                        ->body('Error: ' . $e->getMessage())
-                        ->danger()
-                        ->send();
-                }
-            }),
-            
-        // 📤 PUSH STOCK TO GINEE
-        Tables\Actions\Action::make('push_stock_to_ginee')
-            ->label('📤 Push to Ginee')
-            ->icon('heroicon-o-arrow-up-circle')
-            ->color('warning')
-            ->requiresConfirmation()
-            ->modalHeading('Push Local Stock to Ginee')
-            ->modalDescription('This will update Ginee stock with your local stock quantities. All operations will be logged.')
-            ->form([
-                Forms\Components\Placeholder::make('push_info')
-                    ->label('📤 Stock Push Information')
-                    ->content('This will send your local stock quantities to Ginee using direct GineeClient updateStock method.'),
-                Forms\Components\Toggle::make('dry_run')
-                    ->label('Dry Run (Preview Only)')
-                    ->default(false),
-                Forms\Components\Toggle::make('force_update')
-                    ->label('Force Update All Products')
-                    ->default(false),
-                Forms\Components\TextInput::make('batch_size')
-                    ->label('Batch Size')
-                    ->numeric()
-                    ->default(10),
-            ])
-            ->action(function (array $data) {
-                try {
-                    $dryRun = $data['dry_run'] ?? false;
-                    $forceUpdate = $data['force_update'] ?? false;
-                    $batchSize = $data['batch_size'] ?? 10;
-                    $sessionId = \App\Models\GineeSyncLog::generateSessionId();
-                    
-                    $query = \App\Models\Product::whereNotNull('sku')->where('sku', '!=', '');
-                    
-                    if (!$forceUpdate) {
-                        $query->where('updated_at', '>', now()->subHours(24));
-                    }
-                    
-                    $products = $query->limit($batchSize)->get();
-                    
-                    if ($products->isEmpty()) {
-                        Notification::make()
-                            ->title('ℹ️ No Products to Push')
-                            ->body('No products found that need stock updates.')
-                            ->info()
-                            ->send();
-                        return;
-                    }
-                    
-                    if ($dryRun) {
-                        foreach ($products as $product) {
-                            \App\Models\GineeSyncLog::logPush([
-                                'sku' => $product->sku,
-                                'product_name' => $product->name ?? 'Unknown',
-                                'status' => 'skipped',
-                                'old_stock' => $product->stock_quantity,
-                                'new_stock' => $product->stock_quantity,
-                                'message' => 'Dry run - no actual push performed',
-                                'dry_run' => true,
-                                'session_id' => $sessionId,
-                            ]);
-                        }
+    // 📥 SYNC STOCK FROM GINEE - Enhanced
+    Tables\Actions\Action::make('sync_stock_from_ginee')
+        ->label('📥 Sync from Ginee')
+        ->icon('heroicon-o-arrow-down-circle')
+        ->color('info')
+        ->requiresConfirmation()
+        ->modalHeading('Sync Stock from Ginee to Local Database')
+        ->modalDescription('This will update local stock quantities with current stock from Ginee. All operations will be logged.')
+        ->form([
+            Forms\Components\Section::make('Sync Information')
+                ->schema([
+                    Forms\Components\Placeholder::make('sync_info')
+                        ->content('This will fetch current stock from Ginee Master Products API (READ-ONLY) and update your local database. Only products with Ginee mappings will be processed.'),
+                ]),
+                
+            Forms\Components\Section::make('Options')
+                ->schema([
+                    Forms\Components\Toggle::make('dry_run')
+                        ->label('🧪 Dry Run (Preview Only)')
+                        ->default(true)
+                        ->helperText('Enable to preview changes without updating database'),
                         
-                        Notification::make()
-                            ->title('🧪 DRY RUN - Operations Logged')
-                            ->body("Preview logged for {$products->count()} products. Check Ginee Sync Logs.")
-                            ->info()
-                            ->send();
-                        return;
-                    }
+                    Forms\Components\Toggle::make('only_mapped')
+                        ->label('📋 Only Mapped Products')
+                        ->default(true)
+                        ->helperText('Sync only products that have Ginee mappings'),
+                        
+                    Forms\Components\TextInput::make('batch_size')
+                        ->label('Batch Size')
+                        ->numeric()
+                        ->default(20)
+                        ->minValue(1)
+                        ->maxValue(100)
+                        ->helperText('Number of products to process per batch'),
+                ]),
+        ])
+        ->action(function (array $data) {
+            try {
+                $dryRun = $data['dry_run'] ?? true;
+                $onlyMapped = $data['only_mapped'] ?? true;
+                $batchSize = $data['batch_size'] ?? 20;
+                
+                $syncService = new \App\Services\GineeStockSyncService();
+                
+                $result = $syncService->syncStockFromGinee([
+                    'dry_run' => $dryRun,
+                    'only_active' => $onlyMapped,
+                    'batch_size' => $batchSize
+                ]);
+                
+                if ($result['success']) {
+                    $data_result = $result['data'];
                     
-                    $successCount = 0;
-                    $failCount = 0;
-                    $ginee = new \App\Services\GineeClient();
-                    
-                    foreach ($products->chunk(5) as $batch) {
-                        $stockUpdates = [];
-                        
-                        foreach ($batch as $product) {
-                            $stockUpdates[] = [
-                                'masterSku' => $product->sku,
-                                'quantity' => $product->stock_quantity ?? 0
-                            ];
-                        }
-                        
-                        $result = $ginee->updateStock($stockUpdates);
-                        
-                        if (($result['code'] ?? null) === 'SUCCESS') {
-                            $successCount += count($batch);
-                            
-                            foreach ($batch as $product) {
-                                \App\Models\GineeSyncLog::logPush([
-                                    'sku' => $product->sku,
-                                    'product_name' => $product->name ?? 'Unknown',
-                                    'status' => 'success',
-                                    'old_stock' => $product->stock_quantity,
-                                    'new_stock' => $product->stock_quantity,
-                                    'message' => 'Successfully pushed to Ginee',
-                                    'ginee_response' => $result,
-                                    'dry_run' => false,
-                                    'session_id' => $sessionId,
-                                ]);
-                                
-                                if (\Illuminate\Support\Facades\Schema::hasColumn('products', 'ginee_last_stock_push')) {
-                                    $product->ginee_last_stock_push = now();
-                                    $product->save();
-                                }
-                            }
-                        } else {
-                            $failCount += count($batch);
-                            
-                            foreach ($batch as $product) {
-                                \App\Models\GineeSyncLog::logPush([
-                                    'sku' => $product->sku,
-                                    'product_name' => $product->name ?? 'Unknown',
-                                    'status' => 'failed',
-                                    'old_stock' => $product->stock_quantity,
-                                    'message' => 'Failed to push: ' . ($result['message'] ?? 'Unknown error'),
-                                    'ginee_response' => $result,
-                                    'dry_run' => false,
-                                    'session_id' => $sessionId,
-                                ]);
-                            }
-                        }
-                        
-                        usleep(500000); // 0.5 second delay
-                    }
+                    $message = ($dryRun ? '🧪 DRY RUN - ' : '') . "Sync completed!\n\n";
+                    $message .= "✅ Successful: {$data_result['successful_updates']}\n";
+                    $message .= "❌ Failed: {$data_result['failed_updates']}\n";
+                    $message .= "📊 Total Processed: {$data_result['total_processed']}\n";
+                    $message .= "🔍 Not Found: {$data_result['not_found_in_ginee']}";
                     
                     Notification::make()
-                        ->title('✅ Stock Push Completed!')
-                        ->body("Success: {$successCount}, Failed: {$failCount}. Check Ginee Sync Logs for details.")
+                        ->title($dryRun ? '🧪 Sync Preview Completed' : '✅ Sync Completed')
+                        ->body($message)
                         ->success()
+                        ->duration(15000)
                         ->send();
-
-                } catch (Exception $e) {
-                    Notification::make()
-                        ->title('❌ Stock Push Error')
-                        ->body('Error: ' . $e->getMessage())
-                        ->danger()
-                        ->send();
+                } else {
+                    throw new \Exception($result['message']);
                 }
-            }),
-            
-        // 📋 VIEW GINEE LOGS
-        Tables\Actions\Action::make('view_ginee_logs')
-            ->label('📋 View Sync Logs')
-            ->icon('heroicon-o-document-text')
-            ->color('gray')
-            ->url('/admin/ginee-sync-logs')
-            ->openUrlInNewTab(),
-            
-    ])->label('🔄 Ginee Sync')
-      ->icon('heroicon-o-arrow-path-rounded-square')
-      ->color('warning')
-      ->button(),
+
+            } catch (\Exception $e) {
+                Notification::make()
+                    ->title('❌ Stock Sync Error')
+                    ->body('Error: ' . $e->getMessage())
+                    ->danger()
+                    ->send();
+            }
+        }),
+        
+    // 📤 PUSH STOCK TO GINEE - Enhanced
+    Tables\Actions\Action::make('push_stock_to_ginee')
+        ->label('📤 Push to Ginee')
+        ->icon('heroicon-o-arrow-up-circle')
+        ->color('warning')
+        ->requiresConfirmation()
+        ->modalHeading('Push Local Stock to Ginee')
+        ->modalDescription('This will update Ginee stock with your local stock quantities. All operations will be logged.')
+        ->form([
+            Forms\Components\Section::make('Push Information')
+                ->schema([
+                    Forms\Components\Placeholder::make('push_info')
+                        ->content('This will send your local stock quantities to Ginee. Only products with Ginee mappings and enabled sync will be processed.'),
+                ]),
+                
+            Forms\Components\Section::make('Options')
+                ->schema([
+                    Forms\Components\Toggle::make('dry_run')
+                        ->label('🧪 Dry Run (Preview Only)')
+                        ->default(true)
+                        ->helperText('Enable to preview changes without updating Ginee'),
+                        
+                    Forms\Components\Toggle::make('force_update')
+                        ->label('🔄 Force Update All Products')
+                        ->default(false)
+                        ->helperText('Push all products regardless of last sync time'),
+                        
+                    Forms\Components\TextInput::make('batch_size')
+                        ->label('Batch Size')
+                        ->numeric()
+                        ->default(10)
+                        ->minValue(1)
+                        ->maxValue(50)
+                        ->helperText('Number of products to process per batch'),
+                ]),
+        ])
+        ->action(function (array $data) {
+            try {
+                $dryRun = $data['dry_run'] ?? true;
+                $forceUpdate = $data['force_update'] ?? false;
+                $batchSize = $data['batch_size'] ?? 10;
+                
+                // Get products to push
+                $query = \App\Models\Product::whereHas('gineeMappings', function($q) {
+                    $q->where('sync_enabled', true)->where('stock_sync_enabled', true);
+                });
+                
+                if (!$forceUpdate) {
+                    $query->where('updated_at', '>', now()->subHours(24));
+                }
+                
+                $products = $query->limit($batchSize)->get();
+                
+                if ($products->isEmpty()) {
+                    Notification::make()
+                        ->title('ℹ️ No Products to Push')
+                        ->body('No products found that need stock updates. Try enabling "Force Update" option.')
+                        ->info()
+                        ->send();
+                    return;
+                }
+                
+                $syncService = new \App\Services\GineeStockSyncService();
+                $skus = $products->pluck('sku')->toArray();
+                
+                $result = $syncService->pushMultipleSkusIndividually($skus, [
+                    'dry_run' => $dryRun,
+                    'batch_size' => min($batchSize, 20),
+                    'force_update' => $forceUpdate
+                ]);
+                
+                if ($result['success']) {
+                    $data_result = $result['data'];
+                    
+                    $message = ($dryRun ? '🧪 DRY RUN - ' : '') . "Push completed!\n\n";
+                    $message .= "✅ Successful: {$data_result['successful']}\n";
+                    $message .= "❌ Failed: {$data_result['failed']}\n";
+                    $message .= "⏭️ Skipped: {$data_result['skipped']}\n";
+                    $message .= "📊 Total Requested: {$data_result['total_requested']}";
+                    
+                    Notification::make()
+                        ->title($dryRun ? '🧪 Push Preview Completed' : '✅ Push Completed')
+                        ->body($message)
+                        ->success()
+                        ->duration(15000)
+                        ->send();
+                } else {
+                    throw new \Exception('Push operation failed');
+                }
+
+            } catch (\Exception $e) {
+                Notification::make()
+                    ->title('❌ Stock Push Error')
+                    ->body('Error: ' . $e->getMessage())
+                    ->danger()
+                    ->send();
+            }
+        }),
+        
+    // 🔄 BIDIRECTIONAL SYNC
+    Tables\Actions\Action::make('bidirectional_sync')
+        ->label('🔄 Bidirectional Sync')
+        ->icon('heroicon-o-arrow-path')
+        ->color('success')
+        ->requiresConfirmation()
+        ->modalHeading('Bidirectional Stock Synchronization')
+        ->modalDescription('This will first sync FROM Ginee, then push any local changes TO Ginee.')
+        ->form([
+            Forms\Components\Section::make('Sync Information')
+                ->schema([
+                    Forms\Components\Placeholder::make('bidirectional_info')
+                        ->content('This performs a two-phase sync:
+                        
+1. 📥 First, sync latest stock FROM Ginee to local database
+2. ⏳ Wait 2 seconds for API rate limiting  
+3. 📤 Then, push any local changes TO Ginee
+
+This ensures both systems are fully synchronized.'),
+                ]),
+                
+            Forms\Components\Section::make('Options')
+                ->schema([
+                    Forms\Components\Toggle::make('dry_run')
+                        ->label('🧪 Dry Run (Preview Only)')
+                        ->default(true)
+                        ->helperText('Enable to preview changes without making actual updates'),
+                        
+                    Forms\Components\TextInput::make('batch_size')
+                        ->label('Batch Size')
+                        ->numeric()
+                        ->default(15)
+                        ->minValue(1)
+                        ->maxValue(30)
+                        ->helperText('Smaller batches recommended for bidirectional sync'),
+                ]),
+        ])
+        ->action(function (array $data) {
+            try {
+                $dryRun = $data['dry_run'] ?? true;
+                $batchSize = $data['batch_size'] ?? 15;
+                
+                // Get mapped products
+                $products = \App\Models\Product::whereHas('gineeMappings', function($q) {
+                    $q->where('sync_enabled', true)->where('stock_sync_enabled', true);
+                })->limit($batchSize)->get();
+                
+                if ($products->isEmpty()) {
+                    Notification::make()
+                        ->title('ℹ️ No Products Found')
+                        ->body('No products with enabled Ginee mappings found for sync.')
+                        ->info()
+                        ->send();
+                    return;
+                }
+                
+                $syncService = new \App\Services\GineeStockSyncService();
+                $skus = $products->pluck('sku')->toArray();
+                
+                $result = $syncService->bidirectionalSyncMultipleSkus($skus, [
+                    'dry_run' => $dryRun,
+                    'batch_size' => $batchSize
+                ]);
+                
+                if ($result['success']) {
+                    $data_result = $result['data'];
+                    $summary = $data_result['summary'];
+                    
+                    $message = ($dryRun ? '🧪 PREVIEW - ' : '') . "Bidirectional sync completed!\n\n";
+                    $message .= "📥 FROM Ginee:\n";
+                    $message .= "  ✅ Successful: {$summary['sync_successful']}\n";
+                    $message .= "  ❌ Failed: {$summary['sync_failed']}\n\n";
+                    $message .= "📤 TO Ginee:\n";
+                    $message .= "  ✅ Successful: {$summary['push_successful']}\n";
+                    $message .= "  ❌ Failed: {$summary['push_failed']}\n";
+                    $message .= "  ⏭️ Skipped: {$summary['push_skipped']}";
+                    
+                    Notification::make()
+                        ->title($dryRun ? '🧪 Bidirectional Preview' : '✅ Bidirectional Sync Completed')
+                        ->body($message)
+                        ->success()
+                        ->duration(20000)
+                        ->send();
+                } else {
+                    throw new \Exception('Bidirectional sync failed');
+                }
+
+            } catch (\Exception $e) {
+                Notification::make()
+                    ->title('❌ Bidirectional Sync Error')
+                    ->body('Error: ' . $e->getMessage())
+                    ->danger()
+                    ->send();
+            }
+        }),
+        
+    // 📋 VIEW GINEE LOGS
+    Tables\Actions\Action::make('view_ginee_logs')
+        ->label('📋 View Sync Logs')
+        ->icon('heroicon-o-document-text')
+        ->color('gray')
+        ->url('/admin/ginee-sync-logs')
+        ->openUrlInNewTab(),
+        
+])->label('🔄 Ginee Sync')
+  ->icon('heroicon-o-arrow-path-rounded-square')
+  ->color('warning')
+  ->button(),
     
     // 🚀 WORKFLOWS GROUP
     Tables\Actions\ActionGroup::make([
@@ -1805,193 +1778,344 @@ class ProductResource extends Resource
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close'),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->requiresConfirmation()
-                        ->modalHeading('Delete Selected Products')
-                        ->modalDescription('Are you sure you want to delete these products? This action cannot be undone.')
-                        ->color('danger'),
-                    
-                    Tables\Actions\BulkAction::make('toggle_featured')
-                        ->label('Toggle Featured')
-                        ->icon('heroicon-m-star')
-                        ->color('warning')
-                        ->action(function ($records) {
-                            foreach ($records as $record) {
-                                $record->update(['is_featured' => !$record->is_featured]);
-                            }
+           ->bulkActions([
+    Tables\Actions\BulkActionGroup::make([
+        // === GINEE INDIVIDUAL SYNC ACTIONS ===
+        
+        // 📥 Sync Selected Products FROM Ginee
+        Tables\Actions\BulkAction::make('sync_from_ginee_individual')
+            ->label('📥 Sync FROM Ginee (Selected)')
+            ->icon('heroicon-o-arrow-down-circle')
+            ->color('info')
+            ->requiresConfirmation()
+            ->modalHeading('Sync Selected Products FROM Ginee')
+            ->modalDescription(function ($records) {
+                $count = $records->count();
+                // Fix: Handle null relationships safely
+                $mappedCount = $records->filter(function($r) {
+                    return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                })->count();
+                $skus = $records->pluck('sku')->take(5)->join(', ');
+                $more = $records->count() > 5 ? ' and ' . ($records->count() - 5) . ' more...' : '';
+                
+                return "This will fetch stock data from Ginee for {$count} selected products ({$mappedCount} mapped): {$skus}{$more}";
+            })
+            ->form([
+                Forms\Components\Section::make('Sync Options')
+                    ->schema([
+                        Forms\Components\Toggle::make('dry_run')
+                            ->label('🧪 Dry Run (Preview Only)')
+                            ->default(true)
+                            ->helperText('Enable to preview changes without updating database'),
                             
-                            Notification::make()
-                                ->title('✅ Featured Status Updated')
-                                ->body('Featured status has been toggled for selected products')
-                                ->success()
-                                ->send();
-                        }),
-
-                    Tables\Actions\BulkAction::make('toggle_active')
-                        ->label('Toggle Active')
-                        ->icon('heroicon-m-eye')
-                        ->color('info')
-                        ->action(function ($records) {
-                            foreach ($records as $record) {
-                                $record->update(['is_active' => !$record->is_active]);
-                            }
+                        Forms\Components\Toggle::make('only_mapped')
+                            ->label('📋 Only Mapped Products')
+                            ->default(true)
+                            ->helperText('Sync only products that have Ginee mappings'),
                             
-                            Notification::make()
-                                ->title('✅ Active Status Updated')
-                                ->body('Active status has been toggled for selected products')
-                                ->success()
-                                ->send();
-                        }),
-
-                    // ⭐ NEW: Bulk Update Gender Target
-                    Tables\Actions\BulkAction::make('update_gender')
-                        ->label('Update Gender Target')
-                        ->icon('heroicon-m-users')
-                        ->color('warning')
-                        ->form([
-                            Forms\Components\CheckboxList::make('gender_target')
-                                ->label('Gender Target (from Excel category column)')
-                                ->options([
-                                    'mens' => '👨 Men\'s',
-                                    'womens' => '👩 Women\'s',
-                                    'kids' => '👶 Kids',
-                                    'unisex' => '🌐 Unisex',
-                                ])
-                                ->required()
-                                ->helperText('Select the target gender(s) for selected products'),
-                        ])
-                        ->action(function ($records, array $data) {
-                            foreach ($records as $record) {
-                                $record->update(['gender_target' => $data['gender_target']]);
-                            }
-                            
-                            $genderLabels = [];
-                            foreach ($data['gender_target'] as $gender) {
-                                $genderLabels[] = match($gender) {
-                                    'mens' => "Men's",
-                                    'womens' => "Women's", 
-                                    'kids' => 'Kids',
-                                    'unisex' => 'Unisex',
-                                    default => $gender
-                                };
-                            }
-                            
-                            Notification::make()
-                                ->title('✅ Gender Target Updated')
-                                ->body("Gender updated to '" . implode(', ', $genderLabels) . "' for " . count($records) . " products")
-                                ->success()
-                                ->send();
-                        }),
-
-                    // ⭐ NEW: Bulk Update Product Type
-                    Tables\Actions\BulkAction::make('update_product_type')
-                        ->label('Update Product Type')
-                        ->icon('heroicon-m-tag')
-                        ->color('info')
-                        ->form([
-                            Forms\Components\Select::make('product_type')
-                                ->label('Product Type')
-                                ->options([
-                                    // ⭐ UPDATED: All supported product types
-                                    'running' => '🏃 Running',
-                                    'basketball' => '🏀 Basketball',
-                                    'tennis' => '🎾 Tennis',
-                                    'badminton' => '🏸 Badminton',
-                                    'lifestyle_casual' => '🚶 Lifestyle/Casual',
-                                    'sneakers' => '👟 Sneakers',
-                                    'training' => '💪 Training',
-                                    'formal' => '👔 Formal',
-                                    'sandals' => '🩴 Sandals',
-                                    'boots' => '🥾 Boots',
-                                    'apparel' => '👕 Apparel',
-                                    'caps' => '🧢 Caps & Hats',
-                                    'bags' => '👜 Bags',
-                                    'accessories' => '🎒 Accessories',
-                                ])
-                                ->required()
-                                ->helperText('Select the product type for selected products'),
-                        ])
-                        ->action(function ($records, array $data) {
-                            foreach ($records as $record) {
-                                $record->update(['product_type' => $data['product_type']]);
-                            }
-                            
-                            $typeLabel = match($data['product_type']) {
-                                'running' => 'Running',
-                                'basketball' => 'Basketball',
-                                'tennis' => 'Tennis',
-                                'badminton' => 'Badminton',
-                                'lifestyle_casual' => 'Lifestyle/Casual',
-                                'sneakers' => 'Sneakers',
-                                'training' => 'Training',
-                                'formal' => 'Formal',
-                                'sandals' => 'Sandals',
-                                'boots' => 'Boots',
-                                'apparel' => 'Apparel',
-                                'caps' => 'Caps & Hats',
-                                'bags' => 'Bags',
-                                'accessories' => 'Accessories',
-                                default => $data['product_type']
-                            };
-                            
-                            Notification::make()
-                                ->title('✅ Product Type Updated')
-                                ->body("Product type updated to '{$typeLabel}' for " . count($records) . " products")
-                                ->success()
-                                ->send();
-                        }),
-
-                    // ⭐ NEW: Bulk Fix Gender from Names
-                    Tables\Actions\BulkAction::make('fix_gender_from_names')
-                        ->label('Auto-Fix Gender from Names')
-                        ->icon('heroicon-m-wrench-screwdriver')
-                        ->color('info')
-                        ->requiresConfirmation()
-                        ->modalHeading('Auto-Fix Gender from Product Names')
-                        ->modalDescription('This will automatically detect and set gender target based on keywords in product names (Pria → Men\'s, Wanita → Women\'s)')
-                        ->action(function ($records) {
-                            $fixedCount = 0;
-                            
-                            foreach ($records as $record) {
-                                $name = strtolower($record->name);
-                                $detectedGender = [];
-                                
-                                if (str_contains($name, 'pria') || str_contains($name, ' men ') || str_contains($name, 'male')) {
-                                    $detectedGender[] = 'mens';
-                                }
-                                if (str_contains($name, 'wanita') || str_contains($name, 'women') || str_contains($name, 'female')) {
-                                    $detectedGender[] = 'womens';
-                                }
-                                if (str_contains($name, 'anak') || str_contains($name, 'kids') || str_contains($name, 'child')) {
-                                    $detectedGender[] = 'kids';
-                                }
-                                
-                                if (!empty($detectedGender)) {
-                                    if (count($detectedGender) > 1) {
-                                        $detectedGender = ['unisex'];
-                                    }
-                                    
-                                    $record->update(['gender_target' => $detectedGender]);
-                                    $fixedCount++;
-                                }
-                            }
-                            
-                            Notification::make()
-                                ->title('✅ Gender Auto-Fix Complete')
-                                ->body("Successfully auto-fixed gender for {$fixedCount} out of " . count($records) . " selected products")
-                                ->success()
-                                ->send();
-                        }),
-                ]),
+                        Forms\Components\TextInput::make('batch_size')
+                            ->label('Batch Size')
+                            ->numeric()
+                            ->default(20)
+                            ->minValue(1)
+                            ->maxValue(50)
+                            ->helperText('Number of products to process per batch'),
+                    ]),
             ])
-            ->defaultSort('created_at', 'desc')
-            ->poll('60s')
-            ->striped()
-            ->paginated([10, 25, 50, 100]);
-    }
+            ->action(function (Collection $records, array $data) {
+                try {
+                    $syncService = new \App\Services\GineeStockSyncService();
+                    $onlyMapped = $data['only_mapped'] ?? true;
+                    
+                    // Filter records safely, handle null relationships
+                    if ($onlyMapped) {
+                        $records = $records->filter(function($r) {
+                            return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                        });
+                    }
+                    
+                    $skus = $records->pluck('sku')->filter()->toArray(); // filter out nulls
+                    
+                    if (empty($skus)) {
+                        Notification::make()
+                            ->title('ℹ️ No Products to Sync')
+                            ->body('No products found with Ginee mappings.')
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    $result = $syncService->syncMultipleSkusIndividually($skus, [
+                        'dry_run' => $data['dry_run'] ?? true,
+                        'batch_size' => $data['batch_size'] ?? 20
+                    ]);
+                    
+                    if ($result['success']) {
+                        $data_result = $result['data'];
+                        
+                        $message = ($data['dry_run'] ? '🧪 DRY RUN - ' : '') . "Sync completed!\n\n";
+                        $message .= "✅ Successful: {$data_result['successful']}\n";
+                        $message .= "❌ Failed: {$data_result['failed']}\n";
+                        $message .= "🔍 Not Found: {$data_result['not_found']}\n";
+                        $message .= "🔗 No Mapping: {$data_result['no_mapping']}\n";
+                        $message .= "📊 Total Processed: {$data_result['total_requested']}";
+                        
+                        if ($data_result['failed'] > 0) {
+                            $message .= "\n\nFirst few errors:\n" . 
+                                       implode("\n", array_slice($data_result['errors'], 0, 3));
+                        }
+                        
+                        $message .= "\n\n🔍 Session ID: {$data_result['session_id']}";
+                        
+                        Notification::make()
+                            ->title($data['dry_run'] ? '🧪 Sync Preview Completed' : '✅ Sync Completed')
+                            ->body($message)
+                            ->success()
+                            ->duration(20000)
+                            ->send();
+                    }
+                        
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Sync Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
 
+        // 📤 Push Selected Products TO Ginee  
+        Tables\Actions\BulkAction::make('push_to_ginee_individual')
+            ->label('📤 Push TO Ginee (Selected)')
+            ->icon('heroicon-o-arrow-up-circle')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Push Selected Products TO Ginee')
+            ->modalDescription(function ($records) {
+                $count = $records->count();
+                // Handle null relationships safely
+                $mappedCount = $records->filter(function($r) {
+                    return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                })->count();
+                $totalStock = $records->sum('stock_quantity');
+                $products = $records->take(3)->map(fn($p) => "{$p->name} ({$p->sku})")->join(', ');
+                $more = $records->count() > 3 ? ' and ' . ($records->count() - 3) . ' more...' : '';
+                
+                return "This will push local stock to Ginee for {$count} products ({$mappedCount} mapped, total stock: {$totalStock}): {$products}{$more}";
+            })
+            ->form([
+                Forms\Components\Section::make('Push Options')
+                    ->schema([
+                        Forms\Components\Toggle::make('dry_run')
+                            ->label('🧪 Dry Run (Preview Only)')
+                            ->default(true)
+                            ->helperText('Enable to preview changes without updating Ginee'),
+                            
+                        Forms\Components\Toggle::make('force_update')
+                            ->label('🔄 Force Update')
+                            ->default(false)
+                            ->helperText('Update even if stock appears to be in sync'),
+                            
+                        Forms\Components\Toggle::make('only_mapped')
+                            ->label('📋 Only Mapped Products')
+                            ->default(true)
+                            ->helperText('Push only products that have Ginee mappings'),
+                            
+                        Forms\Components\TextInput::make('batch_size')
+                            ->label('Batch Size')
+                            ->numeric()
+                            ->default(20)
+                            ->minValue(1)
+                            ->maxValue(50)
+                            ->helperText('Number of products to process per batch'),
+                    ]),
+            ])
+            ->action(function (Collection $records, array $data) {
+                try {
+                    $syncService = new \App\Services\GineeStockSyncService();
+                    $onlyMapped = $data['only_mapped'] ?? true;
+                    
+                    // Filter records safely, handle null relationships
+                    if ($onlyMapped) {
+                        $records = $records->filter(function($r) {
+                            return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                        });
+                    }
+                    
+                    $skus = $records->pluck('sku')->filter()->toArray(); // filter out nulls
+                    
+                    if (empty($skus)) {
+                        Notification::make()
+                            ->title('ℹ️ No Products to Push')
+                            ->body('No products found with Ginee mappings.')
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    $result = $syncService->pushMultipleSkusIndividually($skus, [
+                        'dry_run' => $data['dry_run'] ?? true,
+                        'batch_size' => $data['batch_size'] ?? 20,
+                        'force_update' => $data['force_update'] ?? false
+                    ]);
+                    
+                    if ($result['success']) {
+                        $data_result = $result['data'];
+                        
+                        $message = ($data['dry_run'] ? '🧪 DRY RUN - ' : '') . "Push completed!\n\n";
+                        $message .= "✅ Successful: {$data_result['successful']}\n";
+                        $message .= "❌ Failed: {$data_result['failed']}\n";
+                        $message .= "⏭️ Skipped: {$data_result['skipped']}\n";
+                        $message .= "🔍 Not Found: {$data_result['not_found']}\n";
+                        $message .= "🔗 No Mapping: {$data_result['no_mapping']}\n";
+                        $message .= "📊 Total Processed: {$data_result['total_requested']}";
+                        
+                        if ($data_result['failed'] > 0) {
+                            $message .= "\n\nFirst few errors:\n" . 
+                                       implode("\n", array_slice($data_result['errors'], 0, 3));
+                        }
+                        
+                        $message .= "\n\n🔍 Session ID: {$data_result['session_id']}";
+                        
+                        Notification::make()
+                            ->title($data['dry_run'] ? '🧪 Push Preview Completed' : '✅ Push Completed')
+                            ->body($message)
+                            ->success()
+                            ->duration(20000)
+                            ->send();
+                    }
+                        
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Push Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+        // 🔄 Bidirectional Sync (Both directions)
+        Tables\Actions\BulkAction::make('bidirectional_sync_individual')
+            ->label('🔄 Bidirectional Sync (Selected)')
+            ->icon('heroicon-o-arrow-path')
+            ->color('success')
+            ->requiresConfirmation()
+            ->modalHeading('Bidirectional Sync for Selected Products')
+            ->modalDescription(function ($records) {
+                $count = $records->count();
+                // Handle null relationships safely
+                $mappedCount = $records->filter(function($r) {
+                    return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                })->count();
+                return "This will first sync FROM Ginee, then push any local changes TO Ginee for {$count} products ({$mappedCount} mapped).";
+            })
+            ->form([
+                Forms\Components\Section::make('Bidirectional Sync Options')
+                    ->schema([
+                        Forms\Components\Toggle::make('dry_run')
+                            ->label('🧪 Dry Run (Preview Only)')
+                            ->default(true)
+                            ->helperText('Enable to preview changes without updating anything'),
+                            
+                        Forms\Components\Toggle::make('only_mapped')
+                            ->label('📋 Only Mapped Products')
+                            ->default(true)
+                            ->helperText('Sync only products that have Ginee mappings'),
+                            
+                        Forms\Components\TextInput::make('batch_size')
+                            ->label('Batch Size')
+                            ->numeric()
+                            ->default(15)
+                            ->minValue(1)
+                            ->maxValue(30)
+                            ->helperText('Smaller batches recommended for bidirectional sync'),
+                    ]),
+                    
+                Forms\Components\Section::make('Process Information')
+                    ->schema([
+                        Forms\Components\Placeholder::make('process_info')
+                            ->content('🔄 Bidirectional sync process:
+
+1. 📥 Sync all selected products FROM Ginee
+2. ⏳ Wait 2 seconds for API rate limiting  
+3. 📤 Push all selected products TO Ginee
+
+This ensures maximum data accuracy between both systems.')
+                    ])
+                    ->collapsed()
+                    ->collapsible(),
+            ])
+            ->action(function (Collection $records, array $data) {
+                try {
+                    $syncService = new \App\Services\GineeStockSyncService();
+                    $onlyMapped = $data['only_mapped'] ?? true;
+                    
+                    // Filter records safely, handle null relationships
+                    if ($onlyMapped) {
+                        $records = $records->filter(function($r) {
+                            return $r->gineeMappings && $r->gineeMappings->isNotEmpty();
+                        });
+                    }
+                    
+                    $skus = $records->pluck('sku')->filter()->toArray(); // filter out nulls
+                    
+                    if (empty($skus)) {
+                        Notification::make()
+                            ->title('ℹ️ No Products to Sync')
+                            ->body('No products found with Ginee mappings.')
+                            ->info()
+                            ->send();
+                        return;
+                    }
+                    
+                    $result = $syncService->bidirectionalSyncMultipleSkus($skus, [
+                        'dry_run' => $data['dry_run'] ?? true,
+                        'batch_size' => $data['batch_size'] ?? 15
+                    ]);
+                    
+                    if ($result['success']) {
+                        $data_result = $result['data'];
+                        $summary = $data_result['summary'];
+                        
+                        $message = ($data['dry_run'] ? '🧪 PREVIEW - ' : '') . "Bidirectional sync completed!\n\n";
+                        $message .= "📥 FROM Ginee Phase:\n";
+                        $message .= "  ✅ Successful: {$summary['sync_successful']}\n";
+                        $message .= "  ❌ Failed: {$summary['sync_failed']}\n\n";
+                        $message .= "📤 TO Ginee Phase:\n";
+                        $message .= "  ✅ Successful: {$summary['push_successful']}\n";
+                        $message .= "  ❌ Failed: {$summary['push_failed']}\n";
+                        $message .= "  ⏭️ Skipped: {$summary['push_skipped']}\n";
+                        $message .= "📊 Total Requested: {$summary['total_requested']}";
+                        
+                        $message .= "\n\n🔍 Session ID: {$data_result['session_id']}";
+                        
+                        Notification::make()
+                            ->title($data['dry_run'] ? '🧪 Bidirectional Preview' : '✅ Bidirectional Sync Completed')
+                            ->body($message)
+                            ->success()
+                            ->duration(25000)
+                            ->send();
+                    }
+                        
+                } catch (Exception $e) {
+                    Notification::make()
+                        ->title('❌ Bidirectional Sync Failed')
+                        ->body('Error: ' . $e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            }),
+
+    // Standard delete action
+    Tables\Actions\DeleteBulkAction::make()
+        ->requiresConfirmation()
+        ->modalHeading('Delete Selected Products')
+        ->modalDescription('Are you sure you want to delete these products? This action cannot be undone.')
+        ->color('danger'),
+]),  // <- This was missing the closing bracket and parenthesis
+            ])  // <- This closes the entire bulkActions method
+            ->defaultSort('created_at', 'desc');  // <- Add this if you want default sorting
+    }
     public static function getPages(): array
     {
         return [

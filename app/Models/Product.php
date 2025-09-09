@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
@@ -1128,5 +1129,9 @@ class Product extends Model
         }
         
         return $array;
+    }
+        public function gineeMappings(): HasMany
+    {
+        return $this->hasMany(GineeProductMapping::class, 'product_id');
     }
 }
