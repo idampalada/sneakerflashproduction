@@ -371,4 +371,49 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             'data' => $stats
         ];
     }
+    public function syncBulkStock(array $skus, bool $dryRun = true, int $batchSize = 50, int $delay = 3, string $sessionId = null): array
+{
+    // Gunakan method optimized yang sudah ada
+    return $this->syncMultipleSkusOptimized($skus, [
+        'dry_run' => $dryRun,
+        'chunk_size' => $batchSize
+    ]);
+}
+
+/**
+ * Update local product stock - method yang dipanggil dari syncMultipleSkusOptimized
+ */
+protected function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false): bool
+{
+    try {
+        $product = \App\Models\Product::where('sku', $sku)->first();
+        
+        if (!$product) {
+            Log::warning("Product not found locally: {$sku}");
+            return false;
+        }
+
+        $oldStock = $product->stock_quantity ?? 0;
+        $newStock = $stockData['available_stock'] ?? $stockData['total_stock'] ?? 0;
+
+        if ($dryRun) {
+            Log::info("DRY RUN - Would update {$sku}: {$oldStock} → {$newStock}");
+            return true;
+        }
+
+        // Live update
+        $updated = $product->update([
+            'stock_quantity' => $newStock,
+            'warehouse_stock' => $stockData['warehouse_stock'] ?? $newStock,
+            'ginee_last_sync' => now()
+        ]);
+
+        Log::info("Updated {$sku}: {$oldStock} → {$newStock}");
+        return $updated;
+
+    } catch (\Exception $e) {
+        Log::error("Failed to update {$sku}: " . $e->getMessage());
+        return false;
+    }
+}
 }

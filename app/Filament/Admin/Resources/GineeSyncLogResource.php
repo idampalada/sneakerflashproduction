@@ -3,7 +3,7 @@
 namespace App\Filament\Admin\Resources;
 
 use App\Filament\Admin\Resources\GineeSyncLogResource\Pages;
-use App\Filament\Admin\Resources\GineeSyncLogResource\Widgets;
+use App\Filament\Admin\Resources\GineeSyncLogResource\RelationManagers;
 use App\Models\GineeSyncLog;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -12,18 +12,21 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Support\Enums\MaxWidth;
 
 class GineeSyncLogResource extends Resource
 {
     protected static ?string $model = GineeSyncLog::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-clock';
-    
+    protected static ?string $navigationIcon = 'heroicon-o-document-text';
+
     protected static ?string $navigationLabel = 'Ginee Sync Logs';
-    
-    protected static ?string $modelLabel = 'Ginee Sync Log';
-    
-    protected static ?string $pluralModelLabel = 'Ginee Sync Logs';
+
+    protected static ?string $modelLabel = 'Sync Log';
+
+    protected static ?string $pluralModelLabel = 'Sync Logs';
+
+    protected static ?string $navigationGroup = 'Ginee Management';
 
     protected static ?int $navigationSort = 2;
 
@@ -31,40 +34,91 @@ class GineeSyncLogResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('sku')
-                    ->label('SKU')
-                    ->disabled(),
-                Forms\Components\TextInput::make('product_name')
-                    ->label('Product Name')
-                    ->disabled(),
-                Forms\Components\Select::make('operation_type')
-                    ->label('Operation')
-                    ->options([
-                        'sync' => '📥 Sync from Ginee',
-                        'push' => '📤 Push to Ginee',
+                Forms\Components\Section::make('Basic Information')
+                    ->schema([
+                        Forms\Components\TextInput::make('sku')
+                            ->label('SKU')
+                            ->required()
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('product_name')
+                            ->label('Product Name')
+                            ->maxLength(255),
+
+                        Forms\Components\Select::make('status')
+                            ->label('Status')
+                            ->options([
+                                'success' => 'Success',
+                                'failed' => 'Failed',
+                                'pending' => 'Pending',
+                            ])
+                            ->required(),
+
+                        Forms\Components\Select::make('operation_type')
+                            ->label('Operation Type')
+                            ->options([
+                                'sync' => 'Sync',
+                                'push' => 'Push',
+                                'both' => 'Both',
+                            ])
+                            ->default('sync'),
+
+                        Forms\Components\Select::make('type')
+                            ->label('Type')
+                            ->options([
+                                'individual_sync' => 'Individual Sync',
+                                'bulk_sync' => 'Bulk Sync',
+                                'bulk_optimized_sync' => 'Bulk Optimized Sync',
+                                'bulk_sync_summary' => 'Bulk Sync Summary',
+                            ])
+                            ->required(),
                     ])
-                    ->disabled(),
-                Forms\Components\Select::make('status')
-                    ->label('Status')
-                    ->options([
-                        'success' => '✅ Success',
-                        'failed' => '❌ Failed',
-                        'skipped' => '⏭️ Skipped',
-                        'completed' => '✅ Completed',
-                        'error' => '❌ Error',
+                    ->columns(2),
+
+                Forms\Components\Section::make('Stock Information')
+                    ->schema([
+                        Forms\Components\TextInput::make('old_stock')
+                            ->label('Old Stock')
+                            ->numeric()
+                            ->default(0),
+
+                        Forms\Components\TextInput::make('new_stock')
+                            ->label('New Stock')
+                            ->numeric()
+                            ->default(0),
+
+                        Forms\Components\TextInput::make('change')
+                            ->label('Change')
+                            ->numeric()
+                            ->default(0)
+                            ->helperText('Auto-calculated: new_stock - old_stock'),
                     ])
-                    ->disabled(),
-                Forms\Components\TextInput::make('old_stock')
-                    ->label('Old Stock')
-                    ->numeric()
-                    ->disabled(),
-                Forms\Components\TextInput::make('new_stock')
-                    ->label('New Stock')
-                    ->numeric()
-                    ->disabled(),
-                Forms\Components\Textarea::make('message')
-                    ->label('Message')
-                    ->disabled(),
+                    ->columns(3),
+
+                Forms\Components\Section::make('Additional Information')
+                    ->schema([
+                        Forms\Components\Toggle::make('dry_run')
+                            ->label('Dry Run')
+                            ->default(false),
+
+                        Forms\Components\TextInput::make('session_id')
+                            ->label('Session ID')
+                            ->maxLength(255),
+
+                        Forms\Components\Textarea::make('message')
+                            ->label('Message')
+                            ->rows(2),
+
+                        Forms\Components\Textarea::make('error_message')
+                            ->label('Error Message')
+                            ->rows(2),
+
+                        Forms\Components\KeyValue::make('metadata')
+                            ->label('Metadata')
+                            ->keyLabel('Key')
+                            ->valueLabel('Value'),
+                    ])
+                    ->columns(2),
             ]);
     }
 
@@ -72,144 +126,420 @@ class GineeSyncLogResource extends Resource
     {
         return $table
             ->columns([
+                // Date Column
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Date')
-                    ->dateTime('Y-m-d H:i:s')
+                    ->date('M d, Y')
                     ->sortable()
-                    ->searchable(),
-                    
-                Tables\Columns\BadgeColumn::make('operation_type')
+                    ->toggleable(),
+
+                // Time Column  
+                Tables\Columns\TextColumn::make('time')
+                    ->label('Time')
+                    ->formatStateUsing(function ($state, $record) {
+                        return $record->created_at->format('H:i:s');
+                    })
+                    ->since()
+                    ->tooltip(function ($record) {
+                        return $record->created_at->format('Y-m-d H:i:s');
+                    })
+                    ->sortable(),
+
+                // Operation Type
+                Tables\Columns\TextColumn::make('operation')
                     ->label('Operation')
-                    ->colors([
-                        'info' => 'sync',
-                        'warning' => 'push',
-                    ])
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'sync' => '📥 Sync',
-                        'push' => '📤 Push',
-                        default => $state,
-                    }),
-                    
+                    ->badge()
+                    ->formatStateUsing(function ($state, $record) {
+                        return $record->dry_run ? 'Dry Run' : 'Live Sync';
+                    })
+                    ->color(function ($record) {
+                        return $record->dry_run ? 'gray' : 'primary';
+                    })
+                    ->icon(function ($record) {
+                        return $record->dry_run ? 'heroicon-o-eye' : 'heroicon-o-bolt';
+                    })
+                    ->sortable(),
+
+                // SKU
                 Tables\Columns\TextColumn::make('sku')
                     ->label('SKU')
                     ->searchable()
-                    ->sortable(),
-                    
+                    ->sortable()
+                    ->copyable()
+                    ->weight('bold')
+                    ->limit(20)
+                    ->color('primary'),
+
+                // Product Name
                 Tables\Columns\TextColumn::make('product_name')
-                    ->label('Product Name')
+                    ->label('Product')
                     ->searchable()
-                    ->limit(30)
-                    ->tooltip(function (Tables\Columns\TextColumn $column): ?string {
-                        $state = $column->getState();
-                        if (strlen($state) <= 30) {
-                            return null;
-                        }
-                        return $state;
-                    }),
-                    
+                    ->limit(25)
+                    ->tooltip(function ($record) {
+                        return $record->product_name ?? 'No product name';
+                    })
+                    ->wrap(),
+
+                // Status with Smart Logic
                 Tables\Columns\BadgeColumn::make('status')
                     ->label('Status')
                     ->colors([
-                        'success' => fn ($state) => in_array($state, ['success', 'completed']),
-                        'danger' => fn ($state) => in_array($state, ['failed', 'error']),
-                        'warning' => 'skipped',
-                        'info' => 'started',
+                        'success' => 'success',
+                        'failed' => 'danger',
+                        'pending' => 'warning',
+                        'skipped' => 'gray',
+                        'would_update' => 'info',
                     ])
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'success', 'completed' => '✅ Success',
-                        'failed', 'error' => '❌ Failed',
-                        'skipped' => '⏭️ Skipped',
-                        'started' => '🔄 Started',
-                        default => ucfirst($state),
-                    }),
-                    
+                    ->icons([
+                        'success' => 'heroicon-o-check-circle',
+                        'failed' => 'heroicon-o-x-circle',
+                        'pending' => 'heroicon-o-clock',
+                        'skipped' => 'heroicon-o-arrow-right-circle',
+                        'would_update' => 'heroicon-o-arrow-up-circle',
+                    ])
+                    ->formatStateUsing(function ($state, $record) {
+                        if ($record->dry_run && $state === 'success') {
+                            $change = $record->change;
+                            if (is_null($change) && !is_null($record->old_stock) && !is_null($record->new_stock)) {
+                                $change = $record->new_stock - $record->old_stock;
+                            }
+                            
+                            return $change == 0 ? 'Skipped' : 'Would Update';
+                        }
+                        return ucfirst($state);
+                    })
+                    ->sortable(),
+
+                // Old Stock
                 Tables\Columns\TextColumn::make('old_stock')
                     ->label('Old Stock')
                     ->numeric()
-                    ->sortable(),
-                    
+                    ->sortable()
+                    ->alignCenter()
+                    ->badge()
+                    ->color('gray')
+                    ->formatStateUsing(function ($state) {
+                        return $state ?? '0';
+                    })
+                    ->tooltip('Stock from local database'),
+
+                // New Stock
                 Tables\Columns\TextColumn::make('new_stock')
                     ->label('New Stock')
                     ->numeric()
-                    ->sortable(),
-                    
-                Tables\Columns\TextColumn::make('stock_change')
-                    ->label('Change')
-                    ->getStateUsing(fn (GineeSyncLog $record): int => 
-                        ($record->new_stock ?? 0) - ($record->old_stock ?? 0)
-                    )
-                    ->color(fn (int $state): string => match (true) {
-                        $state > 0 => 'success',
-                        $state < 0 => 'danger', 
-                        default => 'gray',
+                    ->sortable() 
+                    ->alignCenter()
+                    ->badge()
+                    ->color('info')
+                    ->formatStateUsing(function ($state) {
+                        return $state ?? '0';
                     })
-                    ->formatStateUsing(fn (int $state): string => 
-                        $state > 0 ? "+{$state}" : (string) $state
-                    ),
-                    
+                    ->tooltip('Stock from Ginee API'),
+
+                // Change with Color
+                Tables\Columns\TextColumn::make('change')
+                    ->label('Change')
+                    ->numeric()
+                    ->sortable()
+                    ->alignCenter()
+                    ->badge()
+                    ->formatStateUsing(function ($state, $record) {
+                        if (is_null($state)) {
+                            if (!is_null($record->old_stock) && !is_null($record->new_stock)) {
+                                $state = $record->new_stock - $record->old_stock;
+                            } else {
+                                return 'N/A';
+                            }
+                        }
+                        
+                        if ($state == 0) {
+                            return '0';
+                        }
+                        
+                        $prefix = $state > 0 ? '+' : '';
+                        return "{$prefix}{$state}";
+                    })
+                    ->color(function ($state, $record) {
+                        if (is_null($state)) {
+                            if (!is_null($record->old_stock) && !is_null($record->new_stock)) {
+                                $state = $record->new_stock - $record->old_stock;
+                            }
+                        }
+                        
+                        if ($state > 0) return 'success';
+                        if ($state < 0) return 'danger';
+                        return 'gray';
+                    })
+                    ->icon(function ($state, $record) {
+                        if (is_null($state)) {
+                            if (!is_null($record->old_stock) && !is_null($record->new_stock)) {
+                                $state = $record->new_stock - $record->old_stock;
+                            }
+                        }
+                        
+                        if ($state > 0) return 'heroicon-o-arrow-up';
+                        if ($state < 0) return 'heroicon-o-arrow-down';
+                        return 'heroicon-o-minus';
+                    }),
+
+                // Type
+                Tables\Columns\TextColumn::make('type')
+                    ->label('Type')
+                    ->badge()
+                    ->color('info')
+                    ->formatStateUsing(function ($state) {
+                        return match($state) {
+                            'individual_sync' => 'Individual',
+                            'bulk_sync' => 'Bulk',
+                            'bulk_optimized_sync' => 'Bulk Optimized',
+                            'bulk_sync_summary' => 'Summary',
+                            'bulk_sync_start' => 'Started',
+                            'bulk_sync_completed' => 'Completed',
+                            'bulk_sync_failed' => 'Failed',
+                            default => ucfirst($state),
+                        };
+                    })
+                    ->sortable()
+                    ->toggleable(),
+
+                // Message
                 Tables\Columns\TextColumn::make('message')
                     ->label('Message')
-                    ->limit(50)
-                    ->tooltip(function (Tables\Columns\TextColumn $column): ?string {
-                        $state = $column->getState();
-                        if (strlen($state) <= 50) {
-                            return null;
+                    ->limit(40)
+                    ->tooltip(function ($record) {
+                        return $record->message ?? 'No message';
+                    })
+                    ->formatStateUsing(function ($state, $record) {
+                        if ($record->dry_run) {
+                            $change = $record->change;
+                            if (is_null($change) && !is_null($record->old_stock) && !is_null($record->new_stock)) {
+                                $change = $record->new_stock - $record->old_stock;
+                            }
+                            
+                            if ($change == 0) {
+                                return "Dry run - Already in sync";
+                            } else {
+                                return "Dry run - Would update stock";
+                            }
                         }
-                        return $state;
-                    }),
-                    
-                Tables\Columns\TextColumn::make('session_id')
-                    ->label('Session')
+                        return $state ?? 'No message';
+                    })
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                    
-                Tables\Columns\ToggleColumn::make('dry_run')
-                    ->label('Dry Run')
-                    ->disabled()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->wrap()
+                    ->toggleable(),
+
+                // Session ID for tracking batches
+                Tables\Columns\TextColumn::make('session_id')
+                    ->label('Batch ID')
+                    ->limit(12)
+                    ->fontFamily('mono')
+                    ->size('xs')
+                    ->color('gray')
+                    ->tooltip(function ($record) {
+                        return "Session: {$record->session_id}";
+                    })
+                    ->copyable()
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
+
+                // Error Message (if any)
+                Tables\Columns\TextColumn::make('error_message')
+                    ->label('Error')
+                    ->limit(30)
+                    ->tooltip(function ($record) {
+                        return $record->error_message;
+                    })
+                    ->color('danger')
+                    ->visible(fn ($record) => !empty($record->error_message))
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('operation_type')
-                    ->label('Operation')
-                    ->options([
-                        'sync' => '📥 Sync from Ginee',
-                        'push' => '📤 Push to Ginee',
-                    ]),
-                    
+                // Status Filter
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options([
-                        'success' => '✅ Success',
-                        'completed' => '✅ Completed',
-                        'failed' => '❌ Failed',
-                        'error' => '❌ Error',
-                        'skipped' => '⏭️ Skipped',
-                        'started' => '🔄 Started',
-                    ]),
-                    
-                Tables\Filters\Filter::make('dry_run')
-                    ->label('Dry Run Only')
-                    ->query(fn (Builder $query): Builder => $query->where('dry_run', true)),
-                    
-                Tables\Filters\Filter::make('today')
-                    ->label('Today')
-                    ->query(fn (Builder $query): Builder => $query->whereDate('created_at', today())),
-                    
-                Tables\Filters\Filter::make('this_week')
-                    ->label('This Week')
-                    ->query(fn (Builder $query): Builder => $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])),
+                        'success' => 'Success',
+                        'failed' => 'Failed',
+                        'pending' => 'Pending',
+                    ])
+                    ->placeholder('All Statuses'),
+
+                // Type Filter
+                Tables\Filters\SelectFilter::make('type')
+                    ->label('Type')
+                    ->options([
+                        'individual_sync' => 'Individual Sync',
+                        'bulk_sync' => 'Bulk Sync',
+                        'bulk_optimized_sync' => 'Bulk Optimized Sync',
+                        'bulk_sync_summary' => 'Bulk Sync Summary',
+                    ])
+                    ->placeholder('All Types'),
+
+                // Dry Run Filter
+                Tables\Filters\TernaryFilter::make('dry_run')
+                    ->label('Operation Mode')
+                    ->placeholder('All Operations')
+                    ->trueLabel('Dry Run Only')
+                    ->falseLabel('Live Sync Only'),
+
+                // Stock Changes Filter
+                Tables\Filters\Filter::make('has_changes')
+                    ->label('Has Stock Changes')
+                    ->query(fn (Builder $query): Builder => $query->where('change', '!=', 0))
+                    ->toggle(),
+
+                // Failed Only Filter
+                Tables\Filters\Filter::make('failed_only')
+                    ->label('Failed Syncs Only')
+                    ->query(fn (Builder $query): Builder => $query->where('status', 'failed'))
+                    ->toggle(),
+
+                // Date Range Filter
+                Tables\Filters\Filter::make('created_at')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from')
+                            ->label('From Date'),
+                        Forms\Components\DatePicker::make('created_until')
+                            ->label('Until Date'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('created_at', '<=', $date),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['created_from'] ?? null) {
+                            $indicators['created_from'] = 'From ' . Carbon::parse($data['created_from'])->toFormattedDateString();
+                        }
+                        if ($data['created_until'] ?? null) {
+                            $indicators['created_until'] = 'Until ' . Carbon::parse($data['created_until'])->toFormattedDateString();
+                        }
+                        return $indicators;
+                    }),
+
+                // Session Filter
+                Tables\Filters\Filter::make('session_id')
+                    ->form([
+                        Forms\Components\TextInput::make('session_id')
+                            ->label('Session ID')
+                            ->placeholder('Enter session ID'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['session_id'],
+                            fn (Builder $query, $sessionId): Builder => $query->where('session_id', 'like', "%{$sessionId}%"),
+                        );
+                    }),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                // View Action
+                Tables\Actions\ViewAction::make()
+                    ->modalWidth(MaxWidth::FourExtraLarge),
+
+                // Edit Action (for admin)
+                Tables\Actions\EditAction::make()
+                    ->visible(fn ($record) => auth()->user()?->can('edit', $record) ?? false),
+
+                // Delete Action (for admin)
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn ($record) => auth()->user()?->can('delete', $record) ?? false),
+
+                // Retry Action for Failed Records
+                Tables\Actions\Action::make('retry_sync')
+                    ->label('Retry')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->visible(fn ($record) => $record->status === 'failed' && !empty($record->sku))
+                    ->requiresConfirmation()
+                    ->modalHeading('Retry Sync')
+                    ->modalDescription(fn ($record) => "Retry syncing SKU: {$record->sku}?")
+                    ->action(function ($record) {
+                        try {
+                            $syncService = new \App\Services\GineeStockSyncService();
+                            $result = $syncService->syncSingleSku($record->sku, false);
+                            
+                            if ($result['success']) {
+                                Notification::make()
+                                    ->title('Retry Successful')
+                                    ->body("SKU {$record->sku} synced successfully")
+                                    ->success()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->title('Retry Failed')
+                                    ->body($result['message'] ?? 'Unknown error')
+                                    ->danger()
+                                    ->send();
+                            }
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->title('Retry Error')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    // Delete Bulk Action
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->requiresConfirmation()
+                        ->modalHeading('Delete Selected Logs')
+                        ->modalDescription('Are you sure you want to delete the selected sync logs?'),
+
+                    // Mark as Reviewed
+                    Tables\Actions\BulkAction::make('mark_reviewed')
+                        ->label('Mark as Reviewed')
+                        ->icon('heroicon-o-check')
+                        ->color('success')
+                        ->action(function ($records) {
+                            $records->each(function ($record) {
+                                $record->update(['reviewed_at' => now()]);
+                            });
+                            
+                            Notification::make()
+                                ->title('Marked as Reviewed')
+                                ->body($records->count() . ' records marked as reviewed')
+                                ->success()
+                                ->send();
+                        })
+                        ->requiresConfirmation(),
+
+                    // Export to CSV
+                    Tables\Actions\BulkAction::make('export_csv')
+                        ->label('Export CSV')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('info')
+                        ->action(function ($records) {
+                            // Export logic here
+                            Notification::make()
+                                ->title('Export Started')
+                                ->body('CSV export for ' . $records->count() . ' records')
+                                ->info()
+                                ->send();
+                        }),
                 ]),
             ])
             ->defaultSort('created_at', 'desc')
-            ->poll('30s'); // Auto-refresh every 30 seconds
+            ->poll('10s') // Auto refresh every 10 seconds for real-time monitoring
+            ->persistSortInSession()
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->recordUrl(null) // Disable default row click
+            ->emptyStateHeading('No Sync Records Found')
+            ->emptyStateDescription('Sync logs will appear here when sync operations are performed.')
+            ->emptyStateIcon('heroicon-o-document-magnifying-glass');
     }
 
     public static function getRelations(): array
@@ -224,14 +554,38 @@ class GineeSyncLogResource extends Resource
         return [
             'index' => Pages\ListGineeSyncLogs::route('/'),
             'create' => Pages\CreateGineeSyncLog::route('/create'),
+            'view' => Pages\ViewGineeSyncLog::route('/{record}'),
             'edit' => Pages\EditGineeSyncLog::route('/{record}/edit'),
         ];
     }
-    
+
     public static function getWidgets(): array
     {
         return [
-            Widgets\SyncStatsWidget::class,
+            \App\Filament\Admin\Resources\GineeSyncLogResource\Widgets\SyncStatsWidget::class,
         ];
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('create', GineeSyncLog::class) ?? false;
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getModel()::whereDate('created_at', today())->count();
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        $todayCount = static::getModel()::whereDate('created_at', today())->count();
+        
+        if ($todayCount > 100) {
+            return 'success';
+        } elseif ($todayCount > 50) {
+            return 'warning';
+        }
+        
+        return 'primary';
     }
 }

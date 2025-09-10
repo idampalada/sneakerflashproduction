@@ -1,164 +1,148 @@
 <?php
 
+// 📁 app/Models/GineeSyncLog.php
+// Enhanced model untuk menampilkan data yang benar
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class GineeSyncLog extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        // Kolom yang WAJIB ada di tabel (dari migration asli)
-        'type',                    // enum: product_pull, stock_push, webhook, manual
-        'status',                  // enum: started, completed, failed, cancelled
-        'items_processed',
-        'items_successful',
-        'items_failed',
-        'items_skipped',
-        'parameters',
-        'summary',
-        'errors',
-        'error_message',
-        'started_at',
-        'completed_at',
-        'duration_seconds',
-        'triggered_by',
-        'batch_id',
-        
-        // Kolom yang ditambahkan untuk individual tracking
+        'session_id',
+        'type',
+        'status', 
         'operation_type',
         'sku',
         'product_name',
         'old_stock',
-        'old_warehouse_stock',
         'new_stock',
-        'new_warehouse_stock',
+        'change',
         'message',
-        'ginee_response',
-        'transaction_id',
-        'method_used',
-        'initiated_by_user',
+        'error_message',
         'dry_run',
-        'batch_size',
-        'session_id',
+        'metadata',
+        'created_at',
+        'updated_at'
     ];
 
     protected $casts = [
-        'parameters' => 'array',
-        'summary' => 'array',
-        'errors' => 'array',
-        'ginee_response' => 'array',
+        'old_stock' => 'integer',
+        'new_stock' => 'integer', 
+        'change' => 'integer',
         'dry_run' => 'boolean',
-        'started_at' => 'datetime',
-        'completed_at' => 'datetime',
+        'metadata' => 'json',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime',
+        'updated_at' => 'datetime'
     ];
 
-    // Relationships
-    public function product(): BelongsTo
+    // ✅ Auto-calculate change jika tidak diset manual
+    protected static function boot()
     {
-        return $this->belongsTo(Product::class, 'sku', 'sku');
+        parent::boot();
+
+        static::creating(function ($model) {
+            // Auto-calculate change jika belum diset
+            if (is_null($model->change) && !is_null($model->old_stock) && !is_null($model->new_stock)) {
+                $model->change = $model->new_stock - $model->old_stock;
+            }
+        });
+
+        static::updating(function ($model) {
+            // Auto-calculate change jika belum diset
+            if (is_null($model->change) && !is_null($model->old_stock) && !is_null($model->new_stock)) {
+                $model->change = $model->new_stock - $model->old_stock;
+            }
+        });
     }
 
-    // Scopes
-    public function scopeSync($query)
+    // ✅ Accessor untuk format change dengan warna
+    protected function formattedChange(): Attribute
     {
-        return $query->where('operation_type', 'sync');
+        return Attribute::make(
+            get: function () {
+                if ($this->change == 0) {
+                    return '0';
+                }
+                
+                $prefix = $this->change > 0 ? '+' : '';
+                return "{$prefix}{$this->change}";
+            }
+        );
     }
 
-    public function scopePush($query)
+    // ✅ Accessor untuk status yang lebih deskriptif
+    protected function displayStatus(): Attribute
     {
-        return $query->where('operation_type', 'push');
+        return Attribute::make(
+            get: function () {
+                if ($this->dry_run) {
+                    if ($this->status === 'success') {
+                        return $this->change == 0 ? 'Skipped' : 'Would Update';
+                    }
+                    return 'Dry Run ' . ucfirst($this->status);
+                }
+                return ucfirst($this->status);
+            }
+        );
     }
 
-    public function scopeSuccess($query)
+    // ✅ Scope untuk dry run
+    public function scopeDryRun($query, $isDryRun = true)
     {
-        return $query->whereIn('status', ['success', 'completed']);
+        return $query->where('dry_run', $isDryRun);
     }
 
-    public function scopeFailed($query)
-    {
-        return $query->whereIn('status', ['failed', 'error']);
-    }
-
-    public function scopeRecent($query)
-    {
-        return $query->orderBy('created_at', 'desc');
-    }
-
-    public function scopeSession($query, string $sessionId)
+    // ✅ Scope untuk session tertentu
+    public function scopeBySession($query, $sessionId)
     {
         return $query->where('session_id', $sessionId);
     }
 
-    // Accessors
-    public function getStockChangeAttribute(): int
+    // ✅ Scope untuk SKU tertentu
+    public function scopeBySku($query, $sku)
     {
-        return ($this->new_stock ?? 0) - ($this->old_stock ?? 0);
+        return $query->where('sku', $sku);
     }
 
-    public function getOperationLabelAttribute(): string
-    {
-        return match($this->operation_type) {
-            'sync' => '📥 Sync from Ginee',
-            'push' => '📤 Push to Ginee',
-            default => $this->operation_type
-        };
-    }
-
-    public function getStatusBadgeAttribute(): string
-    {
-        return match($this->status) {
-            'success', 'completed' => '✅ Success',
-            'failed', 'error' => '❌ Failed',
-            'skipped' => '⏭️ Skipped',
-            'started' => '🔄 Running',
-            'cancelled' => '⏹️ Cancelled',
-            default => $this->status
-        };
-    }
-
-    // Static methods for logging
-    public static function logSync(array $data): self
-    {
-        return self::create(array_merge($data, [
-            'type' => 'stock_push', // Mapping ke enum yang ada
-            'operation_type' => 'sync',
-            'session_id' => $data['session_id'] ?? self::generateSessionId(),
-        ]));
-    }
-
-    public static function logPush(array $data): self
-    {
-        return self::create(array_merge($data, [
-            'type' => 'stock_push', // Mapping ke enum yang ada
-            'operation_type' => 'push',
-            'session_id' => $data['session_id'] ?? self::generateSessionId(),
-        ]));
-    }
-
+    // ✅ Generate session ID unik
     public static function generateSessionId(): string
     {
-        return 'session_' . now()->format('Ymd_His') . '_' . \Illuminate\Support\Str::random(6);
+        return 'ginee_' . date('Ymd_His') . '_' . substr(md5(microtime()), 0, 8);
     }
 
-    // Helper methods
-    public function isSuccess(): bool
+    // ✅ Get latest session untuk type tertentu
+    public static function getLatestSession($type = null): ?string
     {
-        return in_array($this->status, ['success', 'completed']);
+        $query = static::query();
+        
+        if ($type) {
+            $query->where('type', $type);
+        }
+        
+        return $query->latest('created_at')
+                    ->value('session_id');
     }
 
-    public function isFailed(): bool
+    // ✅ Get summary statistics untuk session
+    public static function getSessionStats($sessionId): array
     {
-        return in_array($this->status, ['failed', 'error']);
-    }
-
-    public function hasStockChange(): bool
-    {
-        return $this->old_stock !== $this->new_stock;
+        $logs = static::where('session_id', $sessionId)->get();
+        
+        return [
+            'total' => $logs->count(),
+            'successful' => $logs->where('status', 'success')->count(),
+            'failed' => $logs->where('status', 'failed')->count(),
+            'skipped' => $logs->where('status', 'success')->where('change', 0)->count(),
+            'would_update' => $logs->where('status', 'success')->where('change', '!=', 0)->count(),
+            'dry_run' => $logs->where('dry_run', true)->count() > 0,
+            'created_at' => $logs->min('created_at'),
+            'completed_at' => $logs->max('created_at')
+        ];
     }
 }

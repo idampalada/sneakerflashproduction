@@ -7,181 +7,229 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use App\Services\OptimizedGineeStockSyncService;
 use App\Models\GineeSyncLog;
+use Illuminate\Support\Facades\Log;
 
 class OptimizedBulkGineeSyncJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 3600; // 1 hour for large batches
-    public $tries = 2;
-    public $failOnTimeout = true;
-
     protected $skus;
-    protected $options;
+    protected $dryRun;
+    protected $batchSize;
+    protected $delayBetweenBatches;
     protected $sessionId;
 
-    public function __construct(array $skus, array $options = [])
+    /**
+     * Job timeout in seconds (1 hour)
+     */
+    public $timeout = 3600;
+
+    /**
+     * Number of times the job may be attempted
+     */
+    public $tries = 3;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct(array $skus, bool $dryRun = true, int $batchSize = 50, int $delayBetweenBatches = 3)
     {
         $this->skus = $skus;
-        $this->options = $options;
-        $this->sessionId = $options['session_id'] ?? \Illuminate\Support\Str::uuid();
+        $this->dryRun = $dryRun;
+        $this->batchSize = $batchSize;
+        $this->delayBetweenBatches = $delayBetweenBatches;  // ✅ CHANGED
+        $this->sessionId = GineeSyncLog::generateSessionId();
         
-        // Set queue untuk optimized jobs
-        $this->onQueue('ginee-optimized');
-    }
-
-    public function handle()
-    {
-        $startTime = microtime(true);
-        
-        Log::info('🚀 [OPTIMIZED JOB] Starting optimized background sync', [
+        Log::info("🚀 [OptimizedBulkGineeSyncJob] Job created", [
             'session_id' => $this->sessionId,
-            'total_skus' => count($this->skus),
-            'job_id' => $this->job->getJobId(),
-            'optimization_enabled' => true
+            'total_skus' => count($skus),
+            'dry_run' => $dryRun,
+            'batch_size' => $batchSize,
+            'delay_between_batches' => $delayBetweenBatches  // ✅ CHANGED
         ]);
-
-        // Create initial log entry
-        $logEntry = GineeSyncLog::create([
-            'session_id' => $this->sessionId,
-            'type' => 'optimized_bulk_background',
-            'status' => 'started',
-            'operation_type' => 'sync',
-            'items_processed' => 0,
-            'items_successful' => 0,
-            'items_failed' => 0,
-            'started_at' => now(),
-            'initiated_by_user' => $this->options['user_id'] ?? 'system',
-            'dry_run' => $this->options['dry_run'] ?? false,
-            'batch_size' => $this->options['chunk_size'] ?? 50,
-            'message' => 'Optimized background sync job started',
-            'summary' => json_encode([
-                'optimization_enabled' => true,
-                'expected_performance' => '10-20 SKUs per second',
-                'bulk_operations' => true
-            ])
-        ]);
-
-        try {
-            // Use optimized sync service
-            $optimizedService = new OptimizedGineeStockSyncService();
-            
-            // Process with optimized bulk operations
-            $result = $optimizedService->syncMultipleSkusOptimized($this->skus, [
-                'dry_run' => $this->options['dry_run'] ?? false,
-                'chunk_size' => $this->options['chunk_size'] ?? 50,
-                'session_id' => $this->sessionId
-            ]);
-
-            $endTime = microtime(true);
-            $totalDuration = round($endTime - $startTime, 2);
-            $overallSpeed = round(count($this->skus) / $totalDuration, 2);
-
-            if ($result['success']) {
-                $stats = $result['data'];
-                
-                // Update final status
-                $logEntry->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                    'items_processed' => count($this->skus),
-                    'items_successful' => $stats['successful'],
-                    'items_failed' => $stats['failed'],
-                    'summary' => json_encode(array_merge($stats, [
-                        'optimization_enabled' => true,
-                        'total_duration_seconds' => $totalDuration,
-                        'overall_speed_skus_per_sec' => $overallSpeed,
-                        'performance_improvement' => 'Optimized bulk operations used',
-                        'api_efficiency' => 'Bulk inventory fetch instead of individual searches'
-                    ])),
-                    'message' => "Optimized sync completed: {$stats['successful']} successful, {$stats['failed']} failed in {$totalDuration}s ({$overallSpeed} SKUs/sec)"
-                ]);
-
-                Log::info('✅ [OPTIMIZED JOB] Background sync completed successfully', [
-                    'session_id' => $this->sessionId,
-                    'successful' => $stats['successful'],
-                    'failed' => $stats['failed'],
-                    'total_duration' => $totalDuration . 's',
-                    'speed' => $overallSpeed . ' SKUs/sec',
-                    'performance_gain' => 'Up to 10x faster than standard sync'
-                ]);
-
-            } else {
-                throw new \Exception('Optimized sync failed: ' . $result['message']);
-            }
-
-        } catch (\Exception $e) {
-            $endTime = microtime(true);
-            $duration = round($endTime - $startTime, 2);
-            
-            // Update status to failed
-            $logEntry->update([
-                'status' => 'failed',
-                'completed_at' => now(),
-                'error_message' => $e->getMessage(),
-                'summary' => json_encode([
-                    'optimization_enabled' => true,
-                    'failed_after_seconds' => $duration,
-                    'error_type' => 'optimization_job_exception'
-                ]),
-                'message' => 'Optimized sync job failed: ' . $e->getMessage()
-            ]);
-
-            Log::error('❌ [OPTIMIZED JOB] Background sync failed', [
-                'session_id' => $this->sessionId,
-                'error' => $e->getMessage(),
-                'duration_before_fail' => $duration . 's',
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            throw $e; // Re-throw untuk queue retry mechanism
-        }
-    }
-
-    public function failed(\Throwable $exception)
-    {
-        Log::error('💥 [OPTIMIZED JOB] Ultimately failed after retries', [
-            'session_id' => $this->sessionId,
-            'error' => $exception->getMessage(),
-            'attempts' => $this->attempts(),
-            'optimization_enabled' => true
-        ]);
-
-        // Update log entry if exists
-        GineeSyncLog::where('session_id', $this->sessionId)
-            ->where('type', 'optimized_bulk_background')
-            ->update([
-                'status' => 'failed',
-                'completed_at' => now(),
-                'error_message' => $exception->getMessage(),
-                'summary' => json_encode([
-                    'optimization_enabled' => true,
-                    'ultimate_failure' => true,
-                    'attempts' => $this->attempts(),
-                    'error_type' => 'optimization_job_ultimate_failure'
-                ]),
-                'message' => 'Optimized sync job ultimately failed after ' . $this->attempts() . ' attempts: ' . $exception->getMessage()
-            ]);
     }
 
     /**
-     * Get estimated completion time for monitoring
+     * Execute the job.
      */
-    public function getEstimatedCompletion(): array
+    public function handle(): void
     {
-        $estimatedSpeed = 15; // SKUs per second (conservative estimate)
-        $estimatedSeconds = ceil(count($this->skus) / $estimatedSpeed);
+        try {
+            Log::info("🔄 [OptimizedBulkGineeSyncJob] Starting background sync", [
+                'session_id' => $this->sessionId,
+                'total_skus' => count($this->skus),
+                'dry_run' => $this->dryRun,
+                'batch_size' => $this->batchSize
+            ]);
+
+            // Create initial log entry
+            GineeSyncLog::create([
+                'session_id' => $this->sessionId,
+                'type' => 'bulk_sync_start',
+                'status' => 'pending',
+                'operation_type' => 'sync',
+                'message' => "Background sync started for " . count($this->skus) . " SKUs",
+                'dry_run' => $this->dryRun,
+                'created_at' => now()
+            ]);
+
+            if (class_exists('\App\Services\OptimizedGineeStockSyncService')) {
+                // Use optimized service
+                $syncService = new OptimizedGineeStockSyncService();
+                $result = $syncService->syncBulkStock(
+                    $this->skus, 
+                    $this->dryRun, 
+                    $this->batchSize, 
+                    $this->delayBetweenBatches,
+                    $this->sessionId
+                );
+            } else {
+                // Fallback to basic service
+                Log::warning("OptimizedGineeStockSyncService not found, using basic service");
+                $result = $this->basicBulkSync();
+            }
+
+            // Create completion log
+            if ($result['success']) {
+                $stats = $result['stats'] ?? [];
+                
+                GineeSyncLog::create([
+                    'session_id' => $this->sessionId,
+                    'type' => 'bulk_sync_completed',
+                    'status' => 'success',
+                    'operation_type' => 'sync',
+                    'message' => sprintf(
+                        "Background sync completed: %d total, %d successful, %d failed, %d skipped",
+                        $stats['total'] ?? 0,
+                        $stats['successful'] ?? 0,
+                        $stats['failed'] ?? 0,
+                        $stats['skipped'] ?? 0
+                    ),
+                    'dry_run' => $this->dryRun,
+                    'created_at' => now()
+                ]);
+
+                Log::info("✅ [OptimizedBulkGineeSyncJob] Job completed successfully", [
+                    'session_id' => $this->sessionId,
+                    'stats' => $stats
+                ]);
+            } else {
+                GineeSyncLog::create([
+                    'session_id' => $this->sessionId,
+                    'type' => 'bulk_sync_failed',
+                    'status' => 'failed',
+                    'operation_type' => 'sync',
+                    'message' => "Background sync failed: " . ($result['message'] ?? 'Unknown error'),
+                    'error_message' => $result['message'] ?? 'Unknown error',
+                    'dry_run' => $this->dryRun,
+                    'created_at' => now()
+                ]);
+
+                Log::error("❌ [OptimizedBulkGineeSyncJob] Job failed", [
+                    'session_id' => $this->sessionId,
+                    'error' => $result['message'] ?? 'Unknown error'
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error("💥 [OptimizedBulkGineeSyncJob] Job exception", [
+                'session_id' => $this->sessionId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Create error log
+            GineeSyncLog::create([
+                'session_id' => $this->sessionId,
+                'type' => 'bulk_sync_exception',
+                'status' => 'failed',
+                'operation_type' => 'sync',
+                'message' => "Background sync exception: " . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'dry_run' => $this->dryRun,
+                'created_at' => now()
+            ]);
+
+            // Re-throw exception to mark job as failed
+            throw $e;
+        }
+    }
+
+    /**
+     * Basic bulk sync fallback
+     */
+    protected function basicBulkSync(): array
+    {
+        $successful = 0;
+        $failed = 0;
+        $skipped = 0;
         
-        return [
-            'total_skus' => count($this->skus),
-            'estimated_speed' => $estimatedSpeed . ' SKUs/sec',
-            'estimated_duration' => $estimatedSeconds . ' seconds',
-            'estimated_completion' => now()->addSeconds($estimatedSeconds)->toDateTimeString(),
-            'optimization_enabled' => true,
-            'expected_improvement' => 'Up to 10x faster than standard sync'
-        ];
+        try {
+            $syncService = new \App\Services\GineeStockSyncService();
+            
+            foreach ($this->skus as $sku) {
+                try {
+                    $result = $syncService->syncSingleSku($sku, $this->dryRun);
+                    
+                    if ($result['success']) {
+                        $successful++;
+                    } else {
+                        $failed++;
+                    }
+                    
+                    // Add delay between individual syncs
+                if ($this->delayBetweenBatches > 0) {  // ✅ CHANGED
+                    sleep($this->delayBetweenBatches);  // ✅ CHANGED
+                    }
+                    
+                } catch (\Exception $e) {
+                    $failed++;
+                    Log::error("Error syncing SKU {$sku}: " . $e->getMessage());
+                }
+            }
+            
+            return [
+                'success' => true,
+                'stats' => [
+                    'total' => count($this->skus),
+                    'successful' => $successful,
+                    'failed' => $failed,
+                    'skipped' => $skipped,
+                    'session_id' => $this->sessionId
+                ]
+            ];
+            
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Handle a job failure.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error("💥 [OptimizedBulkGineeSyncJob] Job permanently failed", [
+            'session_id' => $this->sessionId,
+            'exception' => $exception->getMessage(),
+            'trace' => $exception->getTraceAsString()
+        ]);
+
+        // Create final failure log
+        GineeSyncLog::create([
+            'session_id' => $this->sessionId,
+            'type' => 'bulk_sync_permanent_failure',
+            'status' => 'failed',
+            'operation_type' => 'sync',
+            'message' => "Background sync permanently failed after all retries",
+            'error_message' => $exception->getMessage(),
+            'dry_run' => $this->dryRun,
+            'created_at' => now()
+        ]);
     }
 }
