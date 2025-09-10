@@ -167,7 +167,7 @@ class OptimizedBulkGineeSyncJob implements ShouldQueue
         $skipped = 0;
         
         try {
-            $syncService = new \App\Services\GineeStockSyncService();
+            $syncService = new \App\Services\OptimizedGineeStockSyncService();
             
             foreach ($this->skus as $sku) {
                 try {

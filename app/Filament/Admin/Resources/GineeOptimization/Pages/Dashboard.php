@@ -202,7 +202,7 @@ class Dashboard extends Page
                 $oldStockFromLocal = $localProduct->stock_quantity ?? 0;
 
                 // 2️⃣ Get current stock from GINEE
-                $syncService = new \App\Services\GineeStockSyncService();
+                $syncService = new \App\Services\OptimizedGineeStockSyncService();
                 $gineeStockData = $syncService->getStockFromGinee($sku);
                 
                 if (!$gineeStockData) {
@@ -454,7 +454,7 @@ if (class_exists('\App\Jobs\GineeStockSyncJob')) {
                 'dry_run' => $dryRun
             ]);
 
-            $syncService = new \App\Services\GineeStockSyncService();
+            $syncService = new \App\Services\OptimizedGineeStockSyncService();
             $result = $syncService->syncSingleSku($sku, $dryRun);
             
             if ($result['success']) {

@@ -6,6 +6,12 @@ use Illuminate\Support\Facades\Log;
 
 class OptimizedGineeStockSyncService extends GineeStockSyncService
 {
+    protected $gineeClient;
+    public function __construct()
+    {
+        parent::__construct();
+        $this->gineeClient = new \App\Services\GineeClient();
+    }
     /**
      * 🚀 OPTIMIZED: Get multiple SKUs stock in one request
      * Instead of searching page by page, get all inventory at once
@@ -14,7 +20,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
     {
         $skus = array_map('strtoupper', $skus);
         $maxRetries = $options['max_retries'] ?? 3;
-        $pageSize = $options['page_size'] ?? 200; // Larger page size
+        $pageSize = $options['page_size'] ?? 500; // Larger page size
         
         Log::info("🚀 [OPTIMIZED] Bulk stock search for " . count($skus) . " SKUs");
         
@@ -72,10 +78,10 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                         $foundStock[$itemSku] = [
                             'sku' => $itemSku,
                             'product_name' => $masterVariation['name'] ?? 'Unknown Product',
-                            'warehouse_stock' => $warehouseInventory['stock'] ?? 0,
+                            'warehouse_stock' => $warehouseInventory['warehouseStock'] ?? 0,
                             'available_stock' => $warehouseInventory['availableStock'] ?? 0,
                             'locked_stock' => $warehouseInventory['lockedStock'] ?? 0,
-                            'total_stock' => ($warehouseInventory['stock'] ?? 0) + ($warehouseInventory['lockedStock'] ?? 0),
+                            'total_stock' => ($warehouseInventory['warehouseStock'] ?? 0) + ($warehouseInventory['lockedStock'] ?? 0),
                             'last_updated' => $warehouseInventory['updateDatetime'] ?? now(),
                             'api_source' => 'bulk_warehouse_inventory',
                             'found_at_page' => $page
@@ -96,7 +102,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                 }
                 
                 // Safety limit
-                if ($page > 100) {
+                if ($page > 50) {
                     Log::warning("⚠️ Reached page limit (100) for safety");
                     break;
                 }
@@ -120,6 +126,18 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
         // Mark remaining SKUs as not found
         foreach ($skus as $sku) {
             $notFound[] = $sku;
+        }
+        
+        // TRIGGER FALLBACK untuk SKU yang tidak ditemukan
+        if (!empty($notFound)) {
+            Log::info("🔄 [FALLBACK] Triggering fallback search for " . count($notFound) . " SKUs");
+            $fallbackResult = $this->fallbackIndividualSearch($notFound);
+            
+            if ($fallbackResult['success']) {
+                $foundStock = array_merge($foundStock, $fallbackResult['found_stock']);
+                $notFound = $fallbackResult['not_found'];
+                Log::info("✅ [FALLBACK] Merged results - Final found: " . count($foundStock) . ", still not found: " . count($notFound));
+            }
         }
         
         $endTime = microtime(true);
@@ -150,28 +168,59 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
     }
 
     /**
-     * 🔄 Fallback: Individual search for failed bulk operations
+     * Fallback method: Update trick untuk SKU yang tidak ditemukan di warehouse inventory
      */
-    private function fallbackIndividualSearch(array $skus): array
+    private function fallbackUpdateTrick(array $skus): array
     {
-        Log::info("🔄 Using fallback individual search for " . count($skus) . " SKUs");
+        Log::info("🔄 Using fallback update trick for " . count($skus) . " SKUs");
         
         $foundStock = [];
         $notFound = [];
         
         foreach ($skus as $sku) {
-            Log::info("🔍 Individual search for SKU: {$sku}");
-            
-            $stock = $this->getStockFromGinee($sku);
-            
-            if ($stock) {
-                $foundStock[$sku] = $stock;
-            } else {
+            try {
+                // Create update dengan quantity 0 untuk get current stock
+                $stockUpdate = [
+                    'masterSku' => $sku,
+                    'quantity' => 0,
+                    'remark' => 'Stock check via fallback method'
+                ];
+                
+                $gineeClient = $this->gineeClient ?? new \App\Services\GineeClient();
+$result = $gineeClient->updateStock([$stockUpdate]);
+                
+                if (($result['code'] ?? null) === 'SUCCESS') {
+                    $stockList = $result['data']['stockList'] ?? [];
+                    
+                    if (!empty($stockList)) {
+                        $stockInfo = $stockList[0];
+                        
+                        $foundStock[$sku] = [
+                            'sku' => $sku,
+                            'product_name' => $stockInfo['masterProductName'] ?? 'Unknown',
+                            'warehouse_stock' => $stockInfo['warehouseStock'] ?? 0,
+                            'available_stock' => $stockInfo['availableStock'] ?? 0,
+                            'locked_stock' => $stockInfo['lockedStock'] ?? 0,
+                            'total_stock' => $stockInfo['availableStock'] ?? 0,
+                            'last_updated' => $stockInfo['updateDatetime'] ?? now(),
+                            'api_source' => 'fallback_update_trick'
+                        ];
+                        
+                        Log::info("✅ Fallback found: {$sku} with stock " . ($stockInfo['availableStock'] ?? 0));
+                    } else {
+                        $notFound[] = $sku;
+                    }
+                } else {
+                    $notFound[] = $sku;
+                }
+                
+            } catch (\Exception $e) {
+                Log::warning("Fallback failed for {$sku}: " . $e->getMessage());
                 $notFound[] = $sku;
             }
             
             // Rate limiting
-            usleep(200000); // 0.2 seconds between individual calls
+            usleep(300000); // 0.3 seconds between calls
         }
         
         return [
@@ -181,10 +230,142 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             'stats' => [
                 'found_count' => count($foundStock),
                 'not_found_count' => count($notFound),
-                'method' => 'individual_fallback'
+                'method' => 'fallback_update_trick'
             ]
         ];
     }
+
+    /**
+     * 🔄 Fallback: Individual search for failed bulk operations
+     */
+private function fallbackIndividualSearch(array $skus): array
+{
+    Log::info("🔄 Using fallback individual search for " . count($skus) . " SKUs");
+    
+    $foundStock = [];
+    $notFound = [];
+    
+    // Method 1: Try individual getStockFromGinee (warehouse inventory)
+    foreach ($skus as $sku) {
+        $stock = $this->getStockFromGinee($sku);
+        
+        if ($stock) {
+            $foundStock[$sku] = $stock;
+        } else {
+            $notFound[] = $sku;
+        }
+        
+        usleep(200000); // 0.2 seconds
+    }
+    
+    // Method 2: Fallback ke Master Products untuk yang masih not found
+    if (!empty($notFound)) {
+        Log::info("🔄 Using Master Products fallback for " . count($notFound) . " remaining SKUs");
+        
+        $masterProductsResult = $this->fallbackMasterProducts($notFound);
+        
+        if ($masterProductsResult['success']) {
+            $foundStock = array_merge($foundStock, $masterProductsResult['found_stock']);
+            $notFound = $masterProductsResult['not_found'];
+        }
+    }
+    
+    // Method 3: Update trick untuk yang masih not found
+    if (!empty($notFound)) {
+        Log::info("🔄 Using update trick fallback for " . count($notFound) . " remaining SKUs");
+        
+        $fallbackResult = $this->fallbackUpdateTrick($notFound);
+        
+        if ($fallbackResult['success']) {
+            $foundStock = array_merge($foundStock, $fallbackResult['found_stock']);
+            $notFound = $fallbackResult['not_found'];
+        }
+    }
+    
+    return [
+        'success' => true,
+        'found_stock' => $foundStock,
+        'not_found' => $notFound,
+        'stats' => [
+            'found_count' => count($foundStock),
+            'not_found_count' => count($notFound),
+            'method' => 'individual_with_multiple_fallbacks'
+        ]
+    ];
+}
+
+private function fallbackMasterProducts(array $skus): array
+{
+    Log::info("📋 Using Master Products fallback for " . count($skus) . " SKUs");
+    
+    $foundStock = [];
+    $notFound = $skus; // Start with all as not found
+    
+    try {
+        $page = 0;
+        $maxPages = 20; // Search lebih banyak pages
+        $pageSize = 100;
+        
+        while ($page < $maxPages && !empty($notFound)) {
+            $gineeClient = $this->gineeClient ?? new \App\Services\GineeClient(); 
+$result = $gineeClient->getMasterProducts([
+                'page' => $page,
+                'size' => $pageSize
+            ]);
+            
+            if (($result['code'] ?? null) !== 'SUCCESS') {
+                Log::warning("Master Products API failed on page {$page}");
+                break;
+            }
+            
+            $products = $result['data']['list'] ?? [];
+            
+            if (empty($products)) {
+                Log::info("No more products on page {$page}");
+                break;
+            }
+            
+            foreach ($products as $product) {
+                $masterSku = $product['masterSku'] ?? '';
+                
+                if (in_array($masterSku, $notFound)) {
+                    $foundStock[$masterSku] = [
+                        'sku' => $masterSku,
+                        'product_name' => $product['name'] ?? 'Unknown',
+                        'warehouse_stock' => $product['stockQuantity'] ?? 0,
+                        'available_stock' => $product['stockQuantity'] ?? 0,
+                        'locked_stock' => 0,
+                        'total_stock' => $product['stockQuantity'] ?? 0,
+                        'last_updated' => now(),
+                        'api_source' => 'fallback_master_products'
+                    ];
+                    
+                    // Remove from not found list
+                    $notFound = array_diff($notFound, [$masterSku]);
+                    
+                    Log::info("✅ Master Products fallback found: {$masterSku} with stock " . ($product['stockQuantity'] ?? 0));
+                }
+            }
+            
+            $page++;
+            usleep(100000); // 0.1 second delay
+        }
+        
+    } catch (\Exception $e) {
+        Log::error("Master Products fallback exception: " . $e->getMessage());
+    }
+    
+    return [
+        'success' => true,
+        'found_stock' => $foundStock,
+        'not_found' => array_values($notFound),
+        'stats' => [
+            'found_count' => count($foundStock),
+            'not_found_count' => count($notFound),
+            'method' => 'fallback_master_products'
+        ]
+    ];
+}
 
     /**
      * 🚀 OPTIMIZED: Sync multiple SKUs with bulk operations
@@ -371,49 +552,50 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             'data' => $stats
         ];
     }
-    public function syncBulkStock(array $skus, bool $dryRun = true, int $batchSize = 50, int $delay = 3, string $sessionId = null): array
-{
-    // Gunakan method optimized yang sudah ada
-    return $this->syncMultipleSkusOptimized($skus, [
-        'dry_run' => $dryRun,
-        'chunk_size' => $batchSize
-    ]);
-}
 
-/**
- * Update local product stock - method yang dipanggil dari syncMultipleSkusOptimized
- */
-protected function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false): bool
-{
-    try {
-        $product = \App\Models\Product::where('sku', $sku)->first();
-        
-        if (!$product) {
-            Log::warning("Product not found locally: {$sku}");
+    public function syncBulkStock(array $skus, bool $dryRun = true, int $batchSize = 50, int $delay = 3, string $sessionId = null): array
+    {
+        // Gunakan method optimized yang sudah ada
+        return $this->syncMultipleSkusOptimized($skus, [
+            'dry_run' => $dryRun,
+            'chunk_size' => $batchSize
+        ]);
+    }
+
+    /**
+     * Update local product stock - method yang dipanggil dari syncMultipleSkusOptimized
+     */
+    public function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false): bool
+    {
+        try {
+            $product = \App\Models\Product::where('sku', $sku)->first();
+            
+            if (!$product) {
+                Log::warning("Product not found locally: {$sku}");
+                return false;
+            }
+
+            $oldStock = $product->stock_quantity ?? 0;
+            $newStock = $stockData['available_stock'] ?? $stockData['total_stock'] ?? 0;
+
+            if ($dryRun) {
+                Log::info("DRY RUN - Would update {$sku}: {$oldStock} → {$newStock}");
+                return true;
+            }
+
+            // Live update
+            $updated = $product->update([
+                'stock_quantity' => $newStock,
+                'warehouse_stock' => $stockData['warehouse_stock'] ?? $newStock,
+                'ginee_last_sync' => now()
+            ]);
+
+            Log::info("Updated {$sku}: {$oldStock} → {$newStock}");
+            return $updated;
+
+        } catch (\Exception $e) {
+            Log::error("Failed to update {$sku}: " . $e->getMessage());
             return false;
         }
-
-        $oldStock = $product->stock_quantity ?? 0;
-        $newStock = $stockData['available_stock'] ?? $stockData['total_stock'] ?? 0;
-
-        if ($dryRun) {
-            Log::info("DRY RUN - Would update {$sku}: {$oldStock} → {$newStock}");
-            return true;
-        }
-
-        // Live update
-        $updated = $product->update([
-            'stock_quantity' => $newStock,
-            'warehouse_stock' => $stockData['warehouse_stock'] ?? $newStock,
-            'ginee_last_sync' => now()
-        ]);
-
-        Log::info("Updated {$sku}: {$oldStock} → {$newStock}");
-        return $updated;
-
-    } catch (\Exception $e) {
-        Log::error("Failed to update {$sku}: " . $e->getMessage());
-        return false;
     }
-}
 }
