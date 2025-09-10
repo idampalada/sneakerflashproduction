@@ -202,7 +202,7 @@ class Dashboard extends Page
                 $oldStockFromLocal = $localProduct->stock_quantity ?? 0;
 
                 // 2️⃣ Get current stock from GINEE
-                $syncService = new \App\Services\OptimizedGineeStockSyncService();
+                $syncService = new \App\Services\GineeStockSyncService();
                 $gineeStockData = $syncService->getStockFromGinee($sku);
                 
                 if (!$gineeStockData) {
@@ -446,46 +446,85 @@ if (class_exists('\App\Jobs\GineeStockSyncJob')) {
     /**
      * Test single SKU sync
      */
-    protected function testSingleSku(string $sku, bool $dryRun = true): void
-    {
-        try {
-            Log::info("🎯 [Ginee Optimization] Testing single SKU", [
-                'sku' => $sku,
-                'dry_run' => $dryRun
-            ]);
+// Update method testSingleSku di Dashboard.php
 
-            $syncService = new \App\Services\OptimizedGineeStockSyncService();
-            $result = $syncService->syncSingleSku($sku, $dryRun);
+protected function testSingleSku(string $sku, bool $dryRun = true): void
+{
+    try {
+        Log::info("🎯 [Dashboard] Testing single SKU with fallback logic", [
+            'sku' => $sku,
+            'dry_run' => $dryRun
+        ]);
+
+        // PRIORITY 1: Stock Push (existing method)
+        $syncService = new \App\Services\OptimizedGineeStockSyncService();
+        $result = $syncService->syncSingleSku($sku, $dryRun);
+        
+        if ($result['success']) {
+            // Stock push berhasil - gunakan method ini
+            Notification::make()
+                ->title($dryRun ? '🧪 Test Dry Run Completed' : '✅ Test Sync Completed')
+                ->body("SKU {$sku}: " . $result['message'] . " (using stock_push)")
+                ->success()
+                ->duration(5000)
+                ->send();
+            return; // Stop di sini jika berhasil
+        }
+
+        // PRIORITY 2: Enhanced Dashboard Test (fallback only if stock_push fails)
+        Log::info("🔄 [Dashboard] Stock push failed, trying enhanced fallback for SKU: {$sku}");
+        
+        // Try bulk optimized method as fallback
+        $bulkResult = $syncService->getBulkStockFromGinee([$sku]);
+        
+        if ($bulkResult['success'] && isset($bulkResult['found_stock'][$sku])) {
+            $stockData = $bulkResult['found_stock'][$sku];
             
-            if ($result['success']) {
-                Notification::make()
-                    ->title($dryRun ? '🧪 Test Dry Run Completed' : '✅ Test Sync Completed')
-                    ->body("SKU {$sku}: " . $result['message'])
-                    ->success()
-                    ->duration(5000)
-                    ->send();
-            } else {
-                Notification::make()
-                    ->title('❌ Test Failed')
-                    ->body("SKU {$sku}: " . $result['message'])
-                    ->danger()
-                    ->duration(5000)
-                    ->send();
-            }
-        } catch (\Exception $e) {
-            Log::error("❌ Exception during test sync for SKU: {$sku}", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+            // Log as enhanced fallback
+            \App\Models\GineeSyncLog::create([
+                'type' => 'enhanced_dashboard_fallback',
+                'status' => 'success',
+                'operation_type' => 'test',
+                'sku' => $sku,
+                'product_name' => $stockData['product_name'] ?? 'N/A',
+                'old_stock' => null,
+                'new_stock' => $stockData['total_stock'] ?? 0,
+                'message' => "Enhanced fallback - Found after stock_push failed",
+                'dry_run' => $dryRun,
+                'session_id' => \App\Models\GineeSyncLog::generateSessionId()
             ]);
             
             Notification::make()
-                ->title('❌ Test Exception')
-                ->body("SKU {$sku}: " . $e->getMessage())
-                ->danger()
-                ->duration(8000)
+                ->title('⚡ Enhanced Fallback Success!')
+                ->body("SKU {$sku} found using enhanced fallback method (after stock_push failed)")
+                ->warning() // Warning color untuk indicate fallback
+                ->duration(7000)
                 ->send();
+            return;
         }
+
+        // Both methods failed
+        Notification::make()
+            ->title('❌ Test Failed - All Methods')
+            ->body("SKU {$sku}: Not found using stock_push OR enhanced fallback")
+            ->danger()
+            ->duration(5000)
+            ->send();
+        
+    } catch (\Exception $e) {
+        Log::error("❌ Exception during test sync for SKU: {$sku}", [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        Notification::make()
+            ->title('💥 Test Exception')
+            ->body("SKU {$sku}: " . $e->getMessage())
+            ->danger()
+            ->duration(8000)
+            ->send();
     }
+}
 
     /**
      * Clear old sync logs

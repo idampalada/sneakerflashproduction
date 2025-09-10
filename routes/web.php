@@ -504,3 +504,9 @@ Route::middleware(['auth'])->group(function () {
 Route::post('/email/resend-verification', [VerificationController::class, 'resend'])
     ->name('verification.resend')
     ->middleware(['throttle:3,1']);
+    // Enhanced Ginee Routes
+Route::group(['prefix' => 'integrations/ginee', 'middleware' => ['auth', 'web']], function() {
+    Route::post('/test-single-sku-enhanced', [App\Http\Controllers\Frontend\GineeSyncController::class, 'testSingleSkuEnhanced']);
+    Route::post('/sync-single-sku-enhanced', [App\Http\Controllers\Frontend\GineeSyncController::class, 'syncSingleSkuEnhanced']);
+    Route::post('/compare-methods', [App\Http\Controllers\Frontend\GineeSyncController::class, 'compareAllMethods']);
+});
