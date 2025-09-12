@@ -320,127 +320,42 @@ class Dashboard extends Page
     /**
      * Sync all products with advanced options
      */
-    protected function syncAllProducts(array $data): void
-    {
-        try {
-            $dryRun = $data['dry_run'] ?? true;
-            $onlyActive = $data['only_active'] ?? true;
-            $onlyMapped = $data['only_mapped'] ?? false;
-            $batchSize = $data['batch_size'] ?? 100;
-            $delay = $data['delay_between_batches'] ?? 3;
-            $maxProducts = $data['max_products'] ?? 0;
+protected function syncAllProducts(array $data): void
+{
+    try {
+        $dryRun = $data['dry_run'] ?? true;
+        $onlyActive = $data['only_active'] ?? true; 
+        $onlyMapped = $data['only_mapped'] ?? false;
+        $batchSize = $data['batch_size'] ?? 50;
+        $delay = $data['delay_between_batches'] ?? 2;
+        $maxProducts = $data['max_products'] ?? 0;
 
-            // Build query for products to sync
-            $query = Product::query();
-            
-            if ($onlyActive) {
-                $query->where('status', 'active');
-            }
-            
-            if ($onlyMapped) {
-                $query->whereHas('gineeMappings', function ($q) {
-                    $q->where('sync_enabled', true);
-                });
-            }
-            
-            if ($maxProducts > 0) {
-                $query->limit($maxProducts);
-            }
-            
-            $skus = $query->pluck('sku')->toArray();
-            
-            if (empty($skus)) {
-                Notification::make()
-                    ->title('⚠️ No Products Found')
-                    ->body('No products match the selected criteria')
-                    ->warning()
-                    ->duration(5000)
-                    ->send();
-                return;
-            }
-
-            Log::info("🚀 [Ginee Optimization] Starting bulk sync via QUEUE", [
-                'total_skus' => count($skus),
-                'dry_run' => $dryRun,
-                'only_active' => $onlyActive,
-                'only_mapped' => $onlyMapped,
-                'batch_size' => $batchSize
-            ]);
-
-            // ✅ ALWAYS USE BACKGROUND JOB - NO MORE SYNCHRONOUS PROCESSING
-if (class_exists('\App\Jobs\GineeStockSyncJob')) {
-    \App\Jobs\GineeStockSyncJob::dispatch($skus, $dryRun, $batchSize, $delay);
-
-                
-                Log::info("✅ [Ginee Optimization] Job dispatched to queue", [
-                    'job_class' => 'OptimizedBulkGineeSyncJob',
-                    'total_skus' => count($skus),
-                    'dry_run' => $dryRun
-                ]);
-                
-                Notification::make()
-                    ->title('🚀 Sync Job Started')
-                    ->body("Processing " . count($skus) . " products in background. Check logs or sync history for progress.")
-                    ->info()
-                    ->duration(10000)
-                    ->send();
-                    
-            } else {
-                // Fallback jika job class tidak ada
-                Log::warning("⚠️ OptimizedBulkGineeSyncJob class not found, falling back to synchronous");
-                
-                // Process immediately for smaller datasets only
-                if (count($skus) <= 50) {
-                    if ($dryRun) {
-                        $result = $this->performDryRunSync($skus);
-                    } else {
-                        $result = ['success' => false, 'message' => 'Live sync not available without background job'];
-                    }
-                    
-                    if ($result['success']) {
-                        $stats = $result['stats'];
-                        $skippedCount = $stats['skipped'] ?? 0;
-                        
-                        Notification::make()
-                            ->title($dryRun ? '🧪 Dry Run Completed' : '✅ Sync Completed')
-                            ->body("Processed: {$stats['total']}, " . 
-                                   ($dryRun ? "Would Update: {$stats['successful']}" : "Updated: {$stats['successful']}") . 
-                                   ", Skipped: {$skippedCount}, Failed: {$stats['failed']}")
-                            ->success()
-                            ->duration(10000)
-                            ->send();
-                    } else {
-                        Notification::make()
-                            ->title('❌ Sync Failed')
-                            ->body($result['message'] ?? 'Unknown error occurred')
-                            ->danger()
-                            ->duration(8000)
-                            ->send();
-                    }
-                } else {
-                    Notification::make()
-                        ->title('❌ Too Many Products')
-                        ->body("Cannot process " . count($skus) . " products synchronously. Background job class not available.")
-                        ->danger()
-                        ->duration(8000)
-                        ->send();
-                }
-            }
-            
-        } catch (\Exception $e) {
-            Log::error("❌ Exception during bulk sync dispatch", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            Notification::make()
-                ->title('❌ Sync Failed')
-                ->body('Exception: ' . $e->getMessage())
-                ->danger()
-                ->duration(8000)
-                ->send();
+        // Get SKUs
+        $query = Product::whereNotNull('sku')->where('sku', '!=', '');
+        if ($onlyActive) $query->where('status', 'active');
+        if ($onlyMapped) $query->whereHas('gineeMappings', function($q) { $q->where('sync_enabled', true); });
+        if ($maxProducts > 0) $query->limit($maxProducts);
+        
+        $skus = $query->pluck('sku')->filter()->toArray();
+        
+        if (empty($skus)) {
+            Notification::make()->title('No Products Found')->warning()->send();
+            return;
         }
+
+        // Dispatch job
+        \App\Jobs\OptimizedBulkGineeSyncJob::dispatch($skus, $dryRun, $batchSize, $delay);
+        
+        Notification::make()
+            ->title('Background Job Started')
+            ->body("Processing " . count($skus) . " products in background")
+            ->success()
+            ->send();
+            
+    } catch (\Exception $e) {
+        Notification::make()->title('Job Failed')->body($e->getMessage())->danger()->send();
     }
+}
 
 
     /**
@@ -474,29 +389,57 @@ protected function testSingleSku(string $sku, bool $dryRun = true): void
         // PRIORITY 2: Enhanced Dashboard Test (fallback only if stock_push fails)
         Log::info("🔄 [Dashboard] Stock push failed, trying enhanced fallback for SKU: {$sku}");
         
+        // ✅ GET OLD STOCK FROM DATABASE (like stock_push does)
+        $product = \App\Models\Product::where('sku', $sku)->first();
+        $oldStock = $product ? ($product->stock_quantity ?? 0) : null;
+        $oldWarehouseStock = $product ? ($product->warehouse_stock ?? 0) : null;
+        $productName = $product ? $product->name : 'Product Not Found';
+        
         // Try bulk optimized method as fallback
         $bulkResult = $syncService->getBulkStockFromGinee([$sku]);
         
         if ($bulkResult['success'] && isset($bulkResult['found_stock'][$sku])) {
             $stockData = $bulkResult['found_stock'][$sku];
             
-            // Log as enhanced fallback
+            // ✅ CALCULATE STOCK CHANGE (like stock_push does)
+            $newStock = $stockData['total_stock'] ?? $stockData['available_stock'] ?? 0;
+            $newWarehouseStock = $stockData['warehouse_stock'] ?? 0;
+            $stockChange = $oldStock !== null ? ($newStock - $oldStock) : null;
+            
+            // ✅ ENHANCED LOGGING WITH OLD STOCK AND CHANGE
             \App\Models\GineeSyncLog::create([
                 'type' => 'enhanced_dashboard_fallback',
-                'status' => 'success',
-                'operation_type' => 'test',
+                'status' => $dryRun ? 'skipped' : 'success',     // ✅ Use 'skipped' for dry run
+                'operation_type' => 'stock_push',               // ✅ Same as stock_push
+                'method_used' => 'enhanced_dashboard_fallback', // ✅ Track method
                 'sku' => $sku,
-                'product_name' => $stockData['product_name'] ?? 'N/A',
-                'old_stock' => null,
-                'new_stock' => $stockData['total_stock'] ?? 0,
-                'message' => "Enhanced fallback - Found after stock_push failed",
+                'product_name' => $productName,
+                'old_stock' => $oldStock,                       // ✅ NOW READS FROM DATABASE
+                'new_stock' => $newStock,                       // ✅ From Ginee API
+                'change' => $stockChange,                       // ✅ CALCULATED CHANGE
+                'old_warehouse_stock' => $oldWarehouseStock,    // ✅ From database
+                'new_warehouse_stock' => $newWarehouseStock,    // ✅ From Ginee API
+                'message' => $dryRun ? 
+                    "DRY RUN - Enhanced fallback would update from {$oldStock} to {$newStock}" . 
+                    ($stockChange !== null ? " (change: {$stockChange})" : "") :
+                    "SUCCESS - Enhanced fallback updated from {$oldStock} to {$newStock}" . 
+                    ($stockChange !== null ? " (change: {$stockChange})" : ""),
+                'ginee_response' => $stockData,                 // ✅ Store full response
                 'dry_run' => $dryRun,
                 'session_id' => \App\Models\GineeSyncLog::generateSessionId()
             ]);
             
+            // ✅ NOTIFICATION WITH STOCK CHANGE INFO
             Notification::make()
                 ->title('⚡ Enhanced Fallback Success!')
-                ->body("SKU {$sku} found using enhanced fallback method (after stock_push failed)")
+                ->body(
+                    "SKU {$sku} found using enhanced fallback method. " .
+                    ($oldStock !== null ? 
+                        "Stock: {$oldStock} → {$newStock}" . 
+                        ($stockChange !== null ? " ({$stockChange})" : "") :
+                        "New stock: {$newStock}"
+                    )
+                )
                 ->warning() // Warning color untuk indicate fallback
                 ->duration(7000)
                 ->send();
@@ -511,10 +454,41 @@ protected function testSingleSku(string $sku, bool $dryRun = true): void
             ->duration(5000)
             ->send();
         
+        // ✅ LOG FAILURE WITH PRODUCT INFO
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_dashboard_fallback',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'enhanced_dashboard_fallback',
+            'sku' => $sku,
+            'product_name' => $productName,
+            'old_stock' => $oldStock,
+            'new_stock' => null,
+            'change' => null,
+            'message' => "Enhanced fallback failed - SKU not found in Ginee",
+            'error_message' => 'SKU not found using enhanced fallback methods',
+            'dry_run' => $dryRun,
+            'session_id' => \App\Models\GineeSyncLog::generateSessionId()
+        ]);
+        
     } catch (\Exception $e) {
         Log::error("❌ Exception during test sync for SKU: {$sku}", [
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
+        ]);
+        
+        // ✅ LOG EXCEPTION WITH PROPER ERROR HANDLING
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_dashboard_fallback',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'enhanced_dashboard_fallback',
+            'sku' => $sku,
+            'product_name' => 'Unknown',
+            'message' => "Exception during enhanced fallback: " . $e->getMessage(),
+            'error_message' => $e->getMessage(),
+            'dry_run' => $dryRun,
+            'session_id' => \App\Models\GineeSyncLog::generateSessionId()
         ]);
         
         Notification::make()
@@ -618,4 +592,250 @@ protected function testSingleSku(string $sku, bool $dryRun = true): void
             'stats' => $this->getTableStats(),
         ];
     }
+    protected function processSkusWithSameMethods(array $skus, bool $dryRun, int $batchSize): array
+{
+    $sessionId = \App\Models\GineeSyncLog::generateSessionId();
+    $totalSuccessful = 0;
+    $totalFailed = 0;
+    $method1Successful = 0; // Stock Push success count
+    $method2Successful = 0; // Enhanced Fallback success count
+    
+    Log::info("🔄 Processing " . count($skus) . " SKUs with same 2-method priority", [
+        'session_id' => $sessionId
+    ]);
+
+    // Process in small batches to avoid memory issues
+    $chunks = array_chunk($skus, $batchSize);
+    
+    foreach ($chunks as $chunkIndex => $chunk) {
+        Log::info("📦 Processing chunk " . ($chunkIndex + 1) . "/" . count($chunks) . " (" . count($chunk) . " SKUs)");
+        
+        foreach ($chunk as $sku) {
+            $skuResult = $this->processSingleSkuSameMethods($sku, $dryRun, $sessionId);
+            
+            if ($skuResult['success']) {
+                $totalSuccessful++;
+                if ($skuResult['method_used'] === 'stock_push') {
+                    $method1Successful++;
+                } else {
+                    $method2Successful++;
+                }
+            } else {
+                $totalFailed++;
+            }
+            
+            // Rate limiting between SKUs
+            usleep(200000); // 0.2 second delay
+        }
+        
+        // Rate limiting between chunks
+        if ($chunkIndex < count($chunks) - 1) {
+            sleep(2); // 2 second delay between chunks
+        }
+    }
+    
+    // ✅ CREATE BULK SUMMARY LOG
+    \App\Models\GineeSyncLog::create([
+        'type' => 'bulk_sync_summary',
+        'status' => 'completed',
+        'operation_type' => 'stock_push', // Same as single method
+        'method_used' => 'same_as_single_test', // Track that we used same methods
+        'message' => ($dryRun ? 'BULK DRY RUN - ' : 'BULK SYNC - ') . 
+                    "Completed using same 2 methods as single test: {$totalSuccessful} successful, {$totalFailed} failed. " .
+                    "Method breakdown: Stock Push ({$method1Successful}), Enhanced Fallback ({$method2Successful})",
+        'dry_run' => $dryRun,
+        'session_id' => $sessionId,
+        'created_at' => now()
+    ]);
+
+    return [
+        'total_processed' => count($skus),
+        'total_successful' => $totalSuccessful,
+        'total_failed' => $totalFailed,
+        'method1_successful' => $method1Successful,
+        'method2_successful' => $method2Successful,
+        'session_id' => $sessionId
+    ];
+}
+protected function processSingleSkuSameMethods(string $sku, bool $dryRun, string $sessionId): array
+{
+    try {
+        Log::debug("🎯 Processing SKU {$sku} with same 2-method priority (READ ONLY)");
+
+        // ✅ PRIORITY 1: STOCK PUSH (same as testSingleSku Priority 1)
+        $syncService = new \App\Services\OptimizedGineeStockSyncService();
+        $result = $syncService->syncSingleSku($sku, $dryRun);
+        
+        if ($result['success']) {
+            // Stock push berhasil - STOP here (same as testSingleSku)
+            Log::debug("✅ SKU {$sku}: Stock Push method successful (Priority 1)");
+            
+            return [
+                'success' => true,
+                'method_used' => 'stock_push',
+                'message' => $result['message']
+            ];
+        }
+
+        // ✅ PRIORITY 2: ENHANCED DASHBOARD FALLBACK (same as testSingleSku Priority 2)
+        Log::debug("🔄 SKU {$sku}: Stock push failed, trying enhanced fallback");
+        
+        // ✅ GET OLD STOCK FROM DATABASE (same as fixed testSingleSku)
+        $product = \App\Models\Product::where('sku', $sku)->first();
+        $oldStock = $product ? ($product->stock_quantity ?? 0) : null;
+        $oldWarehouseStock = $product ? ($product->warehouse_stock ?? 0) : null;
+        $productName = $product ? $product->name : 'Product Not Found';
+        
+        if (!$product) {
+            Log::debug("❌ SKU {$sku}: Product not found in database");
+            return ['success' => false, 'method_used' => 'none', 'message' => 'Product not found'];
+        }
+        
+        // Try enhanced fallback method (same as testSingleSku)
+        $bulkResult = $syncService->getBulkStockFromGinee([$sku]);
+        
+        if ($bulkResult['success'] && isset($bulkResult['found_stock'][$sku])) {
+            $stockData = $bulkResult['found_stock'][$sku];
+            
+            // ✅ CALCULATE STOCK CHANGE (same as fixed testSingleSku)
+            $newStock = $stockData['total_stock'] ?? $stockData['available_stock'] ?? 0;
+            $newWarehouseStock = $stockData['warehouse_stock'] ?? 0;
+            $stockChange = $oldStock !== null ? ($newStock - $oldStock) : null;
+            
+            // ✅ UPDATE LOCAL DATABASE ONLY (READ ONLY - no write to external platforms)
+            if (!$dryRun) {
+                $product->stock_quantity = $newStock;
+                $product->warehouse_stock = $newWarehouseStock;
+                $product->ginee_last_sync = now();
+                $product->ginee_sync_status = 'synced';
+                $product->save();
+                Log::debug("✅ SKU {$sku}: Updated local database only (READ ONLY)");
+            }
+            
+            // ✅ ENHANCED LOGGING WITH OLD STOCK AND CHANGE (same as fixed testSingleSku)
+            \App\Models\GineeSyncLog::create([
+                'type' => 'enhanced_dashboard_fallback', // Same type as single test
+                'status' => $dryRun ? 'skipped' : 'success',
+                'operation_type' => 'stock_push', // Same as single test
+                'method_used' => 'enhanced_dashboard_fallback', // Same as single test
+                'sku' => $sku,
+                'product_name' => $productName,
+                'old_stock' => $oldStock,                       // ✅ Read from database
+                'new_stock' => $newStock,                       // ✅ From Ginee API (READ ONLY)
+                'change' => $stockChange,                       // ✅ Calculated change
+                'old_warehouse_stock' => $oldWarehouseStock,    // ✅ From database
+                'new_warehouse_stock' => $newWarehouseStock,    // ✅ From Ginee API (READ ONLY)
+                'message' => $dryRun ? 
+                    "BULK DRY RUN - Enhanced fallback would update from {$oldStock} to {$newStock}" . 
+                    ($stockChange !== null ? " (change: {$stockChange})" : "") :
+                    "BULK SUCCESS - Enhanced fallback updated local DB from {$oldStock} to {$newStock}" . 
+                    ($stockChange !== null ? " (change: {$stockChange})" : ""),
+                'ginee_response' => $stockData,
+                'dry_run' => $dryRun,
+                'session_id' => $sessionId
+            ]);
+            
+            Log::debug("✅ SKU {$sku}: Enhanced fallback successful (Priority 2) - READ ONLY update");
+            
+            return [
+                'success' => true,
+                'method_used' => 'enhanced_dashboard_fallback',
+                'message' => "Enhanced fallback found and updated (READ ONLY): {$oldStock} → {$newStock}"
+            ];
+        }
+
+        // ✅ BOTH METHODS FAILED (same as testSingleSku)
+        Log::debug("❌ SKU {$sku}: Both stock push and enhanced fallback failed");
+        
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_dashboard_fallback',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'both_methods_failed',
+            'sku' => $sku,
+            'product_name' => $productName,
+            'old_stock' => $oldStock,
+            'message' => "Both stock push and enhanced fallback failed for bulk sync",
+            'error_message' => 'SKU not found using either method',
+            'dry_run' => $dryRun,
+            'session_id' => $sessionId
+        ]);
+        
+        return [
+            'success' => false,
+            'method_used' => 'both_failed',
+            'message' => 'Both methods failed'
+        ];
+        
+    } catch (\Exception $e) {
+        Log::error("❌ Exception processing SKU {$sku}: " . $e->getMessage());
+        
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_dashboard_fallback',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'exception',
+            'sku' => $sku,
+            'message' => "Exception during bulk sync: " . $e->getMessage(),
+            'error_message' => $e->getMessage(),
+            'dry_run' => $dryRun,
+            'session_id' => $sessionId
+        ]);
+        
+        return [
+            'success' => false,
+            'method_used' => 'exception',
+            'message' => 'Exception: ' . $e->getMessage()
+        ];
+    }
+}
+
+
+/**
+ * ✅ SHOW SUMMARY NOTIFICATION
+ */
+protected function showBulkSyncSummary(array $results, bool $dryRun): void
+{
+    $message = ($dryRun ? '🧪 BULK DRY RUN' : '✅ BULK SYNC') . " COMPLETED (READ ONLY)\n\n";
+    
+    $message .= "📊 TOTAL RESULTS:\n";
+    $message .= "✅ Successful: {$results['total_successful']}/{$results['total_processed']}\n";
+    $message .= "❌ Failed: {$results['total_failed']}\n\n";
+    
+    $message .= "🔧 METHOD BREAKDOWN (same as single test):\n";
+    $message .= "📦 Priority 1 (Stock Push): {$results['method1_successful']} successful\n";
+    $message .= "🔄 Priority 2 (Enhanced Fallback): {$results['method2_successful']} successful\n";
+    
+    if ($results['total_failed'] > 0) {
+        $message .= "\n⚠️ {$results['total_failed']} SKUs failed both methods";
+    }
+    
+    $successRate = $results['total_processed'] > 0 ? 
+        round(($results['total_successful'] / $results['total_processed']) * 100, 1) : 0;
+    $message .= "\n📈 Success Rate: {$successRate}%";
+    $message .= "\n🔒 READ only - no external platform updates";
+
+    Notification::make()
+        ->title($dryRun ? '🧪 Bulk Sync Preview Completed' : '✅ Bulk Sync Completed (READ ONLY)')
+        ->body($message)
+        ->success()
+        ->duration(15000)
+        ->send();
+}
+protected function estimateCompletionTime(int $totalSkus, int $batchSize, int $delay): string
+{
+    $totalBatches = ceil($totalSkus / $batchSize);
+    $estimatedMinutes = ($totalBatches * $delay) / 60;
+    
+    if ($estimatedMinutes < 1) {
+        return "< 1 minute";
+    } elseif ($estimatedMinutes < 60) {
+        return round($estimatedMinutes) . " minutes";
+    } else {
+        $hours = floor($estimatedMinutes / 60);
+        $minutes = round($estimatedMinutes % 60);
+        return "{$hours}h {$minutes}m";
+    }
+}
+
 }

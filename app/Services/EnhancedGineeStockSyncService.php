@@ -256,47 +256,122 @@ class EnhancedGineeStockSyncService extends GineeStockSyncService
      * Enhanced single SKU sync with fallback methods
      */
     public function syncSingleSkuEnhanced(string $sku, bool $dryRun = false): array
-    {
-        Log::info('🚀 [Enhanced Sync] Starting enhanced sync for SKU', ['sku' => $sku, 'dry_run' => $dryRun]);
+{
+    Log::info('🚀 [Enhanced Sync] Starting enhanced sync for SKU', ['sku' => $sku, 'dry_run' => $dryRun]);
+    
+    // ✅ GET OLD STOCK FROM DATABASE FIRST
+    $product = \App\Models\Product::where('sku', $sku)->first();
+    $oldStock = $product ? ($product->stock_quantity ?? 0) : null;
+    $oldWarehouseStock = $product ? ($product->warehouse_stock ?? 0) : null;
+    $productName = $product ? $product->name : 'Product Not Found';
+    
+    if (!$product) {
+        // Log product not found
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_sync',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'enhanced_fallback',
+            'sku' => $sku,
+            'product_name' => 'Product Not Found',
+            'message' => "Product with SKU {$sku} not found in database",
+            'error_message' => 'Product not found in local database',
+            'dry_run' => $dryRun,
+            'session_id' => \App\Models\GineeSyncLog::generateSessionId()
+        ]);
         
-        $gineeStock = $this->getStockFromGineeEnhanced($sku);
-        
-        if (!$gineeStock) {
-            // Create detailed failure log
-            \App\Models\GineeSyncLog::create([
-                'type' => 'enhanced_sync',
-                'status' => 'failed',
-                'operation_type' => 'sync',
-                'sku' => $sku,
-                'product_name' => 'Unknown',
-                'message' => "SKU {$sku} not found using any of the 3 enhanced methods",
-                'dry_run' => $dryRun,
-                'session_id' => \App\Models\GineeSyncLog::generateSessionId()
-            ]);
-            
-            return [
-                'success' => false,
-                'message' => "SKU {$sku} not found using enhanced fallback methods",
-                'data' => null
-            ];
-        }
-
-        $updated = $this->updateLocalProductStock($sku, $gineeStock, $dryRun);
-        
-        if ($updated) {
-            return [
-                'success' => true,
-                'message' => $dryRun ? 
-                    "DRY RUN: Would update {$sku} with stock from {$gineeStock['api_source']}" : 
-                    "Successfully updated {$sku} using {$gineeStock['api_source']} method",
-                'data' => $gineeStock
-            ];
-        } else {
-            return [
-                'success' => false,
-                'message' => "Failed to update local product for SKU {$sku}",
-                'data' => ['ginee_stock' => $gineeStock]
-            ];
-        }
+        return [
+            'success' => false,
+            'message' => "Product with SKU {$sku} not found in database",
+            'data' => null
+        ];
     }
+    
+    $gineeStock = $this->getStockFromGineeEnhanced($sku);
+    
+    if (!$gineeStock) {
+        // Create detailed failure log with old stock info
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_sync',
+            'status' => 'failed',
+            'operation_type' => 'stock_push',
+            'method_used' => 'enhanced_fallback',
+            'sku' => $sku,
+            'product_name' => $productName,
+            'old_stock' => $oldStock,                           // ✅ Include old stock
+            'old_warehouse_stock' => $oldWarehouseStock,        // ✅ Include old warehouse stock
+            'new_stock' => null,
+            'change' => null,
+            'message' => "SKU {$sku} not found using any of the 3 enhanced methods",
+            'error_message' => 'All enhanced methods failed',
+            'dry_run' => $dryRun,
+            'session_id' => \App\Models\GineeSyncLog::generateSessionId()
+        ]);
+        
+        return [
+            'success' => false,
+            'message' => "SKU {$sku} not found using enhanced fallback methods",
+            'data' => null
+        ];
+    }
+
+    // ✅ CALCULATE STOCK CHANGES
+    $newStock = $gineeStock['available_stock'] ?? $gineeStock['total_stock'] ?? 0;
+    $newWarehouseStock = $gineeStock['warehouse_stock'] ?? 0;
+    $stockChange = $newStock - $oldStock;
+
+    // ✅ LOG WITH COMPLETE STOCK INFO
+    if ($dryRun) {
+        \App\Models\GineeSyncLog::create([
+            'type' => 'enhanced_sync',
+            'status' => 'skipped',                              // ✅ Use 'skipped' for dry run
+            'operation_type' => 'stock_push',
+            'method_used' => 'enhanced_fallback',
+            'sku' => $sku,
+            'product_name' => $productName,
+            'old_stock' => $oldStock,                           // ✅ From database
+            'new_stock' => $newStock,                           // ✅ From Ginee
+            'change' => $stockChange,                           // ✅ Calculated
+            'old_warehouse_stock' => $oldWarehouseStock,        // ✅ From database
+            'new_warehouse_stock' => $newWarehouseStock,        // ✅ From Ginee
+            'message' => "DRY RUN - Enhanced would update from {$oldStock} to {$newStock} (change: {$stockChange})",
+            'ginee_response' => $gineeStock,
+            'dry_run' => true,
+            'session_id' => \App\Models\GineeSyncLog::generateSessionId()
+        ]);
+        
+        return [
+            'success' => true,
+            'message' => "DRY RUN - Enhanced fallback would update {$sku} from {$oldStock} to {$newStock}",
+            'data' => [
+                'old_stock' => $oldStock,
+                'new_stock' => $newStock,
+                'change' => $stockChange,
+                'method_used' => 'enhanced_fallback'
+            ]
+        ];
+    }
+
+    // ✅ ACTUAL UPDATE - if not dry run
+    $updated = $this->updateLocalProductStock($sku, $gineeStock, $dryRun);
+    
+    if ($updated) {
+        return [
+            'success' => true,
+            'message' => "Enhanced fallback updated {$sku} from {$oldStock} to {$newStock}",
+            'data' => [
+                'old_stock' => $oldStock,
+                'new_stock' => $newStock,
+                'change' => $stockChange,
+                'method_used' => 'enhanced_fallback'
+            ]
+        ];
+    } else {
+        return [
+            'success' => false,
+            'message' => "Enhanced fallback found stock data but failed to update database",
+            'data' => null
+        ];
+    }
+}
 }

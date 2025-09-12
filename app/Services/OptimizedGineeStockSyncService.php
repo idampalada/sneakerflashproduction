@@ -3,6 +3,10 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use App\Models\Product;
+use App\Models\GineeMapping;
+use App\Models\GineeSyncLog;  // ✅ ADD THIS IMPORT
+use Exception;
 
 class OptimizedGineeStockSyncService extends GineeStockSyncService
 {
@@ -372,15 +376,15 @@ $result = $gineeClient->getMasterProducts([
      */
     public function syncMultipleSkusOptimized(array $skus, array $options = []): array
     {
-        $sessionId = \Illuminate\Support\Str::uuid();
+        $sessionId = $options['session_id'] ?? GineeSyncLog::generateSessionId();
         $dryRun = $options['dry_run'] ?? false;
-        $chunkSize = $options['chunk_size'] ?? 50; // Process in chunks
+        $chunkSize = $options['chunk_size'] ?? 50;
         
-        Log::info('🚀 [OPTIMIZED] Starting bulk sync with improved performance', [
+        Log::info('🚀 [OPTIMIZED] Starting bulk sync with session ID', [
             'total_skus' => count($skus),
             'chunk_size' => $chunkSize,
             'dry_run' => $dryRun,
-            'session_id' => $sessionId
+            'session_id' => $sessionId  // ✅ Log session ID
         ]);
         
         $stats = [
@@ -394,22 +398,15 @@ $result = $gineeClient->getMasterProducts([
             'performance' => []
         ];
 
-        $startTime = microtime(true);
-
-        // Process SKUs in chunks for better performance
         $chunks = array_chunk($skus, $chunkSize);
         
         foreach ($chunks as $chunkIndex => $chunk) {
             $chunkStartTime = microtime(true);
             
-            Log::info("📦 Processing chunk " . ($chunkIndex + 1) . "/" . count($chunks) . " (" . count($chunk) . " SKUs)");
-            
-            // Get all stock data for this chunk in one go
+            // Get all stock data for this chunk
             $bulkResult = $this->getBulkStockFromGinee($chunk);
             
             if (!$bulkResult['success']) {
-                Log::error("❌ Bulk stock fetch failed for chunk " . ($chunkIndex + 1));
-                
                 // Mark all SKUs in chunk as failed
                 foreach ($chunk as $sku) {
                     $stats['failed']++;
@@ -424,7 +421,8 @@ $result = $gineeClient->getMasterProducts([
             // Update local database for found SKUs
             foreach ($foundStock as $sku => $stockData) {
                 try {
-                    $updated = $this->updateLocalProductStock($sku, $stockData, $dryRun);
+                    // ✅ PASS SESSION ID to maintain consistency
+                    $updated = $this->updateLocalProductStock($sku, $stockData, $dryRun, $sessionId);
                     
                     if ($updated) {
                         $stats['successful']++;
@@ -435,31 +433,14 @@ $result = $gineeClient->getMasterProducts([
                                 "Dry run - would update {$sku} to {$stockData['total_stock']}" :
                                 "Updated {$sku} to {$stockData['total_stock']}"
                         ];
-                        
-                        // Log individual success
-                        \App\Models\GineeSyncLog::create([
-                            'session_id' => $sessionId,
-                            'type' => 'bulk_optimized_sync',
-                            'status' => $dryRun ? 'skipped' : 'success',
-                            'operation_type' => 'sync',
-                            'sku' => $sku,
-                            'product_name' => $stockData['product_name'],
-                            'new_stock' => $stockData['total_stock'],
-                            'message' => $dryRun ? 
-                                "Dry run - would update to {$stockData['total_stock']}" :
-                                "Updated to {$stockData['total_stock']}",
-                            'dry_run' => $dryRun
-                        ]);
                     } else {
                         $stats['failed']++;
-                        $stats['errors'][] = "SKU {$sku}: Failed to update local database";
+                        $stats['errors'][] = "Failed to update SKU {$sku}";
                     }
                     
                 } catch (\Exception $e) {
                     $stats['failed']++;
                     $stats['errors'][] = "SKU {$sku}: Exception - " . $e->getMessage();
-                    
-                    Log::error("💥 Exception updating SKU {$sku}: " . $e->getMessage());
                 }
             }
             
@@ -469,87 +450,39 @@ $result = $gineeClient->getMasterProducts([
                 $stats['failed']++;
                 $stats['errors'][] = "SKU {$sku}: Not found in Ginee";
                 
-                // Log not found
-                \App\Models\GineeSyncLog::create([
-                    'session_id' => $sessionId,
-                    'type' => 'bulk_optimized_sync',
+                // Log not found with consistent session ID
+                GineeSyncLog::create([
+                    'type' => 'optimized_sync',
                     'status' => 'failed',
-                    'operation_type' => 'sync',
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'optimized_bulk',
                     'sku' => $sku,
                     'message' => 'SKU not found in Ginee inventory',
                     'error_message' => 'Product not found',
-                    'dry_run' => $dryRun
+                    'dry_run' => $dryRun,
+                    'session_id' => $sessionId,  // ✅ Consistent session ID
+                    'created_at' => now()
                 ]);
             }
-            
-            $chunkDuration = microtime(true) - $chunkStartTime;
-            $stats['performance'][] = [
-                'chunk' => $chunkIndex + 1,
-                'skus_count' => count($chunk),
-                'found_count' => count($foundStock),
-                'duration_seconds' => round($chunkDuration, 2),
-                'skus_per_second' => round(count($chunk) / $chunkDuration, 2)
-            ];
-            
-            Log::info("✅ Chunk " . ($chunkIndex + 1) . " completed", [
-                'found' => count($foundStock),
-                'not_found' => count($notFoundSkus),
-                'duration' => round($chunkDuration, 2) . 's',
-                'speed' => round(count($chunk) / $chunkDuration, 2) . ' SKUs/sec'
-            ]);
-            
-            // Rate limiting between chunks
-            if ($chunkIndex < count($chunks) - 1) {
-                sleep(1); // 1 second between chunks
-            }
         }
 
-        $totalDuration = microtime(true) - $startTime;
-        
         // Create summary log
-        \App\Models\GineeSyncLog::create([
-            'session_id' => $sessionId,
-            'type' => 'bulk_optimized_summary',
+        GineeSyncLog::create([
+            'type' => 'optimized_bulk_summary',
             'status' => 'completed',
-            'operation_type' => 'sync',
-            'items_processed' => count($skus),
-            'items_successful' => $stats['successful'],
-            'items_failed' => $stats['failed'],
-            'started_at' => now()->subSeconds($totalDuration),
-            'completed_at' => now(),
-            'summary' => json_encode($stats),
-            'message' => "Optimized bulk sync completed: {$stats['successful']} successful, {$stats['failed']} failed",
-            'dry_run' => $dryRun
+            'operation_type' => 'stock_push',
+            'method_used' => 'optimized_bulk',
+            'message' => ($dryRun ? 'DRY RUN - ' : '') . 
+                        "Optimized bulk sync completed: {$stats['successful']} successful, {$stats['failed']} failed",
+            'dry_run' => $dryRun,
+            'session_id' => $sessionId,  // ✅ Consistent session ID
+            'created_at' => now()
         ]);
-
-        $overallSpeed = round(count($skus) / $totalDuration, 2);
-        
-        Log::info('🏁 [OPTIMIZED] Bulk sync completed', [
-            'session_id' => $sessionId,
-            'total_skus' => count($skus),
-            'successful' => $stats['successful'],
-            'failed' => $stats['failed'],
-            'not_found' => $stats['not_found'],
-            'total_duration' => round($totalDuration, 2) . 's',
-            'overall_speed' => $overallSpeed . ' SKUs/sec',
-            'performance_improvement' => 'Up to 10x faster than individual search'
-        ]);
-
-        $summary = "🚀 OPTIMIZED bulk sync completed - Session: {$sessionId}\n";
-        $summary .= "✅ Successful: {$stats['successful']}\n";
-        $summary .= "❌ Failed: {$stats['failed']}\n";
-        $summary .= "🔍 Not Found: {$stats['not_found']}\n";
-        $summary .= "📊 Speed: {$overallSpeed} SKUs/sec\n";
-        $summary .= "⏱️ Duration: " . round($totalDuration, 2) . " seconds";
-        
-        if ($dryRun) {
-            $summary = "🧪 DRY RUN - " . $summary;
-        }
 
         return [
             'success' => true,
-            'message' => $summary,
-            'data' => $stats
+            'data' => $stats,
+            'message' => ($dryRun ? 'Optimized dry run completed' : 'Optimized sync completed')
         ];
     }
 
@@ -565,36 +498,156 @@ $result = $gineeClient->getMasterProducts([
     /**
      * Update local product stock - method yang dipanggil dari syncMultipleSkusOptimized
      */
-    public function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false): bool
+    public function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false, ?string $sessionId = null): bool
     {
         try {
-            $product = \App\Models\Product::where('sku', $sku)->first();
-            
+            Log::info('📝 [Optimized Stock Update] Processing', [
+                'sku' => $sku,
+                'dry_run' => $dryRun,
+                'session_id' => $sessionId
+            ]);
+
+            // Ensure we have a session ID
+            if (!$sessionId) {
+                $sessionId = GineeSyncLog::generateSessionId();
+            }
+
+            $product = Product::where('sku', $sku)->first();
             if (!$product) {
-                Log::warning("Product not found locally: {$sku}");
+                GineeSyncLog::create([
+                    'type' => 'optimized_sync',
+                    'status' => 'failed',
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'optimized_bulk',
+                    'sku' => $sku,
+                    'product_name' => 'Product Not Found',
+                    'message' => "Product with SKU {$sku} not found in database",
+                    'error_message' => 'Product not found in local database',
+                    'dry_run' => $dryRun,
+                    'session_id' => $sessionId,
+                    'created_at' => now()
+                ]);
+                
                 return false;
             }
 
+            // Calculate stock changes
             $oldStock = $product->stock_quantity ?? 0;
-            $newStock = $stockData['available_stock'] ?? $stockData['total_stock'] ?? 0;
+            $oldWarehouseStock = $product->warehouse_stock ?? 0;
+            
+            // Extract new stock from optimized data format
+            $newStock = $stockData['total_stock'] ?? $stockData['available_stock'] ?? 0;
+            $newWarehouseStock = $stockData['warehouse_stock'] ?? 0;
+            $stockChange = $newStock - $oldStock;
 
+            // ✅ DRY RUN - Log as 'skipped'
             if ($dryRun) {
-                Log::info("DRY RUN - Would update {$sku}: {$oldStock} → {$newStock}");
-                return true;
+                Log::info('🧪 [Optimized] Dry run - would update', [
+                    'sku' => $sku,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'change' => $stockChange
+                ]);
+
+                GineeSyncLog::create([
+                    'type' => 'optimized_sync',
+                    'status' => 'skipped',                // ✅ FIXED: Use 'skipped' for dry run
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'optimized_bulk',
+                    'sku' => $sku,
+                    'product_name' => $product->name,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'change' => $stockChange,
+                    'old_warehouse_stock' => $oldWarehouseStock,
+                    'new_warehouse_stock' => $newWarehouseStock,
+                    'message' => "DRY RUN - Would update from {$oldStock} to {$newStock} (optimized method)",
+                    'ginee_response' => $stockData,
+                    'dry_run' => true,
+                    'session_id' => $sessionId,
+                    'created_at' => now()
+                ]);
+                
+                return true;  // ✅ Return true for successful dry run
             }
 
-            // Live update
-            $updated = $product->update([
-                'stock_quantity' => $newStock,
-                'warehouse_stock' => $stockData['warehouse_stock'] ?? $newStock,
-                'ginee_last_sync' => now()
-            ]);
+            // ✅ ACTUAL UPDATE - Execute the stock update
+            $product->stock_quantity = $newStock;
+            $product->warehouse_stock = $newWarehouseStock;
+            $product->ginee_last_sync = now();
+            $product->ginee_sync_status = 'synced';
+            $saved = $product->save();
 
-            Log::info("Updated {$sku}: {$oldStock} → {$newStock}");
-            return $updated;
+            if ($saved) {
+                GineeSyncLog::create([
+                    'type' => 'optimized_sync',
+                    'status' => 'success',              // ✅ SUCCESS status
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'optimized_bulk',
+                    'sku' => $sku,
+                    'product_name' => $product->name,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'change' => $stockChange,
+                    'old_warehouse_stock' => $oldWarehouseStock,
+                    'new_warehouse_stock' => $newWarehouseStock,
+                    'message' => "SUCCESS - Updated from {$oldStock} to {$newStock} (optimized method)",
+                    'ginee_response' => $stockData,
+                    'dry_run' => false,
+                    'session_id' => $sessionId,
+                    'created_at' => now()
+                ]);
+
+                Log::info('✅ [Optimized] Successfully updated product stock', [
+                    'sku' => $sku,
+                    'product_id' => $product->id,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'change' => $stockChange,
+                    'session_id' => $sessionId
+                ]);
+
+                return true;
+            } else {
+                GineeSyncLog::create([
+                    'type' => 'optimized_sync',
+                    'status' => 'failed',
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'optimized_bulk',
+                    'sku' => $sku,
+                    'product_name' => $product->name,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'message' => "Failed to save product to database (optimized)",
+                    'error_message' => 'Database save operation failed',
+                    'dry_run' => false,
+                    'session_id' => $sessionId,
+                    'created_at' => now()
+                ]);
+
+                return false;
+            }
 
         } catch (\Exception $e) {
-            Log::error("Failed to update {$sku}: " . $e->getMessage());
+            Log::error('❌ [Optimized] Exception during stock update', [
+                'sku' => $sku,
+                'error' => $e->getMessage()
+            ]);
+            
+            GineeSyncLog::create([
+                'type' => 'optimized_sync',
+                'status' => 'failed',
+                'operation_type' => 'stock_push',
+                'method_used' => 'optimized_bulk',
+                'sku' => $sku,
+                'product_name' => $stockData['product_name'] ?? 'Unknown',
+                'message' => "Exception during optimized update: " . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'dry_run' => $dryRun,
+                'session_id' => $sessionId ?? GineeSyncLog::generateSessionId(),
+                'created_at' => now()
+            ]);
+            
             return false;
         }
     }

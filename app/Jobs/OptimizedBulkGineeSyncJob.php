@@ -7,8 +7,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\OptimizedGineeStockSyncService;
 use App\Models\GineeSyncLog;
+use App\Models\Product;
 use Illuminate\Support\Facades\Log;
 
 class OptimizedBulkGineeSyncJob implements ShouldQueue
@@ -21,212 +21,288 @@ class OptimizedBulkGineeSyncJob implements ShouldQueue
     protected $delayBetweenBatches;
     protected $sessionId;
 
-    /**
-     * Job timeout in seconds (1 hour)
-     */
-    public $timeout = 3600;
+    public $timeout = 7200; // 2 hours
+    public $tries = 2;
 
-    /**
-     * Number of times the job may be attempted
-     */
-    public $tries = 3;
-
-    /**
-     * Create a new job instance.
-     */
-    public function __construct(array $skus, bool $dryRun = true, int $batchSize = 50, int $delayBetweenBatches = 3)
+    public function __construct(array $skus, bool $dryRun = true, int $batchSize = 50, int $delay = 2)
     {
         $this->skus = $skus;
         $this->dryRun = $dryRun;
         $this->batchSize = $batchSize;
-        $this->delayBetweenBatches = $delayBetweenBatches;  // ✅ CHANGED
+        $this->delayBetweenBatches = $delay;
         $this->sessionId = GineeSyncLog::generateSessionId();
         
-        Log::info("🚀 [OptimizedBulkGineeSyncJob] Job created", [
+        Log::info("🚀 [Background Job] Created sync job", [
             'session_id' => $this->sessionId,
             'total_skus' => count($skus),
             'dry_run' => $dryRun,
             'batch_size' => $batchSize,
-            'delay_between_batches' => $delayBetweenBatches  // ✅ CHANGED
+            'delay' => $delay
         ]);
     }
 
-    /**
-     * Execute the job.
-     */
     public function handle(): void
     {
         try {
-            Log::info("🔄 [OptimizedBulkGineeSyncJob] Starting background sync", [
+            Log::info("🔄 [Background Job] Starting background sync", [
                 'session_id' => $this->sessionId,
-                'total_skus' => count($this->skus),
-                'dry_run' => $this->dryRun,
-                'batch_size' => $this->batchSize
+                'total_skus' => count($this->skus)
             ]);
 
-            // Create initial log entry
+            // ✅ CREATE START LOG FOR REAL-TIME MONITORING
             GineeSyncLog::create([
                 'session_id' => $this->sessionId,
-                'type' => 'bulk_sync_start',
+                'type' => 'bulk_sync_summary',
                 'status' => 'pending',
-                'operation_type' => 'sync',
-                'message' => "Background sync started for " . count($this->skus) . " SKUs",
+                'operation_type' => 'stock_push',
+                'method_used' => 'background_job',
+                'message' => "🚀 BACKGROUND SYNC STARTED - Processing " . count($this->skus) . " products",
                 'dry_run' => $this->dryRun,
                 'created_at' => now()
             ]);
 
-            if (class_exists('\App\Services\OptimizedGineeStockSyncService')) {
-                // Use optimized service
-                $syncService = new OptimizedGineeStockSyncService();
-                $result = $syncService->syncBulkStock(
-                    $this->skus, 
-                    $this->dryRun, 
-                    $this->batchSize, 
-                    $this->delayBetweenBatches,
-                    $this->sessionId
-                );
-            } else {
-                // Fallback to basic service
-                Log::warning("OptimizedGineeStockSyncService not found, using basic service");
-                $result = $this->basicBulkSync();
-            }
+            // ✅ PROCESS WITH SAME 2-METHOD SYSTEM AS SINGLE TEST
+            $results = $this->processWithSameMethods();
 
-            // Create completion log
-            if ($result['success']) {
-                $stats = $result['stats'] ?? [];
-                
-                GineeSyncLog::create([
-                    'session_id' => $this->sessionId,
-                    'type' => 'bulk_sync_completed',
-                    'status' => 'success',
-                    'operation_type' => 'sync',
-                    'message' => sprintf(
-                        "Background sync completed: %d total, %d successful, %d failed, %d skipped",
-                        $stats['total'] ?? 0,
-                        $stats['successful'] ?? 0,
-                        $stats['failed'] ?? 0,
-                        $stats['skipped'] ?? 0
-                    ),
-                    'dry_run' => $this->dryRun,
-                    'created_at' => now()
-                ]);
+            // ✅ CREATE COMPLETION LOG  
+            GineeSyncLog::create([
+                'session_id' => $this->sessionId,
+                'type' => 'bulk_sync_summary',
+                'status' => 'success',
+                'operation_type' => 'stock_push',
+                'method_used' => 'background_job',
+                'message' => ($this->dryRun ? "🧪 BACKGROUND DRY RUN COMPLETED" : "✅ BACKGROUND SYNC COMPLETED") . 
+                            " - Total: {$results['total']}, Success: {$results['successful']}, Failed: {$results['failed']}" .
+                            " | Method 1 (Stock Push): {$results['method1_successful']}, Method 2 (Enhanced Fallback): {$results['method2_successful']}",
+                'dry_run' => $this->dryRun,
+                'created_at' => now()
+            ]);
 
-                Log::info("✅ [OptimizedBulkGineeSyncJob] Job completed successfully", [
-                    'session_id' => $this->sessionId,
-                    'stats' => $stats
-                ]);
-            } else {
-                GineeSyncLog::create([
-                    'session_id' => $this->sessionId,
-                    'type' => 'bulk_sync_failed',
-                    'status' => 'failed',
-                    'operation_type' => 'sync',
-                    'message' => "Background sync failed: " . ($result['message'] ?? 'Unknown error'),
-                    'error_message' => $result['message'] ?? 'Unknown error',
-                    'dry_run' => $this->dryRun,
-                    'created_at' => now()
-                ]);
-
-                Log::error("❌ [OptimizedBulkGineeSyncJob] Job failed", [
-                    'session_id' => $this->sessionId,
-                    'error' => $result['message'] ?? 'Unknown error'
-                ]);
-            }
+            Log::info("✅ [Background Job] Completed successfully", [
+                'session_id' => $this->sessionId,
+                'results' => $results
+            ]);
 
         } catch (\Exception $e) {
-            Log::error("💥 [OptimizedBulkGineeSyncJob] Job exception", [
+            Log::error("❌ [Background Job] Failed", [
                 'session_id' => $this->sessionId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Create error log
             GineeSyncLog::create([
                 'session_id' => $this->sessionId,
-                'type' => 'bulk_sync_exception',
+                'type' => 'bulk_sync_summary',
                 'status' => 'failed',
-                'operation_type' => 'sync',
-                'message' => "Background sync exception: " . $e->getMessage(),
+                'operation_type' => 'stock_push',
+                'method_used' => 'background_job',
+                'message' => "❌ BACKGROUND SYNC FAILED: " . $e->getMessage(),
                 'error_message' => $e->getMessage(),
                 'dry_run' => $this->dryRun,
                 'created_at' => now()
             ]);
 
-            // Re-throw exception to mark job as failed
             throw $e;
         }
     }
 
     /**
-     * Basic bulk sync fallback
+     * ✅ PROCESS WITH SAME 2-METHOD SYSTEM AS SINGLE TEST
+     * Read-only, same priority logic
      */
-    protected function basicBulkSync(): array
+    protected function processWithSameMethods(): array
     {
-        $successful = 0;
-        $failed = 0;
-        $skipped = 0;
-        
-        try {
-            $syncService = new \App\Services\OptimizedGineeStockSyncService();
+        $results = [
+            'total' => count($this->skus),
+            'successful' => 0,
+            'failed' => 0,
+            'method1_successful' => 0, // Stock Push
+            'method2_successful' => 0, // Enhanced Fallback
+        ];
+
+        // Process in batches to avoid memory issues
+        $chunks = array_chunk($this->skus, $this->batchSize);
+        $totalChunks = count($chunks);
+
+        foreach ($chunks as $chunkIndex => $chunk) {
+            $chunkNumber = $chunkIndex + 1;
             
-            foreach ($this->skus as $sku) {
-                try {
-                    $result = $syncService->syncSingleSku($sku, $this->dryRun);
-                    
-                    if ($result['success']) {
-                        $successful++;
+            Log::info("📦 [Background Job] Processing chunk {$chunkNumber}/{$totalChunks}", [
+                'session_id' => $this->sessionId,
+                'chunk_size' => count($chunk)
+            ]);
+
+            // ✅ PROGRESS LOG FOR REAL-TIME MONITORING
+            GineeSyncLog::create([
+                'session_id' => $this->sessionId,
+                'type' => 'bulk_sync_summary',
+                'status' => 'pending',
+                'operation_type' => 'stock_push',
+                'method_used' => 'background_job',
+                'message' => "📦 Processing chunk {$chunkNumber}/{$totalChunks} ({$results['successful']} completed so far)",
+                'dry_run' => $this->dryRun,
+                'created_at' => now()
+            ]);
+
+            foreach ($chunk as $sku) {
+                $skuResult = $this->processSingleSkuSameMethods($sku);
+                
+                if ($skuResult['success']) {
+                    $results['successful']++;
+                    if ($skuResult['method_used'] === 'stock_push') {
+                        $results['method1_successful']++;
                     } else {
-                        $failed++;
+                        $results['method2_successful']++;
                     }
-                    
-                    // Add delay between individual syncs
-                if ($this->delayBetweenBatches > 0) {  // ✅ CHANGED
-                    sleep($this->delayBetweenBatches);  // ✅ CHANGED
-                    }
-                    
-                } catch (\Exception $e) {
-                    $failed++;
-                    Log::error("Error syncing SKU {$sku}: " . $e->getMessage());
+                } else {
+                    $results['failed']++;
                 }
+
+                // Small delay between SKUs
+                usleep(200000); // 0.2 second
+            }
+
+            // Delay between chunks (user setting)
+            if ($chunkIndex < $totalChunks - 1) {
+                sleep($this->delay);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * ✅ PROCESS SINGLE SKU - EXACT SAME AS DASHBOARD TEST
+     * Priority 1: Stock Push, Priority 2: Enhanced Dashboard Fallback
+     */
+    protected function processSingleSkuSameMethods(string $sku): array
+    {
+        try {
+            // ✅ PRIORITY 1: STOCK PUSH (same as testSingleSku Priority 1)
+            $syncService = new \App\Services\OptimizedGineeStockSyncService();
+            $result = $syncService->syncSingleSku($sku, $this->dryRun);
+            
+            if ($result['success']) {
+                return [
+                    'success' => true,
+                    'method_used' => 'stock_push',
+                    'message' => $result['message']
+                ];
+            }
+
+            // ✅ PRIORITY 2: ENHANCED DASHBOARD FALLBACK (same as testSingleSku Priority 2)
+            $product = Product::where('sku', $sku)->first();
+            $oldStock = $product ? ($product->stock_quantity ?? 0) : null;
+            $oldWarehouseStock = $product ? ($product->warehouse_stock ?? 0) : null;
+            $productName = $product ? $product->name : 'Product Not Found';
+            
+            if (!$product) {
+                return ['success' => false, 'method_used' => 'none', 'message' => 'Product not found'];
             }
             
-            return [
-                'success' => true,
-                'stats' => [
-                    'total' => count($this->skus),
-                    'successful' => $successful,
-                    'failed' => $failed,
-                    'skipped' => $skipped,
+            // Try enhanced fallback
+            $bulkResult = $syncService->getBulkStockFromGinee([$sku]);
+            
+            if ($bulkResult['success'] && isset($bulkResult['found_stock'][$sku])) {
+                $stockData = $bulkResult['found_stock'][$sku];
+                
+                $newStock = $stockData['total_stock'] ?? $stockData['available_stock'] ?? 0;
+                $newWarehouseStock = $stockData['warehouse_stock'] ?? 0;
+                $stockChange = $oldStock !== null ? ($newStock - $oldStock) : null;
+                
+                // ✅ UPDATE LOCAL DATABASE ONLY (READ ONLY)
+                if (!$this->dryRun) {
+                    $product->stock_quantity = $newStock;
+                    $product->warehouse_stock = $newWarehouseStock;
+                    $product->ginee_last_sync = now();
+                    $product->ginee_sync_status = 'synced';
+                    $product->save();
+                }
+                
+                // ✅ LOG WITH COMPLETE INFO (same as dashboard)
+                GineeSyncLog::create([
+                    'type' => 'enhanced_dashboard_fallback',
+                    'status' => $this->dryRun ? 'skipped' : 'success',
+                    'operation_type' => 'stock_push',
+                    'method_used' => 'enhanced_dashboard_fallback',
+                    'sku' => $sku,
+                    'product_name' => $productName,
+                    'old_stock' => $oldStock,
+                    'new_stock' => $newStock,
+                    'change' => $stockChange,
+                    'old_warehouse_stock' => $oldWarehouseStock,
+                    'new_warehouse_stock' => $newWarehouseStock,
+                    'message' => $this->dryRun ? 
+                        "BACKGROUND DRY RUN - Enhanced fallback would update from {$oldStock} to {$newStock}" :
+                        "BACKGROUND SUCCESS - Enhanced fallback updated local DB from {$oldStock} to {$newStock}",
+                    'ginee_response' => $stockData,
+                    'dry_run' => $this->dryRun,
                     'session_id' => $this->sessionId
-                ]
+                ]);
+                
+                return [
+                    'success' => true,
+                    'method_used' => 'enhanced_dashboard_fallback',
+                    'message' => "Enhanced fallback: {$oldStock} → {$newStock}"
+                ];
+            }
+
+            // Both methods failed
+            GineeSyncLog::create([
+                'type' => 'enhanced_dashboard_fallback',
+                'status' => 'failed',
+                'operation_type' => 'stock_push',
+                'method_used' => 'both_methods_failed',
+                'sku' => $sku,
+                'product_name' => $productName,
+                'old_stock' => $oldStock,
+                'message' => "Background sync - Both stock push and enhanced fallback failed",
+                'error_message' => 'Both methods failed for background sync',
+                'dry_run' => $this->dryRun,
+                'session_id' => $this->sessionId
+            ]);
+            
+            return [
+                'success' => false,
+                'method_used' => 'both_failed',
+                'message' => 'Both methods failed'
             ];
             
         } catch (\Exception $e) {
+            GineeSyncLog::create([
+                'type' => 'enhanced_dashboard_fallback',
+                'status' => 'failed',
+                'operation_type' => 'stock_push',
+                'method_used' => 'exception',
+                'sku' => $sku,
+                'message' => "Background sync exception: " . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'dry_run' => $this->dryRun,
+                'session_id' => $this->sessionId
+            ]);
+            
             return [
                 'success' => false,
-                'message' => $e->getMessage()
+                'method_used' => 'exception',
+                'message' => 'Exception: ' . $e->getMessage()
             ];
         }
     }
 
-    /**
-     * Handle a job failure.
-     */
     public function failed(\Throwable $exception): void
     {
-        Log::error("💥 [OptimizedBulkGineeSyncJob] Job permanently failed", [
+        Log::error("💥 [Background Job] Permanently failed", [
             'session_id' => $this->sessionId,
-            'exception' => $exception->getMessage(),
-            'trace' => $exception->getTraceAsString()
+            'exception' => $exception->getMessage()
         ]);
 
-        // Create final failure log
         GineeSyncLog::create([
             'session_id' => $this->sessionId,
-            'type' => 'bulk_sync_permanent_failure',
+            'type' => 'bulk_sync_summary',
             'status' => 'failed',
-            'operation_type' => 'sync',
-            'message' => "Background sync permanently failed after all retries",
+            'operation_type' => 'stock_push',
+            'method_used' => 'background_job',
+            'message' => "💥 BACKGROUND SYNC PERMANENTLY FAILED after retries",
             'error_message' => $exception->getMessage(),
             'dry_run' => $this->dryRun,
             'created_at' => now()
