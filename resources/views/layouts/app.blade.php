@@ -916,31 +916,51 @@ html, body {
         <!-- Mobile Menu Overlay -->
         <div class="mobile-menu-overlay" :class="{ 'open': mobileMenuOpen }" @click="mobileMenuOpen = false"></div>
         
-        <!-- Mobile Slide Menu - DENGAN CART & PROFILE FEATURES -->
-<div class="mobile-menu" :class="{ 'open': mobileMenuOpen }">
-    <!-- Menu Header -->
-    <div class="mobile-menu-header">
-        <img src="{{ asset('images/logo-sneakerflash.jpg') }}" alt="SneakerFlash Logo" class="ka-logo-img mx-auto">
-        @auth
-            <div class="mt-3 text-center">
-                <p class="text-gray-600 text-sm">Hello, <span class="font-semibold text-gray-800">{{ auth()->user()->name }}</span></p>
-            </div>
-        @endauth
-    </div>
+<!-- Mobile Slide Menu - DENGAN DROPDOWN SEDERHANA -->
+<div class="mobile-menu" :class="{ 'open': mobileMenuOpen }" x-data="mobileMenuDropdown()">
+<!-- Menu Header -->
+<div class="mobile-menu-header">
+    @auth
+        <div class="text-center">
+            <p class="text-gray-600 text-sm">Hello, <span class="font-semibold text-gray-800">{{ auth()->user()->name }}</span></p>
+        </div>
+    @endauth
+</div>
     
     <!-- Menu Items -->
-    <div class="mobile-menu-content">
-        <!-- Navigation Menu -->
-        <a href="/products?category=mens" class="mobile-menu-item">MENS</a>
-        <a href="/products?category=womens" class="mobile-menu-item">WOMENS</a>
-        <a href="/products?category=unisex" class="mobile-menu-item">UNISEX</a>
-        <a href="/products?brands[]=Nike" class="mobile-menu-item">NIKE</a>
-        <a href="/products?brands[]=Adidas" class="mobile-menu-item">ADIDAS</a>
+    <div class="mobile-menu-content" :class="{ 'menu-hidden': activeSubmenu }">
+        <!-- Navigation Menu dengan Dropdown -->
+        
+        <!-- MENS DROPDOWN -->
+        <button @click="openSubmenu('mens')" class="mobile-menu-item w-full text-left flex items-center justify-between">
+            <span>MENS</span>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+        </button>
+        
+        <!-- WOMENS DROPDOWN -->
+        <button @click="openSubmenu('womens')" class="mobile-menu-item w-full text-left flex items-center justify-between">
+            <span>WOMENS</span>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+        </button>
+        
+        <!-- UNISEX DROPDOWN -->
+        <button @click="openSubmenu('unisex')" class="mobile-menu-item w-full text-left flex items-center justify-between">
+            <span>UNISEX</span>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+        </button>
+        
+        <!-- BRAND DROPDOWN -->
+        <button @click="openSubmenu('brand')" class="mobile-menu-item w-full text-left flex items-center justify-between">
+            <span>BRAND</span>
+            <i class="fas fa-chevron-right text-gray-400"></i>
+        </button>
+        
+        <!-- Menu tanpa dropdown -->
         <a href="/products?category=accessories" class="mobile-menu-item">ACCESSORIES</a>
         <a href="/products?sale=true" class="mobile-menu-item special">SALE</a>
         
         @auth
-            <!-- My Account Section - DENGAN CART & PROFILE -->
+            <!-- My Account Section -->
             <div class="border-t border-gray-200 mt-4 pt-4">
                 <div class="px-4 pb-2">
                     <h5 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">My Account</h5>
@@ -953,12 +973,6 @@ html, body {
                     @if($cartCount > 0)
                         <span class="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">{{ $cartCount }}</span>
                     @endif
-                </a>
-                <a href="{{ route('orders.index') }}" class="mobile-menu-item">
-                    <i class="fas fa-shopping-bag mr-3 text-gray-500"></i>My Orders
-                </a>
-                <a href="{{ route('profile.index') }}" class="mobile-menu-item">
-                    <i class="fas fa-user mr-3 text-gray-500"></i>Profile Settings
                 </a>
             </div>
         @else
@@ -977,8 +991,108 @@ html, body {
         @endauth
     </div>
     
+    <!-- SUBMENU MENS -->
+    <div class="mobile-submenu-overlay" :class="{ 'active': activeSubmenu === 'mens' }">
+        <div class="mobile-submenu-header">
+            <button @click="closeSubmenu()" class="mobile-back-btn">
+                <i class="fas fa-chevron-left mr-2"></i>
+                <span>All</span>
+            </button>
+            <button @click="mobileMenuOpen = false" class="mobile-close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="mobile-submenu-content">
+            <h2 class="mobile-submenu-title">Men</h2>
+            <a href="/products?category=mens&type=lifestyle" class="mobile-submenu-item-large">Lifestyle/Casual</a>
+            <a href="/products?category=mens&type=running" class="mobile-submenu-item-large">Running</a>
+            <a href="/products?category=mens&type=training" class="mobile-submenu-item-large">Training</a>
+            <a href="/products?category=mens&type=basketball" class="mobile-submenu-item-large">Basketball</a>
+            <a href="/products?category=mens&type=apparel" class="mobile-submenu-item-large">Apparel</a>
+        </div>
+    </div>
+    
+    <!-- SUBMENU WOMENS -->
+    <div class="mobile-submenu-overlay" :class="{ 'active': activeSubmenu === 'womens' }">
+        <div class="mobile-submenu-header">
+            <button @click="closeSubmenu()" class="mobile-back-btn">
+                <i class="fas fa-chevron-left mr-2"></i>
+                <span>All</span>
+            </button>
+            <button @click="mobileMenuOpen = false" class="mobile-close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="mobile-submenu-content">
+            <h2 class="mobile-submenu-title">Women</h2>
+            <a href="/products?category=womens&type=lifestyle" class="mobile-submenu-item-large">Lifestyle/Casual</a>
+            <a href="/products?category=womens&type=running" class="mobile-submenu-item-large">Running</a>
+            <a href="/products?category=womens&type=training" class="mobile-submenu-item-large">Training</a>
+            <a href="/products?category=womens&type=apparel" class="mobile-submenu-item-large">Apparel</a>
+        </div>
+    </div>
+    
+    <!-- SUBMENU UNISEX -->
+    <div class="mobile-submenu-overlay" :class="{ 'active': activeSubmenu === 'unisex' }">
+        <div class="mobile-submenu-header">
+            <button @click="closeSubmenu()" class="mobile-back-btn">
+                <i class="fas fa-chevron-left mr-2"></i>
+                <span>All</span>
+            </button>
+            <button @click="mobileMenuOpen = false" class="mobile-close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="mobile-submenu-content">
+            <h2 class="mobile-submenu-title">Unisex</h2>
+            <a href="/products?category=unisex&type=lifestyle" class="mobile-submenu-item-large">Lifestyle/Casual</a>
+            <a href="/products?category=unisex&type=running" class="mobile-submenu-item-large">Running</a>
+            <a href="/products?category=unisex&type=training" class="mobile-submenu-item-large">Training</a>
+            <a href="/products?category=unisex&type=basketball" class="mobile-submenu-item-large">Basketball</a>
+            <a href="/products?category=unisex&type=apparel" class="mobile-submenu-item-large">Apparel</a>
+        </div>
+    </div>
+    
+    <!-- SUBMENU BRAND -->
+    <div class="mobile-submenu-overlay" :class="{ 'active': activeSubmenu === 'brand' }">
+        <div class="mobile-submenu-header">
+            <button @click="closeSubmenu()" class="mobile-back-btn">
+                <i class="fas fa-chevron-left mr-2"></i>
+                <span>All</span>
+            </button>
+            <button @click="mobileMenuOpen = false" class="mobile-close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="mobile-submenu-content">
+            <h2 class="mobile-submenu-title">Brand</h2>
+            <a href="/products?brands[]=Adidas" class="mobile-submenu-item-large">ADIDAS</a>
+            <a href="/products?brands[]=Air+Jordan" class="mobile-submenu-item-large">AIR JORDAN</a>
+            <a href="/products?brands[]=Asics" class="mobile-submenu-item-large">ASICS</a>
+            <a href="/products?brands[]=Converse" class="mobile-submenu-item-large">CONVERSE</a>
+            <a href="/products?brands[]=Crep" class="mobile-submenu-item-large">CREP</a>
+            <a href="/products?brands[]=Crocs" class="mobile-submenu-item-large">CROCS</a>
+            <a href="/products?brands[]=Diadora" class="mobile-submenu-item-large">DIADORA</a>
+            <a href="/products?brands[]=Hoka" class="mobile-submenu-item-large">HOKA</a>
+            <a href="/products?brands[]=New+Balance" class="mobile-submenu-item-large">NEW BALANCE</a>
+            <a href="/products?brands[]=New+Era" class="mobile-submenu-item-large">NEW ERA</a>
+            <a href="/products?brands[]=Nike" class="mobile-submenu-item-large">NIKE</a>
+            <a href="/products?brands[]=Onitsuka+Tiger" class="mobile-submenu-item-large">ONITSUKA TIGER</a>
+            <a href="/products?brands[]=Puma" class="mobile-submenu-item-large">PUMA</a>
+            <a href="/products?brands[]=Reebok" class="mobile-submenu-item-large">REEBOK</a>
+            <a href="/products?brands[]=Salomon" class="mobile-submenu-item-large">SALOMON</a>
+            <a href="/products?brands[]=Skechers" class="mobile-submenu-item-large">SKECHERS</a>
+            <a href="/products?brands[]=Umbro" class="mobile-submenu-item-large">UMBRO</a>
+            <a href="/products?brands[]=Vans" class="mobile-submenu-item-large">VANS</a>
+        </div>
+    </div>
+    
     <!-- Auth Buttons -->
-    <div class="mobile-auth-buttons">
+    <div class="mobile-auth-buttons" :class="{ 'menu-hidden': activeSubmenu }">
         @auth
             <form action="{{ route('logout') }}" method="POST">
                 @csrf
@@ -992,6 +1106,95 @@ html, body {
         @endauth
     </div>
 </div>
+
+<style>
+/* Mobile Submenu Overlay */
+.mobile-submenu-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 20;
+    overflow-y: auto;
+}
+
+.mobile-submenu-overlay.active {
+    transform: translateX(0);
+}
+
+/* Hide main menu when submenu active */
+.menu-hidden {
+    display: none;
+}
+
+/* Submenu Header */
+.mobile-submenu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    background: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.mobile-back-btn {
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.mobile-close-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #666;
+    cursor: pointer;
+}
+
+/* Submenu Content */
+.mobile-submenu-content {
+    padding: 0;
+}
+
+.mobile-submenu-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #000;
+    padding: 20px;
+    margin: 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+/* Large Items */
+.mobile-submenu-item-large {
+    display: block;
+    padding: 18px 20px;
+    font-size: 18px;
+    font-weight: 400;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #f5f5f5;
+    transition: all 0.2s ease;
+}
+
+.mobile-submenu-item-large:hover {
+    background: #f8f9fa;
+    color: #000;
+}
+</style>
+<!-- AKHIR MOBILE MENU -->
 
         <!-- Baris pertama: Mobile Layout Baru + Desktop tetap sama -->
 <div class="max-w-full mx-auto px-4">
@@ -1014,14 +1217,13 @@ html, body {
     </div>
     
     <!-- Mobile Icons (KANAN): Search + Cart -->
-    <div class="mobile-icons-right">
-        <!-- Search Button -->
-        <button @click="showMobileSearch = !showMobileSearch" class="icon-btn mr-2" title="Search Products">
-            <i class="fas fa-search"></i>
-        </button>
-        
+<div class="mobile-icons-right">
+    <button @click="showMobileSearch = !showMobileSearch" class="mobile-search-extended" title="Search Products">
+        <i class="fas fa-search"></i>
+        <span class="search-text">Search</span>
+    </button>
         <!-- Cart Button -->
-        <a href="{{ route('cart.index') }}" class="icon-btn" title="Shopping Cart">
+            <a href="{{ route('cart.index') }}" class="icon-btn mobile-cart-hidden" title="Shopping Cart">
             <i class="fas fa-shopping-cart"></i>
             @php
                 $cartCount = count(session('cart', []));
@@ -1337,7 +1539,7 @@ html, body {
 
     <!-- Mobile Cart & Wishlist (tampil di mobile) -->
     <!-- Mobile Menu dengan Dropdown -->
-<div class="md:hidden bg-white border-b px-0 py-0" x-data="mobileDropdown()">
+<div class="md:hidden bg-white border-b px-0 py-0 mobile-nav-hidden" x-data="mobileDropdown()">
     <div class="overflow-x-auto" style="-webkit-overflow-scrolling: touch; scrollbar-width: none;">
         <div class="flex px-4 py-3 min-w-max space-x-0">
             <!-- MENS dengan dropdown -->
@@ -1383,21 +1585,22 @@ html, body {
 </div>
 
 <script>
-function mobileDropdown() {
+function mobileMenuDropdown() {
     return {
-        activeDropdown: null,
+        activeSubmenu: null,
         
-        toggleDropdown(menu) {
-            this.activeDropdown = this.activeDropdown === menu ? null : menu;
+        openSubmenu(menu) {
+            this.activeSubmenu = menu;
         },
         
-        closeDropdown() {
-            this.activeDropdown = null;
+        closeSubmenu() {
+            this.activeSubmenu = null;
         }
     }
 }
 </script>
-    <!-- Image Carousel Slider -->
+    @if(request()->is('/') || request()->routeIs('home'))
+<!-- Image Carousel Slider -->
 <div class="carousel-wrapper">
   <div class="carousel-container" x-data="carousel()" x-init="init()">
 <template x-for="(slide, index) in slides" :key="index">
@@ -1424,7 +1627,7 @@ function mobileDropdown() {
     </div>
   </div>
 </div>
-
+@endif
 
 
     <!-- Flash Messages -->
@@ -1539,6 +1742,37 @@ function mobileDropdown() {
 
 <!-- Alternative: Jika masih belum pojok banget, pakai ini -->
 <style>
+    @media (max-width: 767px) {
+    .mobile-cart-hidden {
+        display: none !important;
+    }
+    
+    .mobile-search-extended {
+        display: flex !important;
+        align-items: center !important;
+        background: #f8f9fa !important;
+        border: 1px solid #e5e5e5 !important;
+        border-radius: 20px !important;
+        padding: 8px 16px !important;
+        color: #666 !important;
+        font-size: 14px !important;
+        height: 35px !important;
+    }
+    
+    .mobile-search-extended i {
+        margin-right: 6px !important;
+    }
+    
+    .search-text {
+        font-size: 13px !important;
+        font-weight: 500 !important;
+    }
+}
+    @media (max-width: 767px) {
+    .mobile-nav-hidden {
+        display: none !important;
+    }
+}
 /* Opsi ekstrem: Logo benar-benar di pojok kiri tanpa padding */
 .logo-absolute-left {
     margin-left: -1rem !important;
@@ -1551,68 +1785,66 @@ function mobileDropdown() {
 }
 </style>
     
-
 <!-- Updated CSS Styles -->
 <style>
-    /* Mobile Icons Right */
+/* Mobile Header Layout Fixes */
 @media (max-width: 767px) {
-    .mobile-icons-right {
+.mobile-header-layout {
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 8px !important; /* Kurangi gap dari 12px ke 8px */
+    position: relative;
+    padding: 0 8px !important; /* Kurangi padding kiri-kanan */
+}
+    
+    .mobile-hamburger {
+        flex: 0 0 auto;
+        order: 1;
+    }
+    
+    .mobile-logo-center {
+        flex: 0 0 auto;
         display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        order: 2;
+        position: static !important; /* Hilangkan absolute positioning */
+        left: auto !important;
+        top: auto !important;
+        transform: none !important;
+    }
+    
+.mobile-logo-center .ka-logo-img {
+    height: 35px !important;
+    width: auto !important;
+    max-width: 100px !important; /* Sangat pendek */
+    object-fit: cover !important;
+    object-position: left center !important;
+}
+    
+    /* Search di kanan */
+    .mobile-icons-right {
+        flex: 1;
+        display: flex;
+        justify-content: flex-end;
+        margin-left: auto;
+        order: 3;
         align-items: center;
         gap: 8px;
     }
     
-    /* Search button styling sama seperti cart */
-    .mobile-icons-right .icon-btn {
-        width: 35px !important;
-        height: 35px !important;
-        font-size: 14px !important;
-    }
-    
-    /* Adjust logo positioning karena ada 2 icon di kanan */
-    .mobile-logo-center {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-30%, -50%); /* Geser sedikit ke kiri karena ada 2 icon */
-    }
-    
-    .mobile-logo-center .ka-logo-img {
-        height: 70px !important;  
-        width: 220px !important;  
-        object-fit: contain !important;
-        max-width: none !important;
-    }
+/* Panjangkan search button */
+.mobile-icons-right button[title="Search Products"] {
+    width: 200px !important; /* Tambah dari 80px ke 100px */
+    height: 35px !important;
+    font-size: 14px !important;
+    padding: 0 16px !important; /* Tambah padding */
+    border-radius: 18px !important;
+    background: #f8f9fa !important;
+    border: 1px solid #e5e5e5 !important;
 }
-    /* Mobile Header Layout Fixes */
-@media (max-width: 767px) {
-    /* Pastikan mobile layout menggunakan space-between */
-    .mobile-header-layout {
-        display: flex !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-        width: 100% !important;
-    }
-    
-    /* Hamburger button di kiri */
-    .mobile-hamburger {
-        flex: 0 0 auto;
-        margin-right: auto;
-    }
-    
-    /* Logo di tengah dengan flex-grow */
-    .mobile-logo-center {
-        flex: 1;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-    
-    /* Cart icon di kanan */
-    .mobile-cart-right {
-        flex: 0 0 auto;
-        margin-left: auto;
-    }
     
     /* Override icon-btn size untuk mobile */
     .icon-btn {
@@ -1620,33 +1852,8 @@ function mobileDropdown() {
         height: 35px !important;
         font-size: 14px !important;
     }
-    
-    /* Pastikan tidak ada margin/padding yang mengganggu */
-    .mobile-header-layout > * {
-        margin: 0 !important;
-    }
 }
-/* Perbesar dan perpanjang logo mobile */
-@media (max-width: 767px) {
-    .mobile-header-layout {
-        position: relative;
-    }
-    
-    .mobile-logo-center {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-20%, -50%);
-    }
-    
-    /* Perbesar dan perpanjang logo */
-    .mobile-logo-center .ka-logo-img {
-        height: 80px !important;  /* Tinggi diperbesar dari 40px ke 50px */
-        width: 250px !important;  /* Lebar diperpanjang, sesuaikan dengan kebutuhan */
-        object-fit: contain !important;
-        max-width: none !important;
-    }
-}
+
 .mobile-bottom-nav {
     height: 70px;
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
@@ -1706,6 +1913,7 @@ function mobileDropdown() {
 
 <!-- CSS Styles untuk WhatsApp Button -->
 <style>
+    
 /* WhatsApp Floating Button */
 .whatsapp-float-btn {
     position: fixed;

@@ -211,7 +211,7 @@ class ProductController extends Controller
                     }
                 })
                 ->inRandomOrder()
-                ->limit(4)
+                ->limit(12)
                 ->get();
 
             // ⭐ SAFE: Ensure arrays are properly formatted

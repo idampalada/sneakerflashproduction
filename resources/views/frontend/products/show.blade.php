@@ -4,20 +4,70 @@
 
 @section('content')
 <div class="container mx-auto px-4 py-8">
-    <!-- Breadcrumb -->
-    <nav class="text-sm mb-6">
-        <ol class="flex space-x-2 text-gray-600">
-            <li><a href="/" class="hover:text-blue-600">Home</a></li>
+<nav class="text-sm mb-6">
+    <ol class="flex space-x-2 text-gray-600">
+        <!-- Gender -->
+        @if($product->gender_target && is_array($product->gender_target) && count($product->gender_target) > 0)
+            @php
+                $primaryGender = strtoupper($product->gender_target[0]); // MENS, WOMENS, UNISEX
+            @endphp
+            <li><a href="{{ route('products.index', ['category' => $product->gender_target[0]]) }}" class="hover:text-blue-600">{{ $primaryGender }}</a></li>
             <li>/</li>
-            <li><a href="{{ route('products.index') }}" class="hover:text-blue-600">Products</a></li>
-            <li>/</li>
-            @if($product->category)
-                <li><a href="{{ route('categories.show', $product->category->slug) }}" class="hover:text-blue-600">{{ $product->category->name }}</a></li>
+        @endif
+        
+        <!-- Category & Type dari product_type -->
+        @if($product->product_type)
+            @php
+                // Tentukan kategori utama berdasarkan product_type
+                $mainCategory = '';
+                $subType = '';
+                
+                // Footwear types
+                if(in_array($product->product_type, ['lifestyle_casual', 'running', 'basketball', 'badminton', 'training', 'tennis'])) {
+                    $mainCategory = 'FOOTWEAR';
+                    
+                    if($product->product_type === 'lifestyle_casual') {
+                        $subType = 'LIFESTYLE CASUAL'; // Gabung jadi satu
+                    } else {
+                        $subType = strtoupper($product->product_type);
+                    }
+                }
+                // Apparel
+                elseif($product->product_type === 'apparel') {
+                    $mainCategory = 'APPAREL';
+                }
+                // Accessories  
+                elseif(in_array($product->product_type, ['caps', 'bags'])) {
+                    $mainCategory = 'ACCESSORIES';
+                    $subType = strtoupper($product->product_type);
+                }
+                
+                // URLs untuk navigasi
+                $categoryUrl = route('products.index', [
+                    'category' => $product->gender_target[0] ?? 'mens', 
+                    'section' => strtolower($mainCategory)
+                ]);
+                
+                $typeUrl = route('products.index', [
+                    'category' => $product->gender_target[0] ?? 'mens', 
+                    'type' => $product->product_type
+                ]);
+            @endphp
+            
+            <!-- Main Category -->
+            @if($mainCategory)
+                <li><a href="{{ $categoryUrl }}" class="hover:text-blue-600">{{ $mainCategory }}</a></li>
                 <li>/</li>
             @endif
-            <li class="text-gray-900">{{ $product->name }}</li>
-        </ol>
-    </nav>
+            
+            <!-- Sub Type -->
+            @if($subType)
+                <li><a href="{{ $typeUrl }}" class="hover:text-blue-600">{{ $subType }}</a></li>
+            @endif
+        @endif
+        
+    </ol>
+</nav>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <!-- Product Images -->
@@ -62,24 +112,13 @@
                         </button>
                     @endforeach
                 </div>
-                
-                <div class="text-center text-sm text-gray-500">
-                    {{ count($product->images) }} images available
-                </div>
             @endif
         </div>
 
         <!-- Product Info -->
         <div class="space-y-6">
             <div>
-                @if($product->category)
-                    <p class="text-sm text-gray-500 mb-2">
-                        {{ $product->category->name }}
-                        @if($product->brand)
-                            • {{ $product->brand }}
-                        @endif
-                    </p>
-                @endif
+
                 
                 @php
                     // ⭐ CLEAN: Remove SKU parent from product name
@@ -103,33 +142,7 @@
                 
                 <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ $cleanProductName }}</h1>
                 
-                <!-- Product Tags -->
-                <div class="flex flex-wrap gap-2 mb-4">
-                    @if($product->product_type)
-                        <span class="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                            {{ ucfirst(str_replace('_', ' ', $product->product_type)) }}
-                        </span>
-                    @endif
-                    @if($product->gender_target && is_array($product->gender_target))
-                        @foreach($product->gender_target as $gender)
-                            <span class="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">
-                                @switch($gender)
-                                    @case('mens')
-                                        👨 Men's
-                                        @break
-                                    @case('womens')
-                                        👩 Women's
-                                        @break
-                                    @case('unisex')
-                                        🌐 Unisex
-                                        @break
-                                    @default
-                                        {{ ucfirst($gender) }}
-                                @endswitch
-                            </span>
-                        @endforeach
-                    @endif
-                </div>
+                
 
                 <!-- SKU Information -->
                 @if($product->sku)
@@ -140,25 +153,30 @@
             </div>
 
             <!-- Price -->
-            <div class="space-y-2">
-                @if($product->sale_price && $product->sale_price < $product->price)
-                    <div class="flex items-center space-x-3">
-                        <span class="text-3xl font-bold text-red-600" id="currentPrice">
-                            Rp {{ number_format($product->sale_price, 0, ',', '.') }}
-                        </span>
-                        <span class="text-xl text-gray-500 line-through" id="originalPrice">
-                            Rp {{ number_format($product->price, 0, ',', '.') }}
-                        </span>
-                        <span class="bg-red-100 text-red-800 text-sm px-2 py-1 rounded-full">
-                            Save {{ round((($product->price - $product->sale_price) / $product->price) * 100) }}%
-                        </span>
-                    </div>
-                @else
-                    <span class="text-3xl font-bold text-gray-900" id="currentPrice">
-                        Rp {{ number_format($product->price, 0, ',', '.') }}
-                    </span>
-                @endif
-            </div>
+<div class="space-y-1">
+    @if($product->sale_price && $product->sale_price < $product->price)
+        <div class="flex items-center space-x-2">
+            <span class="text-2xl font-bold text-red-600" id="currentPrice">
+                Rp {{ number_format($product->sale_price, 0, ',', '.') }}
+            </span>
+            <span class="text-sm text-gray-500 line-through" id="originalPrice">
+                Rp {{ number_format($product->price, 0, ',', '.') }}
+            </span>
+            <span class="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded">
+                Save {{ round((($product->price - $product->sale_price) / $product->price) * 100) }}%
+            </span>
+        </div>
+        <p class="text-xs text-gray-500">Tax included</p>
+    @else
+        <span class="text-2xl font-bold text-gray-900" id="currentPrice">
+            Rp {{ number_format($product->price, 0, ',', '.') }}
+        </span>
+        <p class="text-xs text-gray-500">Tax included</p>
+    @endif
+</div>
+
+<!-- Section Divider -->
+<div class="border-b border-gray-300 my-6"></div>
 
             <!-- ⭐ ENHANCED: Size Selection with Clean Display -->
             @if(($product->available_sizes && count($product->available_sizes) > 0) || (isset($sizeVariants) && $sizeVariants->count() > 0))
@@ -221,22 +239,7 @@
                         @endforeach
                     </div>
                     
-                    <!-- Selected Size Info -->
-                    <div id="selectedSizeInfo" class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg {{ ($product->available_sizes && count($product->available_sizes) > 0) ? '' : 'hidden' }}">
-                        <div class="flex justify-between items-center text-sm mb-1">
-                            <span class="font-medium text-blue-900">Selected Size:</span>
-                            <span id="selectedSizeDisplay" class="text-blue-700 font-semibold">
-                                {{ ($product->available_sizes && count($product->available_sizes) > 0) ? $product->available_sizes[0] : '' }}
-                            </span>
-                        </div>
-                        <!-- ⭐ LIMITED STOCK WARNING - Only show when stock = 1 -->
-                        <div id="limitedStockWarning" class="hidden">
-                            <div class="text-xs text-orange-600 font-medium mt-1">
-                                <i class="fas fa-exclamation-triangle mr-1"></i>
-                                Limited Stock - Only 1 left!
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
             @endif
 
@@ -256,12 +259,7 @@
 
 
 
-            <!-- Short Description -->
-            @if($product->short_description)
-                <div class="prose prose-gray">
-                    <p class="text-gray-600 leading-relaxed">{{ $product->short_description }}</p>
-                </div>
-            @endif
+            
 
             <!-- ⭐ ENHANCED: Add to Cart with Size Support -->
             <form id="addToCartForm" action="{{ route('cart.add') }}" method="POST" class="space-y-4">
@@ -269,42 +267,51 @@
                 <input type="hidden" name="product_id" value="{{ $product->id }}" id="selectedProductId">
                 <input type="hidden" name="size" value="" id="selectedSizeValue">
                 
-                <div class="flex items-center space-x-4">
-                    <label for="quantity" class="text-sm font-medium text-gray-700">Quantity:</label>
-                    <input type="number" name="quantity" id="quantity" 
-                           min="1" max="{{ $product->stock_quantity ?? 1 }}" value="1"
-                           class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <span class="text-sm text-gray-500" id="maxQuantityText">Max: {{ $product->stock_quantity ?? 0 }}</span>
-                </div>
+<div class="flex items-center space-x-4">
+    <label class="text-sm font-medium text-gray-700">Quantity:</label>
+    <div class="flex items-center border border-gray-300 rounded-lg">
+        <button type="button" onclick="decreaseQuantity()" 
+                class="px-4 py-2 text-gray-600 hover:bg-gray-100 border-r border-gray-300">
+            -
+        </button>
+        <input type="number" name="quantity" id="quantity" 
+               min="1" max="{{ $product->stock_quantity ?? 1 }}" value="1"
+               class="w-16 text-center py-2 border-0 focus:outline-none focus:ring-0" readonly>
+        <button type="button" onclick="increaseQuantity()" 
+                class="px-4 py-2 text-gray-600 hover:bg-gray-100 border-l border-gray-300">
+            +
+        </button>
+    </div>
+    <span class="text-sm text-gray-500" id="maxQuantityText">Max: {{ $product->stock_quantity ?? 0 }}</span>
+</div>
 
                 <div class="flex space-x-4">
-                    @if(($product->stock_quantity ?? 0) > 0)
-                        <button type="submit" 
-                                id="addToCartBtn"
-                                class="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center">
-                            <i class="fas fa-shopping-cart mr-2"></i>
-                            Add to Cart
-                        </button>
-                    @else
-                        <button type="button" 
-                                disabled
-                                id="addToCartBtn"
-                                class="flex-1 bg-gray-400 text-white py-3 px-6 rounded-lg cursor-not-allowed flex items-center justify-center">
-                            <i class="fas fa-times mr-2"></i>
-                            Currently Out of Stock
-                        </button>
-                    @endif
-                    
-                    <button type="button" 
-                            class="bg-gray-200 text-gray-800 py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center wishlist-btn"
-                            data-product-id="{{ $product->id }}"
-                            data-product-name="{{ $cleanProductName }}"
-                            title="Add to wishlist">
-                        <i class="far fa-heart"></i>
-                    </button>
-                </div>
-            </form>
+    @if(($product->stock_quantity ?? 0) > 0)
+        <button type="submit" 
+                id="addToCartBtn"
+                class="w-16 bg-white text-black border border-gray-300 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center">
+            <i class="fas fa-shopping-cart"></i>
+        </button>
+    @else
+        <button type="button" 
+                disabled
+                id="addToCartBtn"
+                class="w-16 bg-gray-400 text-white py-3 px-4 rounded-lg cursor-not-allowed flex items-center justify-center">
+            <i class="fas fa-times"></i>
+        </button>
+    @endif
+    
+    <button type="button" 
+            class="flex-1 bg-black text-white py-3 px-6 rounded-lg hover:bg-gray-800 transition-colors flex items-center justify-center buy-now-btn"
+            data-product-id="{{ $product->id }}"
+            data-product-name="{{ $cleanProductName }}"
+            title="Buy Now">
+        Buy Now!
+    </button>
+</div>
 
+<!-- Section Divider -->
+<div class="border-b border-gray-300 my-6"></div>
             <!-- Features -->
             @if($product->features && is_array($product->features) && count($product->features) > 0)
                 <div class="border border-gray-200 rounded-lg p-4">
@@ -320,28 +327,7 @@
                 </div>
             @endif
 
-            <!-- Specifications -->
-            @if($product->weight || $product->length || $product->width || $product->height)
-                <div class="border border-gray-200 rounded-lg p-4">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-3">Specifications</h3>
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        @if($product->weight)
-                            <div>
-                                <span class="font-medium text-gray-600">Weight:</span>
-                                <span class="text-gray-900">{{ $product->weight }} kg</span>
-                            </div>
-                        @endif
-                        @if($product->length || $product->width || $product->height)
-                            <div>
-                                <span class="font-medium text-gray-600">Dimensions:</span>
-                                <span class="text-gray-900">
-                                    {{ $product->length ?? '-' }} × {{ $product->width ?? '-' }} × {{ $product->height ?? '-' }} cm
-                                </span>
-                            </div>
-                        @endif
-                    </div>
-                </div>
-            @endif
+            
         </div>
     </div>
 
@@ -354,68 +340,84 @@
             </div>
         </div>
     @endif
-
+<!-- Section Divider -->
+<div class="border-b border-gray-300 my-6"></div>
     <!-- Related Products -->
-    @if(isset($relatedProducts) && $relatedProducts->count() > 0)
-        <div class="mt-16">
-            <h2 class="text-2xl font-bold text-gray-900 mb-8">Related Products</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                @foreach($relatedProducts as $relatedProduct)
-                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
-                        <div class="relative aspect-square">
-                            <a href="{{ route('products.show', $relatedProduct->slug) }}">
-                                @if($relatedProduct->images && count($relatedProduct->images) > 0)
-                                    @php
-                                        $relatedImage = filter_var($relatedProduct->images[0], FILTER_VALIDATE_URL) 
-                                            ? $relatedProduct->images[0] 
-                                            : asset('storage/' . ltrim($relatedProduct->images[0], '/'));
-                                    @endphp
-                                    <img src="{{ $relatedImage }}" 
-                                         alt="{{ $relatedProduct->name }}"
-                                         class="w-full h-full object-cover"
-                                         onerror="this.src='{{ asset('images/default-product.jpg') }}'">
-                                @else
-                                    <div class="w-full h-full bg-gray-200 flex items-center justify-center">
-                                        <i class="fas fa-shoe-prints text-3xl text-gray-400"></i>
-                                    </div>
-                                @endif
-                            </a>
-                        </div>
-                        
-                        <div class="p-4">
-                            @php
-                                $relatedCleanName = $relatedProduct->name;
-                                if (!empty($relatedProduct->sku_parent)) {
-                                    $relatedCleanName = preg_replace('/\s*-\s*' . preg_quote($relatedProduct->sku_parent, '/') . '\s*/', '', $relatedCleanName);
-                                    $relatedCleanName = preg_replace('/\s*-\s*Size\s+[A-Z0-9.]+\s*$/i', '', $relatedCleanName);
-                                    $relatedCleanName = preg_replace('/\s*Size\s+[A-Z0-9.]+\s*$/i', '', $relatedCleanName);
-                                    $relatedCleanName = trim($relatedCleanName, ' -');
-                                }
-                            @endphp
-                            <h3 class="font-semibold text-gray-900 mb-2 line-clamp-2">{{ $relatedCleanName }}</h3>
-                            <div class="flex items-center justify-between">
-                                <div>
+@if(isset($relatedProducts) && $relatedProducts->count() > 0)
+    <div class="mt-16">
+        <h2 class="text-2xl font-bold text-gray-900 mb-8">Related Products</h2>
+        
+        <!-- Horizontal Scrollable Products -->
+        <div class="relative">
+            <div class="related-products-scroll overflow-x-auto scrollbar-hide">
+                <div class="flex space-x-4 pb-4 pr-4" style="width: max-content;">
+                    @foreach($relatedProducts as $relatedProduct)
+                        <div class="product-card-horizontal bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors flex-shrink-0 relative">
+                            <!-- Sale Badge -->
+                            @if($relatedProduct->sale_price && $relatedProduct->sale_price < $relatedProduct->price)
+                                <div class="absolute top-2 left-2 z-10">
+                                    <span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">
+                                        Sale
+                                    </span>
+                                </div>
+                            @endif
+
+                            <div class="relative">
+                                <a href="{{ route('products.show', $relatedProduct->slug) }}">
+                                    @if($relatedProduct->images && count($relatedProduct->images) > 0)
+                                        @php
+                                            $relatedImage = filter_var($relatedProduct->images[0], FILTER_VALIDATE_URL) 
+                                                ? $relatedProduct->images[0] 
+                                                : asset('storage/' . ltrim($relatedProduct->images[0], '/'));
+                                        @endphp
+                                        <img src="{{ $relatedImage }}" 
+                                             alt="{{ $relatedProduct->name }}"
+                                             class="w-full h-48 object-cover"
+                                             onerror="this.src='{{ asset('images/default-product.jpg') }}'">
+                                    @else
+                                        <div class="w-full h-48 bg-gray-200 flex items-center justify-center">
+                                            <i class="fas fa-shoe-prints text-3xl text-gray-400"></i>
+                                        </div>
+                                    @endif
+                                </a>
+                            </div>
+                            
+                            <div class="p-4">
+                                @php
+                                    $relatedCleanName = $relatedProduct->name;
+                                    if (!empty($relatedProduct->sku_parent)) {
+                                        $relatedCleanName = preg_replace('/\s*-\s*' . preg_quote($relatedProduct->sku_parent, '/') . '\s*/', '', $relatedCleanName);
+                                        $relatedCleanName = preg_replace('/\s*-\s*Size\s+[A-Z0-9.]+\s*$/i', '', $relatedCleanName);
+                                        $relatedCleanName = preg_replace('/\s*Size\s+[A-Z0-9.]+\s*$/i', '', $relatedCleanName);
+                                        $relatedCleanName = trim($relatedCleanName, ' -');
+                                    }
+                                @endphp
+                                <h3 class="font-medium text-gray-900 mb-2 text-sm line-clamp-2">{{ $relatedCleanName }}</h3>
+                                
+                                <div class="flex flex-col">
                                     @if($relatedProduct->sale_price && $relatedProduct->sale_price < $relatedProduct->price)
-                                        <span class="text-lg font-bold text-red-600">
-                                            Rp {{ number_format($relatedProduct->sale_price, 0, ',', '.') }}
-                                        </span>
-                                        <div class="text-sm text-gray-500 line-through">
-                                            Rp {{ number_format($relatedProduct->price, 0, ',', '.') }}
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-sm font-bold text-red-600">
+                                                Rp {{ number_format($relatedProduct->sale_price, 0, ',', '.') }}
+                                            </span>
+                                            <span class="text-xs text-gray-500 line-through">
+                                                Rp {{ number_format($relatedProduct->price, 0, ',', '.') }}
+                                            </span>
                                         </div>
                                     @else
-                                        <span class="text-lg font-bold text-gray-900">
+                                        <span class="text-sm font-bold text-gray-900">
                                             Rp {{ number_format($relatedProduct->price, 0, ',', '.') }}
                                         </span>
                                     @endif
                                 </div>
                             </div>
                         </div>
-                    </div>
-                @endforeach
+                    @endforeach
+                </div>
             </div>
         </div>
-    @endif
-</div>
+    </div>
+@endif
 
 <!-- Toast Notification -->
 <div id="toastNotification" class="fixed top-4 right-4 z-50 hidden">
@@ -437,6 +439,25 @@
 </div>
 
 <script>
+    // ⭐ Quantity controls
+window.increaseQuantity = function() {
+    const quantityInput = document.getElementById('quantity');
+    const currentValue = parseInt(quantityInput.value);
+    const maxValue = parseInt(quantityInput.max);
+    
+    if (currentValue < maxValue) {
+        quantityInput.value = currentValue + 1;
+    }
+};
+
+window.decreaseQuantity = function() {
+    const quantityInput = document.getElementById('quantity');
+    const currentValue = parseInt(quantityInput.value);
+    
+    if (currentValue > 1) {
+        quantityInput.value = currentValue - 1;
+    }
+};
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🛍️ Product detail page loaded with clean product names');
     
@@ -511,35 +532,37 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // ⭐ Update price display
     function updatePriceDisplay(price, originalPrice) {
-        const currentPriceEl = document.getElementById('currentPrice');
-        const originalPriceEl = document.getElementById('originalPrice');
-        
-        if (currentPriceEl) {
-            currentPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(price);
-        }
-        
-        if (originalPriceEl && price < originalPrice) {
-            originalPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(originalPrice);
-            originalPriceEl.style.display = 'inline';
-        } else if (originalPriceEl) {
-            originalPriceEl.style.display = 'none';
-        }
+    const currentPriceEl = document.getElementById('currentPrice');
+    const originalPriceEl = document.getElementById('originalPrice');
+    
+    if (currentPriceEl) {
+        currentPriceEl.className = 'text-2xl font-bold text-red-600';
+        currentPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(price);
     }
     
-    // ⭐ Update add to cart button
-    function updateAddToCartButton(stock) {
-        const addToCartBtn = document.getElementById('addToCartBtn');
-        
-        if (stock > 0) {
-            addToCartBtn.disabled = false;
-            addToCartBtn.className = 'flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center';
-            addToCartBtn.innerHTML = '<i class="fas fa-shopping-cart mr-2"></i>Add to Cart';
-        } else {
-            addToCartBtn.disabled = true;
-            addToCartBtn.className = 'flex-1 bg-gray-400 text-white py-3 px-6 rounded-lg cursor-not-allowed flex items-center justify-center';
-            addToCartBtn.innerHTML = '<i class="fas fa-times mr-2"></i>Out of Stock';
-        }
+    if (originalPriceEl && price < originalPrice) {
+        originalPriceEl.className = 'text-sm text-gray-500 line-through';
+        originalPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(originalPrice);
+        originalPriceEl.style.display = 'inline';
+    } else if (originalPriceEl) {
+        originalPriceEl.style.display = 'none';
     }
+}
+    
+    // ⭐ Update add to cart button
+function updateAddToCartButton(stock) {
+    const addToCartBtn = document.getElementById('addToCartBtn');
+    
+    if (stock > 0) {
+        addToCartBtn.disabled = false;
+        addToCartBtn.className = 'w-16 bg-white text-black border border-gray-300 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center';
+        addToCartBtn.innerHTML = '<i class="fas fa-shopping-cart"></i>';
+    } else {
+        addToCartBtn.disabled = true;
+        addToCartBtn.className = 'w-16 bg-gray-400 text-white py-3 px-4 rounded-lg cursor-not-allowed flex items-center justify-center';
+        addToCartBtn.innerHTML = '<i class="fas fa-times"></i>';
+    }
+}
     
     // ⭐ Image gallery functionality
     window.changeMainImage = function(imageUrl, element) {
@@ -647,73 +670,82 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // ⭐ Wishlist functionality
-    // ⭐ Wishlist functionality (REAL)
+    // ⭐ Buy Now functionality
 document.addEventListener('click', function (ev) {
-    const btn = ev.target.closest('.wishlist-btn');
+    const btn = ev.target.closest('.buy-now-btn');
     if (!btn) return;
 
-    // jaga-jaga kalau tombol berada di dalam link/form lain
     ev.preventDefault();
     ev.stopPropagation();
 
     const productId = btn.dataset.productId;
     const productName = btn.dataset.productName || 'Product';
-    const icon = btn.querySelector('i');
+    
+    // Get selected size and quantity
+    const selectedSizeInput = document.getElementById('selectedSizeValue');
+    const quantityInput = document.getElementById('quantity');
+    const selectedProductIdInput = document.getElementById('selectedProductId');
+    
+    const size = selectedSizeInput ? selectedSizeInput.value : '';
+    const quantity = quantityInput ? parseInt(quantityInput.value) : 1;
+    const finalProductId = selectedProductIdInput ? selectedProductIdInput.value : productId;
 
-    if (!productId) return;
+    if (!size && document.querySelectorAll('.size-option').length > 0) {
+        showToast('Please select a size first', 'error');
+        return;
+    }
 
     btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
 
-    fetch(`/wishlist/toggle/${productId}`, {
+    // Create form data
+    const formData = new FormData();
+    formData.append('product_id', finalProductId);
+    formData.append('size', size);
+    formData.append('quantity', quantity);
+    formData.append('buy_now', '1');
+
+    fetch('/cart/add', {
         method: 'POST',
+        body: formData,
         headers: {
-            'X-CSRF-TOKEN': token,            // token sudah kamu ambil di awal script
+            'X-CSRF-TOKEN': token,
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
         }
     })
-    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text().then(text => {
+                throw new Error('Server returned HTML instead of JSON');
+            });
+        }
+    })
     .then(data => {
-        // kalau backend mengembalikan redirect (mis. belum login)
-        if (data && data.redirect) {
-            window.location.href = data.redirect;
-            return;
+        if (data.success) {
+            showToast(`${productName} added to cart. Redirecting to checkout...`, 'success');
+            
+            // Redirect to checkout after short delay
+            setTimeout(() => {
+                window.location.href = '/checkout';
+            }, 1000);
+        } else {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            showToast(data.message || 'Failed to add product to cart', 'error');
         }
-
-        if (!data || data.success === false) {
-            showToast((data && data.message) || 'Gagal mengubah wishlist', 'error');
-            return;
-        }
-
-        const added = !!data.is_added;
-
-        // Update ikon hati
-        if (icon) {
-            icon.classList.toggle('fas', added);
-            icon.classList.toggle('far', !added);
-            icon.style.color = added ? '#ef4444' : '';
-        }
-
-        // Update badge jumlah wishlist di header (kalau backend mengirim count)
-        if ('wishlist_count' in data) {
-            const counterEls = document.querySelectorAll('[data-wishlist-count], .wishlist-badge');
-            counterEls.forEach(el => el.textContent = data.wishlist_count);
-        }
-
-        showToast(
-            `${productName} ${added ? 'added to' : 'removed from'} wishlist`,
-            added ? 'success' : 'info'
-        );
     })
-    .catch(() => {
-        showToast('Terjadi kesalahan saat toggle wishlist.', 'error');
-    })
-    .finally(() => {
+    .catch(error => {
+        console.error('Buy Now error:', error);
+        btn.innerHTML = originalText;
         btn.disabled = false;
+        showToast('Error processing Buy Now request', 'error');
     });
 });
-
     
     // ⭐ Utility functions
     function showToast(message, type = 'success') {
@@ -776,6 +808,48 @@ document.addEventListener('click', function (ev) {
 </script>
 
 <style>
+    /* Related Products Horizontal Scroll Styles */
+.related-products-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    scroll-behavior: smooth;
+}
+
+.related-products-scroll::-webkit-scrollbar {
+    display: none; /* Chrome, Safari */
+}
+
+/* Mobile: Tampilkan 2.5 produk */
+@media (max-width: 640px) {
+    .related-products-scroll {
+        padding-left: 0.5rem;
+        padding-right: 1rem;
+        margin-left: -0.5rem;
+        margin-right: -1rem;
+    }
+    
+    .product-card-horizontal {
+        width: calc(45vw - 1rem);
+        min-width: calc(45vw - 1rem);
+        max-width: 160px;
+    }
+}
+
+/* Tablet: Tampilkan 3-4 produk */
+@media (min-width: 641px) and (max-width: 1024px) {
+    .product-card-horizontal {
+        width: 160px;
+        min-width: 160px;
+    }
+}
+
+/* Desktop: Tampilkan 5-6 produk */
+@media (min-width: 1025px) {
+    .product-card-horizontal {
+        width: 200px;
+        min-width: 200px;
+    }
+}
 /* Product detail specific styles */
 .size-option {
     transition: all 0.2s ease;
