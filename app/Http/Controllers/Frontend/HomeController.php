@@ -1,9 +1,9 @@
 <?php
-// Replace: app/Http/Controllers/Frontend/HomeController.php
 
 namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
+use App\Models\Banner;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\Request;
@@ -13,7 +13,12 @@ class HomeController extends Controller
 {
     public function index()
     {
-        // ⭐ STEP 1: Get all active products first (before any filtering)
+        // ⭐ STEP 1: Get active banners
+        $banners = Banner::active()
+            ->orderBy('sort_order')
+            ->get();
+
+        // ⭐ STEP 2: Get all active products first (before any filtering)
         $allActiveProducts = Product::query()
             ->where('is_active', true)
             ->whereNotNull('published_at')
@@ -21,7 +26,7 @@ class HomeController extends Controller
             ->with('category')
             ->get();
 
-        // ⭐ STEP 2: Group products by sku_parent to eliminate duplicates
+        // ⭐ STEP 3: Group products by sku_parent to eliminate duplicates
         $groupedProducts = $this->groupProductsBySkuParent($allActiveProducts);
 
         Log::info('Homepage products grouped', [
@@ -29,7 +34,7 @@ class HomeController extends Controller
             'grouped_count' => $groupedProducts->count()
         ]);
 
-        // ⭐ STEP 3: Get featured products from grouped collection
+        // ⭐ STEP 4: Get featured products from grouped collection
         $featuredProducts = $groupedProducts->where('is_featured', true)->take(8);
 
         // If no featured products, get any active products from grouped collection
@@ -37,17 +42,17 @@ class HomeController extends Controller
             $featuredProducts = $groupedProducts->take(8);
         }
 
-        // ⭐ STEP 4: Get latest products from grouped collection
+        // ⭐ STEP 5: Get latest products from grouped collection
         $latestProducts = $groupedProducts->sortByDesc('created_at')->take(12);
 
-        // ⭐ STEP 5: Get active categories (unchanged)
+        // ⭐ STEP 6: Get active categories (unchanged)
         $categories = Category::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->take(6)
             ->get();
 
-        return view('frontend.home', compact('featuredProducts', 'latestProducts', 'categories'));
+        return view('frontend.home', compact('banners', 'featuredProducts', 'latestProducts', 'categories'));
     }
 
     /**

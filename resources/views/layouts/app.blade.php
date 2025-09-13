@@ -805,31 +805,30 @@ html, body {
     return {
         currentSlide: 0,
         slides: [
-            { 
-              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FjFvohNn3y1zzxdl6qtkYvDZSJHzuCFebM5uvIS2x.jpg&w=1920&q=85', 
-              alt: 'Sneaker Collection 1',
-              bg: '#000000' // background hitam
-            },
-            { 
-              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FxFb3N6fjOOjG3kKfh3HTpol6AZPajfpDCv9k8eCd.webp&w=1920&q=85', 
-              alt: 'Sneaker Collection 2',
-              bg: '#ffffffff' // abu muda
-            },
-            { 
-              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2F5bSAF4TEXHOtoyWIhIGmS7JNiIJeGlrAy5dFxw4r.webp&w=1920&q=85', 
-              alt: 'Sneaker Collection 3',
-              bg: '#ffffffff' // putih
-            },
-            { 
-              image: 'https://ibox.co.id/_next/image?url=https%3A%2F%2Fstorage.googleapis.com%2Feraspacelink%2Fpmp%2Fproduction%2Fbanners%2Fimages%2FM2g1EP6xGtyehbWO5jHCWQTSBXASk36dgp79OtNJ.webp&w=1920&q=85', 
-              alt: 'Sneaker Collection 4',
-              bg: '#CFEAF6' // abu gelap
-            }
+            @if(isset($banners) && $banners->count() > 0)
+                @foreach($banners as $banner)
+                    @if($banner->image_paths && is_array($banner->image_paths))
+                        @foreach($banner->image_paths as $imagePath)
+                        {
+                            image: '{{ asset("storage/" . $imagePath) }}',
+                            alt: 'Banner Slide',
+                            bg: '#ffffff'
+                        },
+                        @endforeach
+                    @endif
+                @endforeach
+            @else
+                {
+                    image: '{{ asset("images/default-banner.jpg") }}',
+                    alt: 'Default Banner',
+                    bg: '#ffffff'
+                }
+            @endif
         ],
         autoPlay: true,
         autoPlayInterval: 5000,
         init() {
-            if (this.autoPlay) {
+            if (this.autoPlay && this.slides.length > 1) {
                 setInterval(() => { this.nextSlide(); }, this.autoPlayInterval);
             }
         },
@@ -841,9 +840,6 @@ html, body {
         }
     }
 }
-
-
-
         // Navigation dropdown functionality
         function navigationDropdown() {
             return {
@@ -1601,16 +1597,16 @@ function mobileMenuDropdown() {
 </script>
     @if(request()->is('/') || request()->routeIs('home'))
 <!-- Image Carousel Slider -->
+@if(isset($banners) && $banners->count() > 0)
 <div class="carousel-wrapper">
   <div class="carousel-container" x-data="carousel()" x-init="init()">
-<template x-for="(slide, index) in slides" :key="index">
-  <div class="carousel-slide"
-       :class="{ 'active': currentSlide === index }"
-       :style="slide.bg ? { backgroundColor: slide.bg } : {}">
-    <img :src="slide.image" :alt="slide.alt" loading="lazy">
-  </div>
-</template>
-
+    <template x-for="(slide, index) in slides" :key="index">
+      <div class="carousel-slide"
+           :class="{ 'active': currentSlide === index }"
+           :style="slide.bg ? { backgroundColor: slide.bg } : {}">
+        <img :src="slide.image" :alt="slide.alt" loading="lazy">
+      </div>
+    </template>
 
     <button class="carousel-nav prev" @click="prevSlide()" aria-label="Previous">
       <i class="fas fa-chevron-left"></i>
@@ -1627,8 +1623,16 @@ function mobileMenuDropdown() {
     </div>
   </div>
 </div>
+@else
+<div class="carousel-wrapper">
+  <div class="carousel-container">
+    <div class="flex items-center justify-center h-full text-gray-500">
+      <p>No banners available</p>
+    </div>
+  </div>
+</div>
 @endif
-
+@endif
 
     <!-- Flash Messages -->
     @if(session('success'))
