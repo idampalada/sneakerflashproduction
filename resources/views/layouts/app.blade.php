@@ -491,10 +491,11 @@
 .carousel-slide.active{ opacity:1; }
 
 /* KUNCI: jangan dicrop, penuhi area setinggi 550, center */
+/* KUNCI: gambar memenuhi area dengan baik, tidak gepeng */
 .carousel-slide img{
  display:block;
  width:100%; height:100% !important; /* penting: kalahkan img{height:auto} global */
- object-fit:contain;                  /* biar tidak zoom/crop */
+ object-fit:cover;                   /* UBAH dari contain ke cover */
  object-position:center;
 }
 

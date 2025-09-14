@@ -33,22 +33,22 @@ class BannerResource extends Resource
                         ->rows(3)
                         ->columnSpanFull(),
 
-                    Forms\Components\FileUpload::make('image_paths')
-                        ->label('Banner Images (Multiple)')
-                        ->directory('banners')
-                        ->image()
-                        ->imageResizeMode('force')
-                        ->imageResizeTargetWidth('1920')
-                        ->imageResizeTargetHeight('480')
-                        ->imageEditor()
-                        ->multiple() // Allow multiple files
-                        ->minFiles(1)
-                        ->maxFiles(10) // Maximum 10 slides
-                        ->required()
-                        ->columnSpanFull()
-                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
-                        ->maxSize(2048)
-                        ->helperText('Upload multiple images for carousel slides. Maximum 10 images.'),
+Forms\Components\FileUpload::make('image_paths')
+    ->label('Banner Images (Multiple)')
+    ->directory('banners')
+    ->image()
+    ->imageResizeMode('force')
+    ->imageResizeTargetWidth('4226')
+    ->imageResizeTargetHeight('3075')  // Ubah dari 480 ke 600
+    // ->imageEditor()  // Hapus baris ini untuk menghindari reset height
+    ->multiple() // Allow multiple files
+    ->minFiles(1)
+    ->maxFiles(10) // Maximum 10 slides
+    ->required()
+    ->columnSpanFull()
+    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+    ->maxSize(5120)  // Ubah dari 2048 ke 5120 (5MB)
+    ->helperText('Upload banner images. Will be automatically resized to 1920x600px. Maximum 5MB per file, 10 images total.'),
 
                     Forms\Components\TextInput::make('sort_order')
                         ->label('Sort Order')
