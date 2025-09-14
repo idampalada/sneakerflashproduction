@@ -217,6 +217,30 @@
 <!-- JavaScript -->
 <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 <script>
+    // Example JavaScript untuk cascading dropdown
+async function loadProvinces() {
+    const response = await fetch('/api/addresses/provinces');
+    const data = await response.json();
+    // Populate province dropdown
+}
+
+async function loadCities(provinceId) {
+    const response = await fetch(`/api/addresses/cities/${provinceId}`);
+    const data = await response.json();
+    // Populate city dropdown
+}
+
+async function loadDistricts(cityId) {
+    const response = await fetch(`/api/addresses/districts/${cityId}`);
+    const data = await response.json();
+    // Populate district dropdown
+}
+
+async function loadSubDistricts(districtId) {
+    const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
+    const data = await response.json();
+    // Populate sub-district dropdown
+}
 let deleteAddressId = null;
 
 function setPrimaryAddress(addressId) {

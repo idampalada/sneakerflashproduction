@@ -8,10 +8,10 @@
     <ol class="flex space-x-2 text-gray-600">
         <!-- Gender -->
         @if($product->gender_target && is_array($product->gender_target) && count($product->gender_target) > 0)
-            @php
-                $primaryGender = strtoupper($product->gender_target[0]); // MENS, WOMENS, UNISEX
-            @endphp
-            <li><a href="{{ route('products.index', ['category' => $product->gender_target[0]]) }}" class="hover:text-blue-600">{{ $primaryGender }}</a></li>
+@php
+    $primaryGender = ucwords($product->gender_target[0]); // Mens, Womens, Unisex
+@endphp
+<li><a href="{{ route('products.index', ['category' => $product->gender_target[0]]) }}" class="hover:text-blue-600">{{ $primaryGender }}</a></li>
             <li>/</li>
         @endif
         
@@ -55,15 +55,15 @@
             @endphp
             
             <!-- Main Category -->
-            @if($mainCategory)
-                <li><a href="{{ $categoryUrl }}" class="hover:text-blue-600">{{ $mainCategory }}</a></li>
-                <li>/</li>
-            @endif
+@if($mainCategory)
+    <li><a href="{{ $categoryUrl }}" class="hover:text-blue-600">{{ ucwords(strtolower($mainCategory)) }}</a></li>
+    <li>/</li>
+@endif
             
             <!-- Sub Type -->
-            @if($subType)
-                <li><a href="{{ $typeUrl }}" class="hover:text-blue-600">{{ $subType }}</a></li>
-            @endif
+@if($subType)
+    <li><a href="{{ $typeUrl }}" class="hover:text-blue-600">{{ ucwords(strtolower($subType)) }}</a></li>
+@endif
         @endif
         
     </ol>

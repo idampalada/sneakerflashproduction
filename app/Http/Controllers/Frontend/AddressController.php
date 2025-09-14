@@ -10,9 +10,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use App\Services\RajaOngkirService;
 
 class AddressController extends Controller
 {
+    protected $rajaOngkirService;
     /**
      * Display user addresses
      */
@@ -64,97 +66,86 @@ class AddressController extends Controller
      * Store new address
      */
     public function store(Request $request)
-    {
-        if (!Auth::check()) {
-            return redirect()->route('login')->with('error', 'Please login to add address.');
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'label' => 'required|in:Kantor,Rumah',
+            'recipient_name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
+            'province_id' => 'required|integer|min:1',
+            'province_name' => 'required|string|max:255',
+            'city_id' => 'required|integer|min:1', 
+            'city_name' => 'required|string|max:255',
+            'district_id' => 'required|integer|min:1',
+            'district_name' => 'required|string|max:255',
+            'sub_district_id' => 'required|integer|min:1',
+            'sub_district_name' => 'required|string|max:255',
+            'postal_code_api' => 'nullable|string|max:10',
+            'street_address' => 'required|string|max:1000',
+            'is_primary' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
         }
 
-        try {
-            $validated = $request->validate([
-                'label' => 'required|string|in:Kantor,Rumah',
-                'recipient_name' => 'required|string|max:255',
-                'phone_recipient' => 'required|string|max:20|regex:/^[0-9+\-\s\(\)]{10,}$/',
-                'province_name' => 'required|string|max:100',
-                'city_name' => 'required|string|max:100',
-                'subdistrict_name' => 'required|string|max:100',
-                'postal_code' => 'required|string|size:5|regex:/^[0-9]{5}$/',
-                'destination_id' => 'nullable|string|max:50',
-                'street_address' => 'required|string|min:10|max:500',
-                'notes' => 'nullable|string|max:500',
-                'is_primary' => 'nullable|boolean'
-            ], [
-                'label.required' => 'Please select address label (Kantor or Rumah)',
-                'label.in' => 'Address label must be either Kantor or Rumah',
-                'recipient_name.required' => 'Recipient name is required',
-                'phone_recipient.required' => 'Recipient phone number is required',
-                'phone_recipient.regex' => 'Please enter a valid phone number (minimum 10 digits)',
-                'province_name.required' => 'Please select a location',
-                'city_name.required' => 'Please select a location',
-                'subdistrict_name.required' => 'Please select a location',
-                'postal_code.required' => 'Postal code is required',
-                'postal_code.size' => 'Postal code must be exactly 5 digits',
-                'postal_code.regex' => 'Postal code must contain only numbers',
-                'street_address.required' => 'Street address is required',
-                'street_address.min' => 'Street address must be at least 10 characters long'
-            ]);
+        DB::transaction(function() use ($request) {
+            // Set primary address logic
+            if ($request->input('is_primary', false)) {
+                UserAddress::where('user_id', Auth::id())
+                          ->update(['is_primary' => false]);
+            }
 
-            $user = Auth::user();
-
-            // Use database transaction for data consistency
-            $address = DB::transaction(function () use ($user, $validated) {
-                // Create the address - query langsung
-                $address = UserAddress::create([
-                    'user_id' => $user->id,
-                    'label' => $validated['label'],
-                    'recipient_name' => trim($validated['recipient_name']),
-                    'phone_recipient' => preg_replace('/[^0-9+\-\s\(\)]/', '', $validated['phone_recipient']),
-                    'province_name' => $validated['province_name'],
-                    'city_name' => $validated['city_name'],
-                    'subdistrict_name' => $validated['subdistrict_name'],
-                    'postal_code' => $validated['postal_code'],
-                    'destination_id' => $validated['destination_id'] ?? null,
-                    'street_address' => trim($validated['street_address']),
-                    'notes' => !empty($validated['notes']) ? trim($validated['notes']) : null,
-                    'is_primary' => false, // Will be set by model events if this is the first address
-                    'is_active' => true
-                ]);
-
-                // Set as primary if explicitly requested and not already set by model events
-                if (($validated['is_primary'] ?? false) && !$address->is_primary) {
-                    $address->setPrimary();
-                }
-
-                return $address;
-            });
-
-            Log::info('New address created', [
-                'user_id' => $user->id,
-                'address_id' => $address->id,
-                'label' => $address->label,
-                'recipient_name' => $address->recipient_name,
-                'is_primary' => $address->is_primary,
-                'location' => "{$address->city_name}, {$address->province_name}"
-            ]);
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('success', 'Address added successfully!');
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return redirect()->back()
-                           ->withErrors($e->validator)
-                           ->withInput();
-        } catch (\Exception $e) {
-            Log::error('Error creating address: ' . $e->getMessage(), [
+            // Create new address
+            $address = UserAddress::create([
                 'user_id' => Auth::id(),
-                'request_data' => $request->except(['_token']),
-                'trace' => $e->getTraceAsString()
+                'label' => $request->input('label'),
+                'recipient_name' => $request->input('recipient_name'),
+                'phone' => $request->input('phone'),
+                'province_id' => $request->input('province_id'),
+                'province_name' => $request->input('province_name'),
+                'city_id' => $request->input('city_id'),
+                'city_name' => $request->input('city_name'),
+                'district_id' => $request->input('district_id'),
+                'district_name' => $request->input('district_name'),
+                'sub_district_id' => $request->input('sub_district_id'),
+                'sub_district_name' => $request->input('sub_district_name'),
+                'postal_code_api' => $request->input('postal_code_api'),
+                'street_address' => $request->input('street_address'),
+                'is_primary' => $request->input('is_primary', false),
+                
+                // Keep search_location for backward compatibility
+                'search_location' => $request->input('city_name') . ', ' . $request->input('province_name')
             ]);
-            
-            return redirect()->back()
-                           ->withErrors(['error' => 'Failed to add address: ' . $e->getMessage()])
-                           ->withInput();
-        }
+
+            // If this is the user's first address, make it primary
+            $addressCount = UserAddress::where('user_id', Auth::id())->count();
+            if ($addressCount === 1) {
+                $address->update(['is_primary' => true]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Address saved successfully'
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Error saving address', [
+            'user_id' => Auth::id(),
+            'error' => $e->getMessage(),
+            'line' => $e->getLine()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to save address: ' . $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Show form to edit address
@@ -606,6 +597,166 @@ class AddressController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get primary address'
+            ], 500);
+        }
+    }
+    Public function __construct(RajaOngkirService $rajaOngkirService)
+    {
+        $this->rajaOngkirService = $rajaOngkirService;
+    }
+
+    // Tambahkan method-method baru ini:
+
+    public function getProvinces()
+{
+    try {
+        $provinces = $this->rajaOngkirService->getProvincesHierarchical();
+        return response()->json([
+            'success' => true,
+            'data' => $provinces
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to get provinces'
+        ], 500);
+    }
+}
+
+// Tambahkan logging di method getCitiesByProvince di AddressController
+public function getCitiesByProvince($provinceId)
+{
+    try {
+        Log::info('🎯 Controller getCitiesByProvince called', ['province_id' => $provinceId]);
+        
+        $cities = $this->rajaOngkirService->getCitiesByProvinceId($provinceId);
+        
+        Log::info('🎯 Controller cities result', [
+            'count' => count($cities),
+            'sample' => array_slice($cities, 0, 2)
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $cities,
+            'total' => count($cities)
+        ]);
+    } catch (\Exception $e) {
+        Log::error('🎯 Controller error', ['error' => $e->getMessage()]);
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to get cities: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+public function getDistrictsByCity($cityId)
+{
+    try {
+        $districts = $this->rajaOngkirService->getDistrictsByCityId($cityId);
+        return response()->json([
+            'success' => true,
+            'data' => $districts
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to get districts'
+        ], 500);
+    }
+}
+
+public function getSubDistrictsByDistrict($districtId)
+{
+    try {
+        $subDistricts = $this->rajaOngkirService->getSubDistrictsByDistrictId($districtId);
+        return response()->json([
+            'success' => true,
+            'data' => $subDistricts
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to get sub-districts'
+        ], 500);
+    }
+}
+    /**
+     * Search locations (legacy method)
+     */
+    public function searchLocations(Request $request)
+    {
+        try {
+            $searchTerm = $request->input('q');
+            $limit = $request->input('limit', 10);
+
+            $results = $this->rajaOngkirService->searchDestinations($searchTerm, $limit);
+
+            return response()->json([
+                'success' => true,
+                'data' => $results,
+                'total' => count($results)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Search failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Test all hierarchical endpoints
+     */
+    public function testEndpoints()
+    {
+        try {
+            $testResults = $this->rajaOngkirService->testHierarchicalEndpoints();
+
+            return response()->json([
+                'success' => $testResults['success'],
+                'message' => $testResults['message'],
+                'data' => $testResults['results']
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Test failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get complete hierarchy for form initialization
+     */
+    public function getCompleteHierarchy(Request $request)
+    {
+        try {
+            $result = ['provinces' => $this->rajaOngkirService->getProvinces()];
+
+            if ($request->has('province_id')) {
+                $result['cities'] = $this->rajaOngkirService->getCitiesByProvince($request->province_id);
+            }
+
+            if ($request->has('city_id')) {
+                $result['districts'] = $this->rajaOngkirService->getDistrictsByCity($request->city_id);
+            }
+
+            if ($request->has('district_id')) {
+                $result['sub_districts'] = $this->rajaOngkirService->getSubDistrictsByDistrict($request->district_id);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $result
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get hierarchy',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

@@ -32,7 +32,7 @@
 
         <!-- Address Form -->
         <div class="bg-white rounded-lg shadow-md p-6">
-            <form action="{{ route('profile.addresses.store') }}" method="POST" id="address-form">
+            <form action="{{ route('profile.addresses.store') }}" method="POST" id="addressForm">
                 @csrf
                 
                 <!-- Address Label with Radio Buttons -->
@@ -41,25 +41,13 @@
                         Address Label *
                     </label>
                     <div class="flex space-x-4">
-                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors {{ old('label') == 'Kantor' ? 'border-orange-500 bg-orange-50' : '' }}">
-                            <input type="radio" 
-                                   name="label" 
-                                   value="Kantor" 
-                                   class="sr-only" 
-                                   {{ old('label') == 'Kantor' ? 'checked' : '' }}
-                                   onchange="updateRadioStyles()">
-                            <div class="radio-custom mr-3"></div>
+                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                            <input type="radio" name="label" value="Kantor" class="mr-3 text-orange-500">
                             <span class="text-sm font-medium text-gray-700">Kantor</span>
                         </label>
                         
-                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors {{ old('label', 'Rumah') == 'Rumah' ? 'border-orange-500 bg-orange-50' : '' }}">
-                            <input type="radio" 
-                                   name="label" 
-                                   value="Rumah" 
-                                   class="sr-only" 
-                                   {{ old('label', 'Rumah') == 'Rumah' ? 'checked' : '' }}
-                                   onchange="updateRadioStyles()">
-                            <div class="radio-custom mr-3"></div>
+                        <label class="flex items-center p-4 border border-orange-500 bg-orange-50 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                            <input type="radio" name="label" value="Rumah" class="mr-3 text-orange-500" checked>
                             <span class="text-sm font-medium text-gray-700">Rumah</span>
                         </label>
                     </div>
@@ -87,50 +75,78 @@
                     <p class="text-xs text-gray-500 mt-1">Phone number for the recipient (can be different from your account phone)</p>
                 </div>
 
-                <!-- Location Search -->
-                <div class="mb-4">
-                    <label for="location_search" class="block text-sm font-medium text-gray-700 mb-2">
-                        Search Location *
-                        <span class="text-xs text-gray-500">(Province, City, Subdistrict, Postal Code)</span>
-                    </label>
-                    <div class="relative">
-                        <input type="text" id="location_search" 
-                               placeholder="e.g., kebayoran lama, jakarta selatan"
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                               autocomplete="off">
-                        
-                        <!-- Search Results -->
-                        <div id="location-results" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                            <!-- Results will be populated here -->
-                        </div>
+                <!-- Hierarchical Location Selection -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Location Selection</h3>
+                    
+                    <!-- Province -->
+                    <div class="mb-4">
+                        <label for="province_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            Province *
+                        </label>
+                        <select name="province_id" id="province_id" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                            <option value="">Loading provinces...</option>
+                        </select>
+                        <input type="hidden" name="province_name" id="province_name">
+                    </div>
+
+                    <!-- City -->
+                    <div class="mb-4">
+                        <label for="city_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            City/Regency *
+                        </label>
+                        <select name="city_id" id="city_id" required disabled
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                            <option value="">Select province first...</option>
+                        </select>
+                        <input type="hidden" name="city_name" id="city_name">
+                    </div>
+
+                    <!-- District -->
+                    <div class="mb-4">
+                        <label for="district_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            District *
+                        </label>
+                        <select name="district_id" id="district_id" required disabled
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                            <option value="">Select city first...</option>
+                        </select>
+                        <input type="hidden" name="district_name" id="district_name">
+                    </div>
+
+                    <!-- Sub District -->
+                    <div class="mb-4">
+                        <label for="sub_district_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            Sub District *
+                        </label>
+                        <select name="sub_district_id" id="sub_district_id" required disabled
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                            <option value="">Select district first...</option>
+                        </select>
+                        <input type="hidden" name="sub_district_name" id="sub_district_name">
+                    </div>
+
+                    <!-- Postal Code Display -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Postal Code
+                        </label>
+                        <input type="text" id="postal_code_display" readonly
+                               class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md" 
+                               placeholder="Will be filled automatically">
+                        <input type="hidden" name="postal_code" id="postal_code">
+                        <p class="text-xs text-gray-500 mt-1">Postal code will be filled automatically</p>
                     </div>
                 </div>
 
-                <!-- Selected Location Display -->
-                <div id="selected-location" class="hidden mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h4 class="font-medium text-green-800">Selected Location:</h4>
-                            <p id="selected-location-text" class="text-sm text-green-700"></p>
-                        </div>
-                        <button type="button" onclick="clearLocation()" class="text-red-600 hover:text-red-800 text-sm">
-                            Change
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Hidden Location Fields -->
-                <input type="hidden" name="province_name" id="province_name" required>
-                <input type="hidden" name="city_name" id="city_name" required>
-                <input type="hidden" name="subdistrict_name" id="subdistrict_name" required>
-                <input type="hidden" name="postal_code" id="postal_code" required>
+                <!-- Hidden field for destination_id -->
                 <input type="hidden" name="destination_id" id="destination_id">
 
                 <!-- Street Address -->
                 <div class="mb-4">
                     <label for="street_address" class="block text-sm font-medium text-gray-700 mb-2">
                         Street Address *
-                        <span class="text-xs text-gray-500">(Street Name, Building, House Number)</span>
                     </label>
                     <textarea name="street_address" id="street_address" rows="3" required
                               placeholder="Enter complete street address, building name, house number"
@@ -150,7 +166,7 @@
 
                 <!-- Action Buttons -->
                 <div class="flex space-x-4">
-                    <button type="submit" 
+                    <button type="submit"
                             class="flex-1 bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium">
                         Save Address
                     </button>
@@ -164,182 +180,280 @@
     </div>
 </div>
 
-<!-- Custom Radio Button Styles -->
-<style>
-.radio-custom {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #d1d5db;
-    border-radius: 50%;
-    position: relative;
-    background: white;
-    transition: all 0.2s ease;
-}
-
-.radio-custom::after {
-    content: '';
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #ea580c;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) scale(0);
-    transition: transform 0.2s ease;
-}
-
-input[type="radio"]:checked + .radio-custom {
-    border-color: #ea580c;
-}
-
-input[type="radio"]:checked + .radio-custom::after {
-    transform: translate(-50%, -50%) scale(1);
-}
-
-label:has(input[type="radio"]:checked) {
-    border-color: #ea580c !important;
-    background-color: #fff7ed !important;
-}
-</style>
-
-<!-- Location Search JavaScript -->
 <script>
+// Simple JavaScript - No conflicts
+let addressData = {
+    provinces: [],
+    cities: [],
+    districts: [],
+    subDistricts: []
+};
+
 document.addEventListener('DOMContentLoaded', function() {
-    const locationSearch = document.getElementById('location_search');
-    const locationResults = document.getElementById('location-results');
-    const selectedLocation = document.getElementById('selected-location');
-    const selectedLocationText = document.getElementById('selected-location-text');
+    console.log('🚀 Address form loaded');
     
-    let searchTimeout;
-
-    // Set default label to "Rumah" if none selected
-    if (!document.querySelector('input[name="label"]:checked')) {
-        document.querySelector('input[name="label"][value="Rumah"]').checked = true;
-    }
-    updateRadioStyles();
-
-    locationSearch.addEventListener('input', function() {
-        const query = this.value.trim();
+    // Get DOM elements
+    const provinceSelect = document.getElementById('province_id');
+    const citySelect = document.getElementById('city_id');
+    const districtSelect = document.getElementById('district_id');
+    const subDistrictSelect = document.getElementById('sub_district_id');
+    
+    // Load provinces immediately
+    loadProvinces();
+    
+    // Province change handler
+    provinceSelect.addEventListener('change', function() {
+        const provinceId = this.value;
+        const provinceName = this.options[this.selectedIndex].text;
         
-        clearTimeout(searchTimeout);
+        console.log('Province selected:', provinceId, provinceName);
         
-        if (query.length < 2) {
-            locationResults.classList.add('hidden');
-            return;
-        }
-
-        searchTimeout = setTimeout(() => {
-            searchLocation(query);
-        }, 300);
-    });
-
-    async function searchLocation(query) {
-        try {
-            const response = await fetch(`/checkout/search-destinations?search=${encodeURIComponent(query)}&limit=10`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                displayLocationResults(data.data || []);
-            } else {
-                console.error('Location search failed:', response.status);
-                locationResults.classList.add('hidden');
-            }
-        } catch (error) {
-            console.error('Location search error:', error);
-            locationResults.classList.add('hidden');
-        }
-    }
-
-    function displayLocationResults(locations) {
-        if (locations.length === 0) {
-            locationResults.classList.add('hidden');
-            return;
-        }
-
-        locationResults.innerHTML = '';
-        
-        locations.forEach(location => {
-            const item = document.createElement('div');
-            item.className = 'p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0';
-            item.innerHTML = `
-                <div class="font-medium text-gray-900">${location.display_name || location.subdistrict_name}</div>
-                <div class="text-sm text-gray-600">${location.full_address || location.label}</div>
-            `;
+        if (provinceId) {
+            document.getElementById('province_name').value = provinceName;
+            loadCities(provinceId);
             
-            item.addEventListener('click', () => selectLocation(location));
-            locationResults.appendChild(item);
-        });
-
-        locationResults.classList.remove('hidden');
-    }
-
-    function selectLocation(location) {
-        // Fill hidden fields
-        document.getElementById('province_name').value = location.province_name || '';
-        document.getElementById('city_name').value = location.city_name || '';
-        document.getElementById('subdistrict_name').value = location.subdistrict_name || '';
-        document.getElementById('postal_code').value = location.zip_code || location.postal_code || '';
-document.getElementById('destination_id').value = location.location_id || location.id || '';
-
-
-        // Display selected location
-        selectedLocationText.textContent = location.full_address || location.label || `${location.subdistrict_name}, ${location.city_name}, ${location.province_name}`;
-        selectedLocation.classList.remove('hidden');
+            // Reset downstream selects
+            resetSelect(citySelect, 'Loading cities...');
+            resetSelect(districtSelect, 'Select city first...');
+            resetSelect(subDistrictSelect, 'Select district first...');
+            clearPostalCode();
+        } else {
+            document.getElementById('province_name').value = '';
+            resetSelect(citySelect, 'Select province first...');
+            resetSelect(districtSelect, 'Select city first...');
+            resetSelect(subDistrictSelect, 'Select district first...');
+            clearPostalCode();
+        }
+    });
+    
+    // City change handler
+    citySelect.addEventListener('change', function() {
+        const cityId = this.value;
+        const cityName = this.options[this.selectedIndex].text;
         
-        // Hide search results
-        locationResults.classList.add('hidden');
+        console.log('City selected:', cityId, cityName);
         
-        // Clear search input
-        locationSearch.value = '';
-    }
-
-    window.clearLocation = function() {
-        // Clear hidden fields
-        document.getElementById('province_name').value = '';
-        document.getElementById('city_name').value = '';
-        document.getElementById('subdistrict_name').value = '';
-        document.getElementById('postal_code').value = '';
-        document.getElementById('destination_id').value = '';
+        if (cityId) {
+            document.getElementById('city_name').value = cityName;
+            loadDistricts(cityId);
+            
+            // Reset downstream selects
+            resetSelect(districtSelect, 'Loading districts...');
+            resetSelect(subDistrictSelect, 'Select district first...');
+            clearPostalCode();
+        } else {
+            document.getElementById('city_name').value = '';
+            resetSelect(districtSelect, 'Select city first...');
+            resetSelect(subDistrictSelect, 'Select district first...');
+            clearPostalCode();
+        }
+    });
+    
+    // District change handler
+    districtSelect.addEventListener('change', function() {
+        const districtId = this.value;
+        const districtName = this.options[this.selectedIndex].text;
         
-        // Hide selected location
-        selectedLocation.classList.add('hidden');
+        console.log('District selected:', districtId, districtName);
         
-        // Focus back to search
-        locationSearch.focus();
-    };
-
-    // Hide results when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!locationSearch.contains(e.target) && !locationResults.contains(e.target)) {
-            locationResults.classList.add('hidden');
+        if (districtId) {
+            document.getElementById('district_name').value = districtName;
+            loadSubDistricts(districtId);
+            
+            // Reset sub-district
+            resetSelect(subDistrictSelect, 'Loading sub-districts...');
+            clearPostalCode();
+        } else {
+            document.getElementById('district_name').value = '';
+            resetSelect(subDistrictSelect, 'Select district first...');
+            clearPostalCode();
+        }
+    });
+    
+    // Sub-district change handler
+    subDistrictSelect.addEventListener('change', function() {
+        const subDistrictId = this.value;
+        const subDistrictName = this.options[this.selectedIndex].text;
+        const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
+        
+        console.log('Sub-district selected:', subDistrictId, subDistrictName, zipCode);
+        
+        if (subDistrictId) {
+            document.getElementById('sub_district_name').value = subDistrictName;
+            document.getElementById('destination_id').value = subDistrictId;
+            
+            // Update postal code
+            if (zipCode && zipCode !== '0') {
+                document.getElementById('postal_code_display').value = zipCode;
+                document.getElementById('postal_code').value = zipCode;
+            }
+        } else {
+            document.getElementById('sub_district_name').value = '';
+            document.getElementById('destination_id').value = '';
+            clearPostalCode();
         }
     });
 });
 
-function updateRadioStyles() {
-    const radioInputs = document.querySelectorAll('input[name="label"]');
-    const labels = document.querySelectorAll('label:has(input[name="label"])');
+async function loadProvinces() {
+    const provinceSelect = document.getElementById('province_id');
     
-    labels.forEach(label => {
-        const input = label.querySelector('input[name="label"]');
-        if (input.checked) {
-            label.classList.add('border-orange-500', 'bg-orange-50');
-            label.classList.remove('border-gray-300');
+    try {
+        console.log('🔄 Loading provinces...');
+        
+        const response = await fetch('/api/addresses/provinces');
+        const result = await response.json();
+        
+        console.log('📡 Provinces response:', result);
+        
+        if (result.success && result.data) {
+            addressData.provinces = result.data;
+            
+            // Clear and populate select
+            provinceSelect.innerHTML = '<option value="">Select Province...</option>';
+            
+            result.data.forEach(province => {
+                const option = document.createElement('option');
+                option.value = province.id;
+                option.textContent = province.name;
+                provinceSelect.appendChild(option);
+            });
+            
+            provinceSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} provinces`);
         } else {
-            label.classList.remove('border-orange-500', 'bg-orange-50');
-            label.classList.add('border-gray-300');
+            throw new Error(result.message || 'Failed to load provinces');
         }
-    });
+    } catch (error) {
+        console.error('❌ Error loading provinces:', error);
+        provinceSelect.innerHTML = '<option value="">Error loading provinces</option>';
+    }
+}
+
+async function loadCities(provinceId) {
+    const citySelect = document.getElementById('city_id');
+    
+    try {
+        console.log('🔄 Loading cities for province:', provinceId);
+        
+        const response = await fetch(`/api/addresses/cities/${provinceId}`);
+        const result = await response.json();
+        
+        console.log('📡 Cities response:', result);
+        
+        if (result.success && result.data) {
+            addressData.cities = result.data;
+            
+            // Clear and populate select
+            citySelect.innerHTML = '<option value="">Select City/Regency...</option>';
+            
+            result.data.forEach(city => {
+                const option = document.createElement('option');
+                option.value = city.id;
+                option.textContent = city.name;
+                citySelect.appendChild(option);
+            });
+            
+            citySelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} cities`);
+        } else {
+            throw new Error(result.message || 'Failed to load cities');
+        }
+    } catch (error) {
+        console.error('❌ Error loading cities:', error);
+        citySelect.innerHTML = '<option value="">Error loading cities</option>';
+        citySelect.disabled = false;
+    }
+}
+
+async function loadDistricts(cityId) {
+    const districtSelect = document.getElementById('district_id');
+    
+    try {
+        console.log('🔄 Loading districts for city:', cityId);
+        
+        const response = await fetch(`/api/addresses/districts/${cityId}`);
+        const result = await response.json();
+        
+        console.log('📡 Districts response:', result);
+        
+        if (result.success && result.data) {
+            addressData.districts = result.data;
+            
+            // Clear and populate select
+            districtSelect.innerHTML = '<option value="">Select District...</option>';
+            
+            result.data.forEach(district => {
+                const option = document.createElement('option');
+                option.value = district.id;
+                option.textContent = district.name;
+                districtSelect.appendChild(option);
+            });
+            
+            districtSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} districts`);
+        } else {
+            throw new Error(result.message || 'Failed to load districts');
+        }
+    } catch (error) {
+        console.error('❌ Error loading districts:', error);
+        districtSelect.innerHTML = '<option value="">Error loading districts</option>';
+        districtSelect.disabled = false;
+    }
+}
+
+async function loadSubDistricts(districtId) {
+    const subDistrictSelect = document.getElementById('sub_district_id');
+    
+    try {
+        console.log('🔄 Loading sub-districts for district:', districtId);
+        
+        const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
+        const result = await response.json();
+        
+        console.log('📡 Sub-districts response:', result);
+        
+        if (result.success && result.data) {
+            addressData.subDistricts = result.data;
+            
+            // Clear and populate select
+            subDistrictSelect.innerHTML = '<option value="">Select Sub-District...</option>';
+            
+            result.data.forEach(subDistrict => {
+                const option = document.createElement('option');
+                option.value = subDistrict.id;
+                option.textContent = subDistrict.name;
+                
+                // Store zip code in data attribute
+                if (subDistrict.zip_code) {
+                    option.setAttribute('data-zip', subDistrict.zip_code);
+                }
+                
+                subDistrictSelect.appendChild(option);
+            });
+            
+            subDistrictSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} sub-districts`);
+        } else {
+            throw new Error(result.message || 'Failed to load sub-districts');
+        }
+    } catch (error) {
+        console.error('❌ Error loading sub-districts:', error);
+        subDistrictSelect.innerHTML = '<option value="">Error loading sub-districts</option>';
+        subDistrictSelect.disabled = false;
+    }
+}
+
+function resetSelect(selectElement, placeholder) {
+    selectElement.innerHTML = `<option value="">${placeholder}</option>`;
+    selectElement.disabled = true;
+}
+
+function clearPostalCode() {
+    document.getElementById('postal_code_display').value = '';
+    document.getElementById('postal_code').value = '';
 }
 </script>
 
-<!-- CSRF Token for AJAX -->
 <meta name="csrf-token" content="{{ csrf_token() }}">
 @endsection

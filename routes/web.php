@@ -292,6 +292,13 @@ Route::prefix('api')->name('api.')->group(function() {
     Route::get('/checkout/search-destinations', [CheckoutController::class, 'searchDestinations'])->name('checkout.search-destinations');
     Route::post('/checkout/shipping', [CheckoutController::class, 'calculateShipping'])->name('checkout.shipping');
     
+    Route::prefix('addresses')->name('addresses.hierarchical.')->group(function() {
+    Route::get('/provinces', [AddressController::class, 'getProvinces'])->name('provinces');
+    Route::get('/cities/{provinceId}', [AddressController::class, 'getCitiesByProvince'])->name('cities');
+    Route::get('/districts/{cityId}', [AddressController::class, 'getDistrictsByCity'])->name('districts');
+    Route::get('/sub-districts/{districtId}', [AddressController::class, 'getSubDistrictsByDistrict'])->name('sub-districts');
+    Route::get('/test-endpoints', [AddressController::class, 'testEndpoints'])->name('test-endpoints');
+});
     // Payment status
     Route::get('/payment/status/{orderNumber}', [CheckoutController::class, 'getPaymentStatus'])->name('payment.status');
     Route::get('/payment/check/{orderNumber}', [CheckoutController::class, 'checkPaymentStatus'])->name('payment.check');

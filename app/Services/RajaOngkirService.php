@@ -1006,5 +1006,262 @@ private function generateFullAddress($result)
 {
     return $this->generateLocationLabel($result);
 }
+// ============================================
+    // HIERARCHICAL LOCATION METHODS (NEW - NO CONFLICTS)
+    // ============================================
+
+    /**
+     * Get all provinces for hierarchical dropdown (different from existing getProvinces)
+     */
+    public function getProvincesHierarchical()
+    {
+        $cacheKey = 'rajaongkir_provinces_hierarchical_v2';
+        
+        return Cache::remember($cacheKey, $this->cacheDuration, function () {
+            try {
+                Log::info('🏛️ Fetching provinces for hierarchical dropdown');
+                
+                $response = Http::timeout($this->timeout)
+                    ->withHeaders(['key' => $this->apiKey])
+                    ->get($this->baseUrl . '/destination/province');
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    
+                    if (isset($data['data']) && is_array($data['data'])) {
+                        $provinces = collect($data['data'])->map(function ($province) {
+                            return [
+                                'id' => $province['id'],
+                                'name' => $province['name'],
+                                'label' => $province['name'] // For display in dropdown
+                            ];
+                        })->sortBy('name')->values()->toArray();
+
+                        Log::info('✅ Hierarchical provinces fetched successfully', [
+                            'count' => count($provinces)
+                        ]);
+
+                        return $provinces;
+                    }
+                }
+
+                Log::warning('⚠️ Invalid response format from provinces API');
+                return [];
+
+            } catch (\Exception $e) {
+                Log::error('❌ Error fetching hierarchical provinces', [
+                    'error' => $e->getMessage(),
+                    'line' => $e->getLine()
+                ]);
+                return [];
+            }
+        });
+    }
+
+    /**
+     * Get cities by province ID - HIERARCHICAL METHOD (different from existing)
+     */
+    public function getCitiesByProvinceId($provinceId)
+{
+    try {
+        Log::info('Loading cities for province', ['province_id' => $provinceId]);
+        
+        $response = Http::timeout($this->timeout)
+            ->withHeaders(['key' => $this->apiKey])
+            ->get($this->baseUrl . "/destination/city/{$provinceId}");
+
+        if ($response->successful()) {
+            $data = $response->json();
+            
+            if (isset($data['data']) && is_array($data['data'])) {
+                $cities = [];
+                foreach ($data['data'] as $city) {
+                    $cities[] = [
+                        'id' => $city['id'],
+                        'name' => $city['name'],
+                        'label' => $city['name']
+                    ];
+                }
+                
+                Log::info('Cities loaded successfully', ['count' => count($cities)]);
+                return $cities;
+            }
+        }
+        
+        return [];
+        
+    } catch (\Exception $e) {
+        Log::error('Error loading cities', ['error' => $e->getMessage()]);
+        return [];
+    }
+}
+
+    /**
+     * Get districts by city ID
+     */
+    public function getDistrictsByCityId($cityId)
+{
+    try {
+        Log::info('Loading districts for city', ['city_id' => $cityId]);
+        
+        $response = Http::timeout($this->timeout)
+            ->withHeaders(['key' => $this->apiKey])
+            ->get($this->baseUrl . "/destination/district/{$cityId}");
+
+        if ($response->successful()) {
+            $data = $response->json();
+            
+            if (isset($data['data']) && is_array($data['data'])) {
+                $districts = [];
+                foreach ($data['data'] as $district) {
+                    $districts[] = [
+                        'id' => $district['id'],
+                        'name' => $district['name'],
+                        'label' => $district['name'],
+                        // Hanya tambahkan zip_code jika ada
+                        'zip_code' => isset($district['zip_code']) ? $district['zip_code'] : null
+                    ];
+                }
+                
+                Log::info('Districts loaded successfully', ['count' => count($districts)]);
+                return $districts;
+            }
+        }
+        
+        return [];
+        
+    } catch (\Exception $e) {
+        Log::error('Error loading districts', ['error' => $e->getMessage()]);
+        return [];
+    }
+}
+
+    /**
+     * Get sub-districts by district ID
+     */
+    public function getSubDistrictsByDistrictId($districtId)
+{
+    try {
+        Log::info('Loading sub-districts for district', ['district_id' => $districtId]);
+        
+        $response = Http::timeout($this->timeout)
+            ->withHeaders(['key' => $this->apiKey])
+            ->get($this->baseUrl . "/destination/sub-district/{$districtId}");
+
+        if ($response->successful()) {
+            $data = $response->json();
+            
+            if (isset($data['data']) && is_array($data['data'])) {
+                $subDistricts = [];
+                foreach ($data['data'] as $subDistrict) {
+                    $subDistricts[] = [
+                        'id' => $subDistrict['id'],
+                        'name' => $subDistrict['name'],
+                        'label' => $subDistrict['name'],
+                        'zip_code' => isset($subDistrict['zip_code']) ? $subDistrict['zip_code'] : null
+                    ];
+                }
+                
+                Log::info('Sub-districts loaded successfully', ['count' => count($subDistricts)]);
+                return $subDistricts;
+            }
+        }
+        
+        return [];
+        
+    } catch (\Exception $e) {
+        Log::error('Error loading sub-districts', ['error' => $e->getMessage()]);
+        return [];
+    }
+}
+
+    /**
+     * Test all hierarchical endpoints
+     */
+    public function testHierarchicalEndpoints()
+    {
+        try {
+            $results = [
+                'provinces' => ['status' => 'testing', 'count' => 0],
+                'cities' => ['status' => 'testing', 'count' => 0],
+                'districts' => ['status' => 'testing', 'count' => 0],
+                'sub_districts' => ['status' => 'testing', 'count' => 0]
+            ];
+
+            // Test 1: Provinces
+            $provinces = $this->getProvincesHierarchical();
+            $results['provinces'] = [
+                'status' => !empty($provinces) ? 'working' : 'failed',
+                'count' => count($provinces),
+                'sample' => array_slice($provinces, 0, 2)
+            ];
+
+            // Test 2: Cities (use first province)
+            if (!empty($provinces)) {
+                $firstProvince = $provinces[0];
+                $cities = $this->getCitiesByProvinceId($firstProvince['id']);
+                $results['cities'] = [
+                    'status' => !empty($cities) ? 'working' : 'failed',
+                    'count' => count($cities),
+                    'sample' => array_slice($cities, 0, 2),
+                    'tested_province' => $firstProvince['name']
+                ];
+
+                // Test 3: Districts (use first city)
+                if (!empty($cities)) {
+                    $firstCity = $cities[0];
+                    $districts = $this->getDistrictsByCityId($firstCity['id']);
+                    $results['districts'] = [
+                        'status' => !empty($districts) ? 'working' : 'failed',
+                        'count' => count($districts),
+                        'sample' => array_slice($districts, 0, 2),
+                        'tested_city' => $firstCity['name']
+                    ];
+
+                    // Test 4: Sub Districts (use first district)
+                    if (!empty($districts)) {
+                        $firstDistrict = $districts[0];
+                        $subDistricts = $this->getSubDistrictsByDistrictId($firstDistrict['id']);
+                        $results['sub_districts'] = [
+                            'status' => !empty($subDistricts) ? 'working' : 'failed',
+                            'count' => count($subDistricts),
+                            'sample' => array_slice($subDistricts, 0, 2),
+                            'tested_district' => $firstDistrict['name']
+                        ];
+                    }
+                }
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Hierarchical endpoints tested successfully',
+                'results' => $results,
+                'api_info' => [
+                    'base_url' => $this->baseUrl,
+                    'api_key_set' => !empty($this->apiKey),
+                    'timeout' => $this->timeout,
+                    'cache_duration' => $this->cacheDuration
+                ],
+                'method_names' => [
+                    'provinces' => 'getProvincesHierarchical()',
+                    'cities' => 'getCitiesByProvinceId($id)',
+                    'districts' => 'getDistrictsByCityId($id)',
+                    'sub_districts' => 'getSubDistrictsByDistrictId($id)'
+                ]
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Hierarchical test failed: ' . $e->getMessage(),
+                'results' => [],
+                'error_details' => [
+                    'line' => $e->getLine(),
+                    'file' => $e->getFile(),
+                    'trace' => $e->getTraceAsString()
+                ]
+            ];
+        }
+    }
     
 }
