@@ -33,22 +33,39 @@ class BannerResource extends Resource
                         ->rows(3)
                         ->columnSpanFull(),
 
-Forms\Components\FileUpload::make('image_paths')
-    ->label('Banner Images (Multiple)')
-    ->directory('banners')
-    ->image()
-    ->imageResizeMode('force')
-    ->imageResizeTargetWidth('4226')
-    ->imageResizeTargetHeight('3075')  // Ubah dari 480 ke 600
-    // ->imageEditor()  // Hapus baris ini untuk menghindari reset height
-    ->multiple() // Allow multiple files
-    ->minFiles(1)
-    ->maxFiles(10) // Maximum 10 slides
-    ->required()
-    ->columnSpanFull()
-    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
-    ->maxSize(5120)  // Ubah dari 2048 ke 5120 (5MB)
-    ->helperText('Upload banner images. Will be automatically resized to 1920x600px. Maximum 5MB per file, 10 images total.'),
+                    // Upload untuk Desktop
+                    Forms\Components\FileUpload::make('desktop_images')
+                        ->label('Desktop Banner Images (1920x600)')
+                        ->directory('banners/desktop')
+                        ->image()
+                        ->imageResizeMode('force')
+                        ->imageResizeTargetWidth('1920')
+                        ->imageResizeTargetHeight('600')
+                        ->multiple()
+                        ->minFiles(1)
+                        ->maxFiles(10)
+                        ->required()
+                        ->columnSpan(1)
+                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                        ->maxSize(5120)
+                        ->helperText('Upload banner untuk desktop. Akan diresize ke 1920x600px.'),
+
+                    // Upload untuk Mobile
+                    Forms\Components\FileUpload::make('mobile_images')
+                        ->label('Mobile Banner Images (4226x3075)')
+                        ->directory('banners/mobile')
+                        ->image()
+                        ->imageResizeMode('force')
+                        ->imageResizeTargetWidth('4226')
+                        ->imageResizeTargetHeight('3075')
+                        ->multiple()
+                        ->minFiles(1)
+                        ->maxFiles(10)
+                        ->required()
+                        ->columnSpan(1)
+                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                        ->maxSize(5120)
+                        ->helperText('Upload banner untuk mobile. Akan diresize ke 4226x3075px.'),
 
                     Forms\Components\TextInput::make('sort_order')
                         ->label('Sort Order')

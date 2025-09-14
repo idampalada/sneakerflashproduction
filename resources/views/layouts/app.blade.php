@@ -537,7 +537,45 @@
  .carousel-indicators{ bottom:10px; gap:6px; }
  .carousel-dot{ width:8px; height:8px; }
 }
+.carousel-slide-bg {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    
+    @media (min-width: 768px) {
+        background-position: center center;
+    }
+    
+    @media (max-width: 767px) {
+        background-position: center top;
+    }
+}
 
+/* Jika menggunakan picture element (recommended) */
+.responsive-banner {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Media queries untuk different aspect ratios */
+@media (max-width: 767px) {
+    .carousel-container {
+        height: 370px !important; /* Mobile height */
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+    .carousel-container {
+        height: 430px !important; /* Tablet height */
+    }
+}
+
+@media (min-width: 1024px) {
+    .carousel-container {
+        height: 480px !important; /* Desktop height */
+    }
+}
 /* Hindari scrollbar horizontal dari full-bleed */
 html, body { 
     overflow-x: hidden; 
@@ -808,36 +846,68 @@ html, body {
         slides: [
             @if(isset($banners) && $banners->count() > 0)
                 @foreach($banners as $banner)
-                    @if($banner->image_paths && is_array($banner->image_paths))
-                        @foreach($banner->image_paths as $imagePath)
-                        {
-                            image: '{{ asset("storage/" . $imagePath) }}',
-                            alt: 'Banner Slide',
-                            bg: '#ffffff'
-                        },
+                    @php
+                        // Prioritas: gunakan desktop/mobile images jika ada, fallback ke image_paths
+                        $desktopImages = $banner->desktop_images ?? $banner->image_paths ?? [];
+                        $mobileImages = $banner->mobile_images ?? $banner->image_paths ?? [];
+                    @endphp
+                    
+                    @if(is_array($desktopImages) && count($desktopImages) > 0)
+                        @foreach($desktopImages as $index => $desktopImage)
+                            @php
+                                $mobileImage = $mobileImages[$index] ?? $mobileImages[0] ?? $desktopImage;
+                            @endphp
+                            {
+                                desktop: '{{ asset("storage/" . $desktopImage) }}',
+                                mobile: '{{ asset("storage/" . $mobileImage) }}',
+                                description: '{{ $banner->description ?? "" }}'
+                            },
                         @endforeach
                     @endif
                 @endforeach
-            @else
-                {
-                    image: '{{ asset("images/default-banner.jpg") }}',
-                    alt: 'Default Banner',
-                    bg: '#ffffff'
-                }
             @endif
         ],
-        autoPlay: true,
-        autoPlayInterval: 5000,
+        
         init() {
-            if (this.autoPlay && this.slides.length > 1) {
-                setInterval(() => { this.nextSlide(); }, this.autoPlayInterval);
-            }
+            this.startAutoplay();
+            // Update image source based on screen size
+            this.updateImageSources();
+            
+            // Listen for window resize
+            window.addEventListener('resize', () => {
+                this.updateImageSources();
+            });
         },
+        
+        updateImageSources() {
+            const isMobile = window.innerWidth <= 767;
+            const slideImages = document.querySelectorAll('.carousel-slide img');
+            
+            slideImages.forEach((img, index) => {
+                if (this.slides[index]) {
+                    img.src = isMobile ? this.slides[index].mobile : this.slides[index].desktop;
+                }
+            });
+        },
+        
         nextSlide() {
             this.currentSlide = (this.currentSlide + 1) % this.slides.length;
         },
+        
         prevSlide() {
             this.currentSlide = this.currentSlide === 0 ? this.slides.length - 1 : this.currentSlide - 1;
+        },
+        
+        goToSlide(index) {
+            this.currentSlide = index;
+        },
+        
+        startAutoplay() {
+            if (this.slides.length > 1) {
+                setInterval(() => {
+                    this.nextSlide();
+                }, 4000);
+            }
         }
     }
 }
@@ -1599,30 +1669,43 @@ function mobileMenuDropdown() {
     @if(request()->is('/') || request()->routeIs('home'))
 <!-- Image Carousel Slider -->
 @if(isset($banners) && $banners->count() > 0)
-<div class="carousel-wrapper">
-  <div class="carousel-container" x-data="carousel()" x-init="init()">
-    <template x-for="(slide, index) in slides" :key="index">
-      <div class="carousel-slide"
-           :class="{ 'active': currentSlide === index }"
-           :style="slide.bg ? { backgroundColor: slide.bg } : {}">
-        <img :src="slide.image" :alt="slide.alt" loading="lazy">
-      </div>
-    </template>
-
-    <button class="carousel-nav prev" @click="prevSlide()" aria-label="Previous">
-      <i class="fas fa-chevron-left"></i>
-    </button>
-    <button class="carousel-nav next" @click="nextSlide()" aria-label="Next">
-      <i class="fas fa-chevron-right"></i>
-    </button>
-
-    <div class="carousel-indicators">
-      <template x-for="(slide, index) in slides" :key="'dot-'+index">
-        <button class="carousel-dot" :class="{ 'active': currentSlide === index }"
-                @click="currentSlide = index" :aria-label="'Go to slide ' + (index + 1)"></button>
-      </template>
+<div class="carousel-wrapper" x-data="carousel()">
+    <div class="carousel-container">
+        <template x-for="(slide, index) in slides" :key="index">
+            <div class="carousel-slide" :class="{ 'active': currentSlide === index }">
+                <!-- Use desktop image as default, will be updated by JavaScript -->
+                <img :src="slide.desktop" 
+                     :alt="slide.description" 
+                     loading="lazy"
+                     @load="updateImageSources()">
+            </div>
+        </template>
+        
+        <!-- Navigation arrows (jika lebih dari 1 slide) -->
+        <template x-if="slides.length > 1">
+            <div>
+                <button @click="prevSlide()" class="carousel-nav prev">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button @click="nextSlide()" class="carousel-nav next">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </template>
+        
+        <!-- Dots indicator -->
+        <template x-if="slides.length > 1">
+            <div class="carousel-indicators">
+                <template x-for="(slide, index) in slides" :key="index">
+                    <button @click="goToSlide(index)" 
+                            class="carousel-dot" 
+                            :class="{ 'active': currentSlide === index }">
+                    </button>
+                </template>
+            </div>
+        </template>
     </div>
-  </div>
+</div>
 </div>
 @else
 <div class="carousel-wrapper">

@@ -11,18 +11,29 @@ class Banner extends Model
 
     protected $fillable = [
         'description',
-        'image_paths', // Changed to multiple images
+        'image_paths',      // Keep for backward compatibility
+        'desktop_images',   // New field
+        'mobile_images',    // New field
         'sort_order',
         'is_active'
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
-        'image_paths' => 'array', // Cast to array
+        'image_paths' => 'array',
+        'desktop_images' => 'array',  // New cast
+        'mobile_images' => 'array',   // New cast
+        'is_active' => 'boolean'
     ];
 
+    // Scope untuk banner aktif
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
+    }
+
+    // Scope untuk sorting
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('sort_order', 'asc')->orderBy('id', 'asc');
     }
 }
