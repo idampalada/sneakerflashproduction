@@ -235,225 +235,231 @@
                                 </label>
                             </div>
                             
-                            <button type="button" onclick="nextStep(2)" 
-                                    class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                                Continue
-                            </button>
+<button type="button" id="continue-step-1"
+        class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+    Continue
+</button>
                         </div>
                     </div>
 
-                    <!-- Step 2: Delivery Address - UPDATED WITH ADDRESS INTEGRATION -->
-                    <div class="checkout-section hidden" id="section-2">
-                        <div class="bg-white rounded-lg shadow-md p-6">
-                            <h2 class="text-xl font-semibold text-gray-900 mb-6">Delivery Address</h2>
-                            
-                            @if(Auth::check() && $userAddresses->count() > 0)
-                                <!-- Existing Addresses for Logged In Users -->
-                                <div class="mb-6">
-                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Select Saved Address</h3>
-                                    <div class="space-y-3" id="saved-addresses">
-                                        @foreach($userAddresses as $address)
-                                            <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors {{ $address->is_primary ? 'border-orange-500 bg-orange-50' : 'border-gray-200' }}" 
-                                                   data-address-id="{{ $address->id }}">
-                                                <input type="radio" 
-                                                       name="saved_address_id" 
-                                                       value="{{ $address->id }}" 
-                                                       class="mt-1 mr-4" 
-                                                       {{ $address->is_primary ? 'checked' : '' }}
-                                                       data-address-id="{{ $address->id }}"
-                                                       onchange="loadSavedAddress(this.dataset.addressId)">
-                                                <div class="flex-1">
-                                                    <div class="flex items-center mb-2">
-                                                        <span class="font-medium text-gray-900">{{ $address->label }}</span>
-                                                        @if($address->is_primary)
-                                                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                                                Primary
-                                                            </span>
-                                                        @endif
-                                                    </div>
-                                                    <div class="text-sm text-gray-700">
-                                                        <p class="font-medium">{{ $address->recipient_name }}</p>
-                                                        <p>{{ $address->phone_recipient }}</p>
-                                                        <p>{{ $address->street_address }}</p>
-                                                        <p class="text-gray-500">{{ $address->location_string }}</p>
-                                                    </div>
-                                                </div>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                    
-                                    <!-- Add New Address Option -->
-                                    <label class="flex items-center p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors mt-3">
-                                        <input type="radio" name="saved_address_id" value="new" class="mr-4" onchange="showNewAddressForm()">
-                                        <div class="text-center w-full">
-                                            <svg class="w-6 h-6 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                            </svg>
-                                            <span class="text-sm font-medium text-gray-700">Add New Address</span>
-                                        </div>
-                                    </label>
+                    <!-- Step 2: Delivery Address - UPDATED WITH HIERARCHICAL ADDRESS STRUCTURE -->
+<div class="checkout-section hidden" id="section-2">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-6">Delivery Address</h2>
+        
+        @if(Auth::check() && $userAddresses->count() > 0)
+            <!-- Existing Addresses for Logged In Users -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Select Saved Address</h3>
+                <div class="space-y-3" id="saved-addresses">
+                    @foreach($userAddresses as $address)
+                        <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors {{ $address->is_primary ? 'border-orange-300 bg-orange-50' : 'border-gray-300' }}" data-address-id="{{ $address->id }}">
+                            <input type="radio" name="saved_address_id" value="{{ $address->id }}" class="mr-4 mt-1" {{ $address->is_primary ? 'checked' : '' }} onchange="loadSavedAddress({{ $address->id }})">
+                            <div class="flex-1">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h4 class="font-medium text-gray-900">
+                                        {{ $address->label }} - {{ $address->recipient_name }}
+                                        @if($address->is_primary)
+                                            <span class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded-full ml-2">Primary</span>
+                                        @endif
+                                    </h4>
                                 </div>
-                                
-                                <!-- Divider -->
-                                <div class="relative mb-6">
-                                    <div class="absolute inset-0 flex items-center">
-                                        <div class="w-full border-t border-gray-300"></div>
-                                    </div>
-                                    <div class="relative flex justify-center text-sm">
-                                        <span class="px-2 bg-white text-gray-500">Or use different address</span>
-                                    </div>
-                                </div>
-                            @endif
-                            
-                            <!-- New Address Form -->
-                            <div id="new-address-form" class="{{ Auth::check() && $userAddresses->count() > 0 ? 'hidden' : '' }}">
-                                <h3 class="text-lg font-medium text-gray-900 mb-4">
-                                    {{ Auth::check() && $userAddresses->count() > 0 ? 'New Address Details' : 'Delivery Address Details' }}
-                                </h3>
-                                
-                                <!-- Address Label with Radio Buttons -->
-                                <div class="mb-6">
-                                    <label class="block text-sm font-medium text-gray-700 mb-3">
-                                        Address Label *
-                                    </label>
-                                    <div class="flex space-x-4">
-                                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                            <input type="radio" 
-                                                   name="address_label" 
-                                                   value="Kantor" 
-                                                   class="sr-only" 
-                                                   {{ old('address_label') == 'Kantor' ? 'checked' : '' }}
-                                                   onchange="updateAddressLabelStyles()">
-                                            <div class="radio-custom mr-3"></div>
-                                            <span class="text-sm font-medium text-gray-700">Kantor</span>
-                                        </label>
-                                        
-                                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                                            <input type="radio" 
-                                                   name="address_label" 
-                                                   value="Rumah" 
-                                                   class="sr-only" 
-                                                   {{ old('address_label', 'Rumah') == 'Rumah' ? 'checked' : '' }}
-                                                   onchange="updateAddressLabelStyles()">
-                                            <div class="radio-custom mr-3"></div>
-                                            <span class="text-sm font-medium text-gray-700">Rumah</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <!-- Recipient Name -->
-                                <div class="mb-4">
-                                    <label for="recipient_name" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Recipient Name *
-                                    </label>
-                                    <input type="text" name="recipient_name" id="recipient_name" required
-                                           value="{{ old('recipient_name', $authenticatedUserName) }}"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                                </div>
-
-                                <!-- Phone Recipient -->
-                                <div class="mb-4">
-                                    <label for="phone_recipient" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Recipient Phone Number *
-                                    </label>
-                                    <input type="tel" name="phone_recipient" id="phone_recipient" required
-                                           value="{{ old('phone_recipient', $authenticatedUserPhone) }}"
-                                           placeholder="08xxxxxxxxxx"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                                    <p class="text-xs text-gray-500 mt-1">Phone number for the recipient (can be different from your account phone)</p>
-                                </div>
-
-                                <!-- Location Search -->
-                                <div class="mb-4">
-                                    <label for="location_search" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Search Location *
-                                        <span class="text-xs text-gray-500">(Province, City, Subdistrict, Postal Code)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="text" id="location_search" 
-                                               placeholder="e.g., kebayoran lama, jakarta selatan"
-                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                               autocomplete="off">
-                                        
-                                        <!-- Search Results -->
-                                        <div id="location-results" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                                            <!-- Results will be populated here -->
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Selected Location Display -->
-                                <div id="selected-location" class="hidden mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
-                                    <div class="flex justify-between items-start">
-                                        <div>
-                                            <h4 class="font-medium text-green-800">Selected Location:</h4>
-                                            <p id="selected-location-text" class="text-sm text-green-700"></p>
-                                        </div>
-                                        <button type="button" onclick="clearLocation()" class="text-red-600 hover:text-red-800 text-sm">
-                                            Change
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <!-- Hidden Location Fields -->
-                                <input type="hidden" name="province_name" id="province_name" required>
-                                <input type="hidden" name="city_name" id="city_name" required>
-                                <input type="hidden" name="subdistrict_name" id="subdistrict_name" required>
-                                <input type="hidden" name="postal_code" id="postal_code" required>
-                                <input type="hidden" name="destination_id" id="destination_id">
-
-                                <!-- Street Address -->
-                                <div class="mb-4">
-                                    <label for="street_address" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Street Address *
-                                        <span class="text-xs text-gray-500">(Street Name, Building, House Number)</span>
-                                    </label>
-                                    <textarea name="street_address" id="street_address" rows="3" required
-                                              placeholder="Enter complete street address, building name, house number"
-                                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">{{ old('street_address') }}</textarea>
-                                </div>
-
-                                @if(Auth::check())
-                                    <!-- Save Address Option -->
-                                    <div class="mb-4">
-                                        <label class="flex items-center">
-                                            <input type="checkbox" name="save_address" value="1" 
-                                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
-                                                   {{ old('save_address', 'checked') ? 'checked' : '' }}>
-                                            <span class="text-sm font-medium">Save this address to my account</span>
-                                        </label>
-                                        <p class="text-xs text-gray-500 mt-1">You can use this address for future orders</p>
-                                    </div>
-
-                                    <!-- Set as Primary Option -->
-                                    <div class="mb-4">
-                                        <label class="flex items-center">
-                                            <input type="checkbox" name="set_as_primary" value="1" 
-                                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
-                                                   {{ old('set_as_primary') ? 'checked' : '' }}>
-                                            <span class="text-sm font-medium">Set as primary address</span>
-                                        </label>
-                                        <p class="text-xs text-gray-500 mt-1">Primary address will be used as default for future checkouts</p>
-                                    </div>
-                                @endif
+                                <p class="text-sm text-gray-600">{{ $address->phone }}</p>
+                                <p class="text-sm text-gray-600">{{ $address->street_address }}</p>
+                                <p class="text-sm text-gray-500">{{ $address->full_address }}</p>
                             </div>
-                            
-                            <!-- Keep legacy fields for backward compatibility -->
-                            <input type="hidden" name="address" id="legacy_address">
-                            <input type="hidden" name="destination_label" id="legacy_destination_label">
-                            
-                            <div class="flex space-x-4 mt-8">
-                                <button type="button" onclick="prevStep(1)" 
-                                        class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium">
-                                    Previous
-                                </button>
-                                <button type="button" onclick="nextStep(3)" id="continue-step-2"
-                                        class="flex-1 bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium">
-                                    Continue
-                                </button>
-                            </div>
-                        </div>
+                        </label>
+                    @endforeach
+                </div>
+                
+                <!-- Add New Address Option -->
+                <label class="flex items-center p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors mt-3">
+                    <input type="radio" name="saved_address_id" value="new" class="mr-4" onchange="showNewAddressForm()">
+                    <div class="text-center w-full">
+                        <svg class="w-6 h-6 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        </svg>
+                        <span class="text-sm font-medium text-gray-700">Add New Address</span>
                     </div>
+                </label>
+            </div>
+            
+            <!-- Divider -->
+            <div class="relative mb-6">
+                <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-300"></div>
+                </div>
+                <div class="relative flex justify-center text-sm">
+                    <span class="px-2 bg-white text-gray-500">Or use different address</span>
+                </div>
+            </div>
+        @endif
+        
+        <!-- New Address Form with Hierarchical Structure -->
+        <div id="new-address-form" class="{{ Auth::check() && $userAddresses->count() > 0 ? 'hidden' : '' }}">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">
+                {{ Auth::check() && $userAddresses->count() > 0 ? 'Add New Address' : 'Delivery Address' }}
+            </h3>
+            
+            <!-- Recipient Information -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label for="recipient_name" class="block text-sm font-medium text-gray-700 mb-2">
+                        Recipient Name *
+                    </label>
+                    <input type="text" name="recipient_name" id="recipient_name" required
+                           value="{{ old('recipient_name', $authenticatedUserName) }}"
+                           placeholder="Enter recipient's full name"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                
+                <div>
+                    <label for="phone_recipient" class="block text-sm font-medium text-gray-700 mb-2">
+                        Recipient Phone *
+                    </label>
+                    <input type="tel" name="phone_recipient" id="phone_recipient" required
+                           value="{{ old('phone_recipient', $authenticatedUserPhone) }}"
+                           placeholder="Enter phone number (e.g., 081234567890)"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                </div>
+            </div>
+
+            <!-- Address Label -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Address Label *</label>
+                <div class="flex space-x-4">
+                    <label class="flex items-center cursor-pointer p-3 border border-gray-300 rounded-lg hover:border-orange-300 transition-colors">
+                        <input type="radio" name="address_label" value="Rumah" class="mr-2" {{ old('address_label', 'Rumah') == 'Rumah' ? 'checked' : '' }}>
+                        <span class="text-sm font-medium">🏠 Home</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer p-3 border border-gray-300 rounded-lg hover:border-orange-300 transition-colors">
+                        <input type="radio" name="address_label" value="Kantor" class="mr-2" {{ old('address_label') == 'Kantor' ? 'checked' : '' }}>
+                        <span class="text-sm font-medium">🏢 Office</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- HIERARCHICAL LOCATION STRUCTURE -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- Province -->
+                <div>
+                    <label for="province_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Province *
+                    </label>
+                    <select name="province_id" id="province_id" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                        <option value="">Select Province...</option>
+                        {{-- Options will be loaded via JavaScript --}}
+                    </select>
+                    <input type="hidden" name="province_name" id="province_name" value="{{ old('province_name') }}">
+                </div>
+
+                <!-- City -->
+                <div>
+                    <label for="city_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        City *
+                    </label>
+                    <select name="city_id" id="city_id" required disabled
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                        <option value="">Select province first...</option>
+                    </select>
+                    <input type="hidden" name="city_name" id="city_name" value="{{ old('city_name') }}">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- District -->
+                <div>
+                    <label for="district_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        District *
+                    </label>
+                    <select name="district_id" id="district_id" required disabled
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                        <option value="">Select city first...</option>
+                    </select>
+                    <input type="hidden" name="district_name" id="district_name" value="{{ old('district_name') }}">
+                </div>
+
+                <!-- Sub District -->
+                <div>
+                    <label for="sub_district_id" class="block text-sm font-medium text-gray-700 mb-2">
+                        Sub District *
+                    </label>
+                    <select name="sub_district_id" id="sub_district_id" required disabled
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
+                        <option value="">Select district first...</option>
+                    </select>
+                    <input type="hidden" name="sub_district_name" id="sub_district_name" value="{{ old('sub_district_name') }}">
+                </div>
+            </div>
+
+            <!-- Postal Code Display -->
+            <div class="mb-4">
+                <label for="postal_code_display" class="block text-sm font-medium text-gray-700 mb-2">
+                    Postal Code
+                </label>
+                <input type="text" id="postal_code_display" readonly
+                       placeholder="Will be auto-filled when sub-district is selected"
+                       value="{{ old('postal_code') }}"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600">
+                <input type="hidden" name="postal_code" id="postal_code" value="{{ old('postal_code') }}">
+                <input type="hidden" name="destination_id" id="destination_id" value="{{ old('destination_id') }}">
+            </div>
+
+            <!-- Street Address -->
+            <div class="mb-4">
+                <label for="street_address" class="block text-sm font-medium text-gray-700 mb-2">
+                    Street Address *
+                    <span class="text-xs text-gray-500">(Street Name, Building, House Number)</span>
+                </label>
+                <textarea name="street_address" id="street_address" rows="3" required
+                          placeholder="Enter complete street address, building name, house number"
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">{{ old('street_address') }}</textarea>
+            </div>
+
+            @if(Auth::check())
+                <!-- Save Address Options -->
+                <div class="space-y-3 pt-4 border-t border-gray-200 mb-4">
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="save_address" value="1" 
+                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
+                                   {{ old('save_address', true) ? 'checked' : '' }}>
+                            <span class="text-sm font-medium">Save this address to my account</span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1">You can use this address for future orders</p>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" name="set_as_primary" value="1" 
+                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
+                                   {{ old('set_as_primary') ? 'checked' : '' }}>
+                            <span class="text-sm font-medium">Set as primary address</span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1">Primary address will be used as default for future checkouts</p>
+                    </div>
+                </div>
+            @endif
+        </div>
+        
+        <!-- Keep legacy fields for backward compatibility -->
+        <input type="hidden" name="address" id="legacy_address">
+        <input type="hidden" name="destination_label" id="legacy_destination_label">
+        
+        <!-- Continue Button -->
+        <div class="flex space-x-4 mt-8">
+            <button type="button" onclick="prevStep(1)" 
+                    class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium">
+                Previous
+            </button>
+            <button type="button" onclick="nextStep(3)" id="continue-step-2"
+                    class="flex-1 bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium">
+                Continue
+            </button>
+        </div>
+    </div>
+</div>
 
                     <!-- Step 3: Shipping Method -->
                     <div class="checkout-section hidden" id="section-3">
@@ -1081,11 +1087,68 @@ document.addEventListener('DOMContentLoaded', function() {
     // CRITICAL: Log that tax has been completely removed and voucher support added
     console.log('✅ TAX COMPLETELY REMOVED from checkout system');
     console.log('✅ VOUCHER/COUPON SUPPORT ADDED to checkout system');
+
+    
 });
 </script>
 
 <!-- Load the NO TAX JavaScript file -->
 <script src="{{ asset('js/enhanced-checkout.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        console.log('🔍 Debug - Functions available:');
+        console.log('handleContinueStep1:', typeof window.handleContinueStep1);
+        console.log('validateStep1:', typeof window.validateStep1);
+        console.log('showStep:', typeof window.showStep);
+        console.log('nextStep:', typeof window.nextStep);
+        
+        // Manual button setup if needed
+        const continueBtn = document.getElementById('continue-step-1') || 
+                           document.querySelector('button[onclick*="handleContinueStep1"]');
+        
+        if (continueBtn) {
+            console.log('🔧 Button found, setting up manual event');
+            continueBtn.onclick = function(e) {
+                e.preventDefault();
+                console.log('🎯 Manual continue clicked');
+                
+                // Basic validation
+                const firstName = document.getElementById("first_name")?.value.trim();
+                const lastName = document.getElementById("last_name")?.value.trim();
+                const email = document.getElementById("email")?.value.trim();
+                const phone = document.getElementById("phone")?.value.trim();
+                const privacyAccepted = document.getElementById("privacy_accepted")?.checked;
+
+                if (!firstName || !lastName || !email || !phone) {
+                    alert("Please fill in all required fields");
+                    return;
+                }
+
+                if (!privacyAccepted) {
+                    alert("Please accept the privacy policy");
+                    return;
+                }
+
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    alert("Please enter a valid email address");
+                    return;
+                }
+
+                console.log('✅ Validation passed, moving to step 2');
+                if (typeof window.showStep === 'function') {
+                    window.showStep(2);
+                } else {
+                    console.error('showStep function not available');
+                }
+            };
+        } else {
+            console.error('Continue button not found');
+        }
+    }, 1000);
+});
+</script>
 
 <script src="{{ asset('js/voucher-checkout.js') }}"></script>
 
