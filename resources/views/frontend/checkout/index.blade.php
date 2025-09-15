@@ -357,7 +357,7 @@
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
                             <option value="">Select district first...</option>
                         </select>
-                        <input type="hidden" name="sub_district_name" id="checkout_sub_district_name">
+                        <input type="hidden" name="subdistrict_name" id="checkout_subdistrict_name">
                     </div>
                 </div>
 
@@ -966,8 +966,647 @@ label:has(input[name="saved_address_id"]:checked) {
 
 <!-- Script to ensure Order Summary updates properly WITHOUT TAX + VOUCHER SUPPORT -->
 <script>
+// Global variables for checkout location
+let checkoutLocationData = {
+    provinces: [],
+    cities: [],
+    districts: [],
+    subDistricts: []
+};
+
+let checkoutSelectedAddress = null;
+
+// Define all functions in global scope
+async function loadCheckoutProvinces() {
+    const provinceSelect = document.getElementById('checkout_province_id');
+    
+    try {
+        console.log('🔄 Loading provinces for checkout...');
+        
+        const response = await fetch('/api/addresses/provinces');
+        const result = await response.json();
+        
+        console.log('📡 API Response:', result);
+        
+        if (result.success && result.data) {
+            checkoutLocationData.provinces = result.data;
+            
+            provinceSelect.innerHTML = '<option value="">Select Province...</option>';
+            
+            result.data.forEach(province => {
+                const option = document.createElement('option');
+                option.value = province.id;
+                option.textContent = province.name;
+                provinceSelect.appendChild(option);
+            });
+            
+            provinceSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} provinces for checkout`);
+        } else {
+            console.error('❌ API returned error:', result);
+            provinceSelect.innerHTML = '<option value="">Error loading provinces</option>';
+        }
+    } catch (error) {
+        console.error('❌ Error loading provinces for checkout:', error);
+        provinceSelect.innerHTML = '<option value="">Error loading provinces</option>';
+    }
+}
+
+async function loadCheckoutCities(provinceId) {
+    const citySelect = document.getElementById('checkout_city_id');
+    
+    try {
+        console.log('🔄 Loading cities for province:', provinceId);
+        const response = await fetch(`/api/addresses/cities/${provinceId}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            checkoutLocationData.cities = result.data;
+            
+            citySelect.innerHTML = '<option value="">Select City/Regency...</option>';
+            
+            result.data.forEach(city => {
+                const option = document.createElement('option');
+                option.value = city.id;
+                option.textContent = city.name;
+                citySelect.appendChild(option);
+            });
+            
+            citySelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} cities for checkout`);
+        }
+    } catch (error) {
+        console.error('❌ Error loading cities for checkout:', error);
+        citySelect.innerHTML = '<option value="">Error loading cities</option>';
+        citySelect.disabled = false;
+    }
+}
+
+async function loadCheckoutDistricts(cityId) {
+    const districtSelect = document.getElementById('checkout_district_id');
+    
+    try {
+        console.log('🔄 Loading districts for city:', cityId);
+        const response = await fetch(`/api/addresses/districts/${cityId}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            checkoutLocationData.districts = result.data;
+            
+            districtSelect.innerHTML = '<option value="">Select District...</option>';
+            
+            result.data.forEach(district => {
+                const option = document.createElement('option');
+                option.value = district.id;
+                option.textContent = district.name;
+                districtSelect.appendChild(option);
+            });
+            
+            districtSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} districts for checkout`);
+        }
+    } catch (error) {
+        console.error('❌ Error loading districts for checkout:', error);
+        districtSelect.innerHTML = '<option value="">Error loading districts</option>';
+        districtSelect.disabled = false;
+    }
+}
+
+async function loadCheckoutSubDistricts(districtId) {
+    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+    
+    try {
+        console.log('🔄 Loading sub-districts for district:', districtId);
+        const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            checkoutLocationData.subDistricts = result.data;
+            
+            subDistrictSelect.innerHTML = '<option value="">Select Sub-District...</option>';
+            
+            result.data.forEach(subDistrict => {
+                const option = document.createElement('option');
+                option.value = subDistrict.id;
+                option.textContent = subDistrict.name;
+                
+                if (subDistrict.zip_code) {
+                    option.setAttribute('data-zip', subDistrict.zip_code);
+                }
+                
+                subDistrictSelect.appendChild(option);
+            });
+            
+            subDistrictSelect.disabled = false;
+            console.log(`✅ Loaded ${result.data.length} sub-districts for checkout`);
+        }
+    } catch (error) {
+        console.error('❌ Error loading sub-districts for checkout:', error);
+        subDistrictSelect.innerHTML = '<option value="">Error loading sub-districts</option>';
+        subDistrictSelect.disabled = false;
+    }
+}
+
+function resetCheckoutSelect(selectElement, placeholder) {
+    selectElement.innerHTML = `<option value="">${placeholder}</option>`;
+    selectElement.disabled = true;
+}
+
+function resetAllCheckoutSelects() {
+    const citySelect = document.getElementById('checkout_city_id');
+    const districtSelect = document.getElementById('checkout_district_id');
+    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+    
+    resetCheckoutSelect(citySelect, 'Select province first...');
+    resetCheckoutSelect(districtSelect, 'Select city first...');
+    resetCheckoutSelect(subDistrictSelect, 'Select district first...');
+    
+    // Clear hidden fields
+    const provinceNameField = document.getElementById('checkout_province_name');
+    if (provinceNameField) provinceNameField.value = '';
+    clearCheckoutPostalCode();
+    clearCheckoutDestination();
+    
+    // Clear selectedDestination
+    selectedDestination = null;
+}
+
+function clearCheckoutPostalCode() {
+    const postalDisplay = document.getElementById('checkout_postal_code_display');
+    const postalHidden = document.getElementById('checkout_postal_code');
+    if (postalDisplay) postalDisplay.value = '';
+    if (postalHidden) postalHidden.value = '';
+}
+
+function clearCheckoutDestination() {
+    const destId = document.getElementById('destination_id');
+    const destLabel = document.getElementById('destination_label');
+    const subDistName = document.getElementById('checkout_subdistrict_name');
+    
+    if (destId) destId.value = '';
+    if (destLabel) destLabel.value = '';
+    if (subDistName) subDistName.value = '';
+    
+    // Clear selectedDestination
+    selectedDestination = null;
+}
+
+// CRITICAL FIX: Function untuk set selectedDestination dengan benar
+function setSelectedDestination(subDistrictId, subDistrictName, zipCode) {
+    const provinceName = document.getElementById('checkout_province_name')?.value || '';
+    const cityName = document.getElementById('checkout_city_name')?.value || '';
+    const districtName = document.getElementById('checkout_district_name')?.value || '';
+    
+    const destinationLabel = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`;
+    
+    // Set global selectedDestination untuk shipping calculation
+    selectedDestination = {
+        destination_id: subDistrictId,
+        id: subDistrictId,
+        label: destinationLabel,
+        subdistrict_name: subDistrictName,
+        city_name: cityName,
+        province_name: provinceName,
+        district_name: districtName,
+        postal_code: zipCode,
+        full_address: destinationLabel
+    };
+    
+    console.log('✅ selectedDestination set:', selectedDestination);
+    return selectedDestination;
+}
+
+// CRITICAL FIX: Function untuk trigger shipping calculation manual
+function triggerShippingCalculation() {
+    const destId = document.getElementById('destination_id')?.value;
+    if (!destId) {
+        console.error('❌ No destination_id found');
+        return false;
+    }
+    
+    if (!selectedDestination) {
+        // Reconstruct selectedDestination dari form data
+        const provinceName = document.getElementById('checkout_province_name')?.value || '';
+        const cityName = document.getElementById('checkout_city_name')?.value || '';
+        const districtName = document.getElementById('checkout_district_name')?.value || '';
+        const subDistrictName = document.getElementById('checkout_subdistrict_name')?.value || '';
+        const zipCode = document.getElementById('checkout_postal_code')?.value || '';
+        
+        selectedDestination = {
+            destination_id: destId,
+            id: destId,
+            label: `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`,
+            subdistrict_name: subDistrictName,
+            city_name: cityName,
+            province_name: provinceName,
+            district_name: districtName,
+            postal_code: zipCode
+        };
+        
+        console.log('🔧 Reconstructed selectedDestination:', selectedDestination);
+    }
+    
+    console.log('🚚 Triggering shipping calculation with:', selectedDestination);
+    
+    // Call calculateShipping if it exists
+    if (typeof calculateShipping === 'function') {
+        calculateShipping();
+        return true;
+    } else {
+        console.error('❌ calculateShipping function not found');
+        return false;
+    }
+}
+
+function initializeCheckoutLocation() {
+    console.log('🚀 Initializing checkout location selection');
+    
+    const provinceSelect = document.getElementById('checkout_province_id');
+    const citySelect = document.getElementById('checkout_city_id');
+    const districtSelect = document.getElementById('checkout_district_id');
+    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+    
+    if (!provinceSelect) {
+        console.error('❌ Province select not found');
+        return;
+    }
+    
+    // Load provinces immediately
+    loadCheckoutProvinces();
+    
+    // Province change handler
+    provinceSelect.addEventListener('change', function() {
+        const provinceId = this.value;
+        const provinceName = this.options[this.selectedIndex].text;
+        
+        console.log('🔄 Province changed:', provinceId, provinceName);
+        
+        if (provinceId) {
+            const provinceNameField = document.getElementById('checkout_province_name');
+            if (provinceNameField) provinceNameField.value = provinceName;
+            
+            loadCheckoutCities(provinceId);
+            resetCheckoutSelect(citySelect, 'Loading cities...');
+            resetCheckoutSelect(districtSelect, 'Select city first...');
+            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
+            clearCheckoutPostalCode();
+            selectedDestination = null; // Clear when province changes
+        } else {
+            resetAllCheckoutSelects();
+        }
+    });
+    
+    // City change handler
+    citySelect.addEventListener('change', function() {
+        const cityId = this.value;
+        const cityName = this.options[this.selectedIndex].text;
+        
+        console.log('🔄 City changed:', cityId, cityName);
+        
+        if (cityId) {
+            const cityNameField = document.getElementById('checkout_city_name');
+            if (cityNameField) cityNameField.value = cityName;
+            
+            loadCheckoutDistricts(cityId);
+            resetCheckoutSelect(districtSelect, 'Loading districts...');
+            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
+            clearCheckoutPostalCode();
+            selectedDestination = null; // Clear when city changes
+        } else {
+            resetCheckoutSelect(districtSelect, 'Select city first...');
+            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
+            clearCheckoutPostalCode();
+            selectedDestination = null;
+        }
+    });
+    
+    // District change handler
+    districtSelect.addEventListener('change', function() {
+        const districtId = this.value;
+        const districtName = this.options[this.selectedIndex].text;
+        
+        console.log('🔄 District changed:', districtId, districtName);
+        
+        if (districtId) {
+            const districtNameField = document.getElementById('checkout_district_name');
+            if (districtNameField) districtNameField.value = districtName;
+            
+            loadCheckoutSubDistricts(districtId);
+            resetCheckoutSelect(subDistrictSelect, 'Loading sub-districts...');
+            clearCheckoutPostalCode();
+            selectedDestination = null; // Clear when district changes
+        } else {
+            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
+            clearCheckoutPostalCode();
+            selectedDestination = null;
+        }
+    });
+    
+    // CRITICAL FIX: Sub-district change handler dengan selectedDestination setup
+    subDistrictSelect.addEventListener('change', function() {
+        const subDistrictId = this.value;
+        const subDistrictName = this.options[this.selectedIndex].text;
+        const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
+        
+        console.log('🔄 Sub-district changed:', subDistrictId, subDistrictName, zipCode);
+        
+        if (subDistrictId) {
+            // Set field dengan nama yang benar sesuai controller
+            const subDistNameField = document.getElementById('checkout_subdistrict_name');
+            if (subDistNameField) subDistNameField.value = subDistrictName;
+            
+            // Set destination_id for shipping calculation
+            const destIdField = document.getElementById('destination_id');
+            if (destIdField) destIdField.value = subDistrictId;
+            
+            // Create destination label
+            const provinceName = document.getElementById('checkout_province_name')?.value || '';
+            const cityName = document.getElementById('checkout_city_name')?.value || '';
+            const districtName = document.getElementById('checkout_district_name')?.value || '';
+            
+            const destinationLabel = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`;
+            const destLabelField = document.getElementById('destination_label');
+            if (destLabelField) destLabelField.value = destinationLabel;
+            
+            // Update postal code
+            if (zipCode && zipCode !== '0') {
+                const postalDisplay = document.getElementById('checkout_postal_code_display');
+                const postalHidden = document.getElementById('checkout_postal_code');
+                if (postalDisplay) postalDisplay.value = zipCode;
+                if (postalHidden) postalHidden.value = zipCode;
+            }
+            
+            // CRITICAL FIX: Set selectedDestination dengan data lengkap
+            setSelectedDestination(subDistrictId, subDistrictName, zipCode);
+            
+            console.log('✅ Location selected:', {
+                destination_id: subDistrictId,
+                destination_label: destinationLabel,
+                postal_code: zipCode,
+                subdistrict_name: subDistrictName,
+                selectedDestination: selectedDestination
+            });
+            
+            // TRIGGER SHIPPING CALCULATION if we're on step 3 (shipping step)
+            setTimeout(() => {
+                const currentStepElement = document.querySelector('.checkout-section.active');
+                const isShippingStep = currentStepElement && currentStepElement.id === 'section-3';
+                
+                if (isShippingStep) {
+                    console.log('🚚 Auto-triggering shipping calculation (step 3)...');
+                    triggerShippingCalculation();
+                } else {
+                    console.log('ℹ️ Not on shipping step, shipping calculation ready');
+                }
+            }, 500);
+            
+        } else {
+            clearCheckoutDestination();
+        }
+    });
+}
+
+function setupAddressSelectionToggle() {
+    const useSavedBtn = document.getElementById('use-saved-address-btn');
+    const useNewBtn = document.getElementById('use-new-address-btn');
+    const savedSection = document.getElementById('saved-addresses-section');
+    const newSection = document.getElementById('new-address-section');
+    
+    if (!useSavedBtn || !useNewBtn) {
+        console.log('ℹ️ Address toggle buttons not found, skipping setup');
+        return;
+    }
+    
+    useSavedBtn.addEventListener('click', function() {
+        // Toggle button states
+        useSavedBtn.classList.add('bg-orange-500', 'text-white');
+        useSavedBtn.classList.remove('border-orange-500', 'text-orange-500');
+        useNewBtn.classList.remove('bg-orange-500', 'text-white');
+        useNewBtn.classList.add('border-orange-500', 'text-orange-500');
+        
+        // Toggle sections
+        if (savedSection) savedSection.classList.remove('hidden');
+        if (newSection) newSection.classList.add('hidden');
+    });
+    
+    useNewBtn.addEventListener('click', function() {
+        // Toggle button states
+        useNewBtn.classList.add('bg-orange-500', 'text-white');
+        useNewBtn.classList.remove('border-orange-500', 'text-orange-500');
+        useSavedBtn.classList.remove('bg-orange-500', 'text-white');
+        useSavedBtn.classList.add('border-orange-500', 'text-orange-500');
+        
+        // Toggle sections
+        if (newSection) newSection.classList.remove('hidden');
+        if (savedSection) savedSection.classList.add('hidden');
+        
+        // Clear saved address selection
+        checkoutSelectedAddress = null;
+        clearCheckoutDestination();
+    });
+}
+
+async function loadSavedAddresses() {
+    try {
+        const response = await fetch('/api/addresses/all', {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            
+            if (result.success && result.addresses) {
+                displaySavedAddresses(result.addresses);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading saved addresses:', error);
+    }
+}
+
+function displaySavedAddresses(addresses) {
+    const container = document.getElementById('saved-addresses-list');
+    
+    if (!container) {
+        console.log('ℹ️ Saved addresses container not found');
+        return;
+    }
+    
+    if (addresses.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">No saved addresses found</p>';
+        return;
+    }
+    
+    container.innerHTML = addresses.map(address => `
+        <div class="border rounded-lg p-4 cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors" 
+             onclick="selectSavedAddress(${JSON.stringify(address).replace(/"/g, '&quot;')})">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="font-medium text-gray-900">${address.label}</div>
+                    <div class="text-sm text-gray-600">${address.recipient_name} - ${address.phone_recipient}</div>
+                    <div class="text-sm text-gray-500 mt-1">${address.full_address || address.location_string}</div>
+                    ${address.is_primary ? '<span class="inline-block bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full mt-2">Primary</span>' : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectSavedAddress(address) {
+    console.log('📍 Selected saved address:', address);
+    
+    checkoutSelectedAddress = address;
+    
+    // Fill form with selected address data
+    const recipientName = document.getElementById('recipient_name');
+    const phoneRecipient = document.getElementById('phone_recipient');
+    const streetAddress = document.getElementById('street_address');
+    const destId = document.getElementById('destination_id');
+    const destLabel = document.getElementById('destination_label');
+    
+    if (recipientName) recipientName.value = address.recipient_name || '';
+    if (phoneRecipient) phoneRecipient.value = address.phone_recipient || '';
+    if (streetAddress) streetAddress.value = address.street_address || '';
+    if (destId) destId.value = address.destination_id || '';
+    if (destLabel) destLabel.value = address.location_string || address.full_address || '';
+    
+    // CRITICAL FIX: Set selectedDestination untuk saved address
+    if (address.destination_id) {
+        selectedDestination = {
+            destination_id: address.destination_id,
+            id: address.destination_id,
+            label: address.location_string || address.full_address,
+            subdistrict_name: address.subdistrict_name || '',
+            city_name: address.city_name || '',
+            province_name: address.province_name || '',
+            postal_code: address.postal_code || ''
+        };
+        console.log('✅ selectedDestination set from saved address:', selectedDestination);
+    }
+    
+    // Set address label
+    const labelInput = document.querySelector(`input[name="address_label"][value="${address.label}"]`);
+    if (labelInput) {
+        labelInput.checked = true;
+    }
+    
+    // Visual feedback
+    const addressElements = document.querySelectorAll('#saved-addresses-list > div');
+    addressElements.forEach(el => {
+        el.classList.remove('border-orange-500', 'bg-orange-50');
+        el.classList.add('border-gray-300');
+    });
+    
+    // Highlight selected
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.add('border-orange-500', 'bg-orange-50');
+        event.currentTarget.classList.remove('border-gray-300');
+    }
+}
+
+function validateDeliveryInformation() {
+    const errors = [];
+    
+    // Check if using saved address or new address
+    const savedSection = document.getElementById('saved-addresses-section');
+    const newSection = document.getElementById('new-address-section');
+    
+    if (savedSection && !savedSection.classList.contains('hidden')) {
+        // Validate saved address selection
+        if (!checkoutSelectedAddress || !document.getElementById('destination_id').value) {
+            errors.push('Please select a saved address');
+        }
+    } else {
+        // Validate new address form
+        const requiredFields = [
+            { id: 'recipient_name', name: 'Recipient Name' },
+            { id: 'phone_recipient', name: 'Phone Number' },
+            { id: 'checkout_province_id', name: 'Province' },
+            { id: 'checkout_city_id', name: 'City' },
+            { id: 'checkout_district_id', name: 'District' },
+            { id: 'checkout_sub_district_id', name: 'Sub District' },
+            { id: 'street_address', name: 'Street Address' }
+        ];
+        
+        requiredFields.forEach(field => {
+            const element = document.getElementById(field.id);
+            if (!element || !element.value.trim()) {
+                errors.push(`${field.name} is required`);
+            }
+        });
+        
+        // Validate destination_id is set (for shipping calculation)
+        const destId = document.getElementById('destination_id');
+        if (!destId || !destId.value) {
+            errors.push('Please complete the location selection');
+        }
+        
+        // Validate subdistrict_name field
+        const subdistrictField = document.getElementById('checkout_subdistrict_name');
+        if (!subdistrictField || !subdistrictField.value) {
+            errors.push('Please select a sub-district');
+        }
+    }
+    
+    return errors;
+}
+
+// CRITICAL FIX: Override nextStep function untuk ensure shipping calculation
+function nextStep(step) {
+    if (typeof validateCurrentStep === 'function' && !validateCurrentStep()) {
+        return;
+    }
+    
+    if (typeof showStep === 'function') {
+        showStep(step);
+    }
+
+    // Auto-calculate shipping when reaching step 3
+    if (step === 3) {
+        setTimeout(() => {
+            const destId = document.getElementById('destination_id')?.value;
+            console.log('🔄 Moving to step 3, destination_id:', destId);
+            
+            if (destId) {
+                if (!selectedDestination) {
+                    console.log('🔧 No selectedDestination, reconstructing...');
+                    triggerShippingCalculation();
+                } else {
+                    console.log('✅ selectedDestination exists, calculating shipping...');
+                    if (typeof calculateShipping === 'function') {
+                        calculateShipping();
+                    }
+                }
+            } else {
+                console.log('⚠️ No destination_id found for shipping calculation');
+            }
+        }, 500);
+    }
+}
+
+// GLOBAL FIX FUNCTION untuk debugging
+window.fixShippingNow = function() {
+    const destId = document.getElementById('destination_id')?.value;
+    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+    
+    console.log('🔍 Current destination_id:', destId);
+    console.log('🔍 Sub-district value:', subDistrictSelect?.value);
+    console.log('🔍 Selected destination:', selectedDestination);
+    
+    if (!destId && subDistrictSelect?.value) {
+        document.getElementById('destination_id').value = subDistrictSelect.value;
+        console.log('✅ Set destination_id to:', subDistrictSelect.value);
+    }
+    
+    // Always reconstruct selectedDestination
+    return triggerShippingCalculation();
+};
+
+// Main DOMContentLoaded event listener
 document.addEventListener('DOMContentLoaded', function() {
-    // Log Order Summary initialization
     console.log('📊 Order Summary DOM elements loaded - NO TAX VERSION + VOUCHER SUPPORT');
     
     // Get initial values from server-side data
@@ -1038,433 +1677,41 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ TAX COMPLETELY REMOVED from checkout system');
     console.log('✅ VOUCHER/COUPON SUPPORT ADDED to checkout system');
 
-    //INI TAMBAHAN UNTUK HIRAR
-    let checkoutLocationData = {
-    provinces: [],
-    cities: [],
-    districts: [],
-    subDistricts: []
-};
-
-let checkoutSelectedAddress = null;
-
-document.addEventListener('DOMContentLoaded', function() {
-    initializeCheckoutLocation();
-    setupAddressSelectionToggle();
-    loadSavedAddresses();
+    // Initialize checkout location system
+    console.log('🚀 Initializing checkout location system...');
+    
+    // Add a small delay to ensure all DOM elements are ready
+    setTimeout(() => {
+        initializeCheckoutLocation();
+        setupAddressSelectionToggle();
+        loadSavedAddresses();
+        console.log('✅ Checkout hierarchical location system loaded');
+        
+        // Check if there's already a destination_id and trigger shipping if needed
+        setTimeout(() => {
+            const destId = document.getElementById('destination_id')?.value;
+            if (destId && !selectedDestination) {
+                console.log('🔧 Found existing destination_id, reconstructing selectedDestination...');
+                triggerShippingCalculation();
+            }
+        }, 1000);
+    }, 100);
 });
 
-function initializeCheckoutLocation() {
-    console.log('🚀 Initializing checkout location selection');
-    
-    const provinceSelect = document.getElementById('checkout_province_id');
-    const citySelect = document.getElementById('checkout_city_id');
-    const districtSelect = document.getElementById('checkout_district_id');
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    // Load provinces immediately
-    loadCheckoutProvinces();
-    
-    // Province change handler
-    provinceSelect.addEventListener('change', function() {
-        const provinceId = this.value;
-        const provinceName = this.options[this.selectedIndex].text;
-        
-        if (provinceId) {
-            document.getElementById('checkout_province_name').value = provinceName;
-            loadCheckoutCities(provinceId);
-            resetCheckoutSelect(citySelect, 'Loading cities...');
-            resetCheckoutSelect(districtSelect, 'Select city first...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        } else {
-            resetAllCheckoutSelects();
-        }
-    });
-    
-    // City change handler
-    citySelect.addEventListener('change', function() {
-        const cityId = this.value;
-        const cityName = this.options[this.selectedIndex].text;
-        
-        if (cityId) {
-            document.getElementById('checkout_city_name').value = cityName;
-            loadCheckoutDistricts(cityId);
-            resetCheckoutSelect(districtSelect, 'Loading districts...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        } else {
-            resetCheckoutSelect(districtSelect, 'Select city first...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        }
-    });
-    
-    // District change handler
-    districtSelect.addEventListener('change', function() {
-        const districtId = this.value;
-        const districtName = this.options[this.selectedIndex].text;
-        
-        if (districtId) {
-            document.getElementById('checkout_district_name').value = districtName;
-            loadCheckoutSubDistricts(districtId);
-            resetCheckoutSelect(subDistrictSelect, 'Loading sub-districts...');
-            clearCheckoutPostalCode();
-        } else {
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        }
-    });
-    
-    // Sub-district change handler
-    subDistrictSelect.addEventListener('change', function() {
-        const subDistrictId = this.value;
-        const subDistrictName = this.options[this.selectedIndex].text;
-        const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
-        
-        if (subDistrictId) {
-            document.getElementById('checkout_sub_district_name').value = subDistrictName;
-            
-            // Set destination_id for shipping calculation
-            document.getElementById('destination_id').value = subDistrictId;
-            
-            // Create destination label
-            const provinceName = document.getElementById('checkout_province_name').value;
-            const cityName = document.getElementById('checkout_city_name').value;
-            const districtName = document.getElementById('checkout_district_name').value;
-            
-            const destinationLabel = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`;
-            document.getElementById('destination_label').value = destinationLabel;
-            
-            // Update postal code
-            if (zipCode && zipCode !== '0') {
-                document.getElementById('checkout_postal_code_display').value = zipCode;
-                document.getElementById('checkout_postal_code').value = zipCode;
-            }
-            
-            console.log('✅ Location selected:', {
-                destination_id: subDistrictId,
-                destination_label: destinationLabel,
-                postal_code: zipCode
-            });
-            
-        } else {
-            clearCheckoutDestination();
-        }
-    });
-}
+// Make functions globally available for debugging
+window.loadCheckoutProvinces = loadCheckoutProvinces;
+window.loadCheckoutCities = loadCheckoutCities;
+window.loadCheckoutDistricts = loadCheckoutDistricts;
+window.loadCheckoutSubDistricts = loadCheckoutSubDistricts;
+window.checkoutLocationData = checkoutLocationData;
+window.triggerShippingCalculation = triggerShippingCalculation;
+window.setSelectedDestination = setSelectedDestination;
 
-async function loadCheckoutProvinces() {
-    const provinceSelect = document.getElementById('checkout_province_id');
-    
-    try {
-        console.log('🔄 Loading provinces for checkout...');
-        
-        const response = await fetch('/api/addresses/provinces');
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.provinces = result.data;
-            
-            provinceSelect.innerHTML = '<option value="">Select Province...</option>';
-            
-            result.data.forEach(province => {
-                const option = document.createElement('option');
-                option.value = province.id;
-                option.textContent = province.name;
-                provinceSelect.appendChild(option);
-            });
-            
-            provinceSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} provinces for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading provinces for checkout:', error);
-        provinceSelect.innerHTML = '<option value="">Error loading provinces</option>';
-    }
-}
-
-async function loadCheckoutCities(provinceId) {
-    const citySelect = document.getElementById('checkout_city_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/cities/${provinceId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.cities = result.data;
-            
-            citySelect.innerHTML = '<option value="">Select City/Regency...</option>';
-            
-            result.data.forEach(city => {
-                const option = document.createElement('option');
-                option.value = city.id;
-                option.textContent = city.name;
-                citySelect.appendChild(option);
-            });
-            
-            citySelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} cities for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading cities for checkout:', error);
-        citySelect.innerHTML = '<option value="">Error loading cities</option>';
-        citySelect.disabled = false;
-    }
-}
-
-async function loadCheckoutDistricts(cityId) {
-    const districtSelect = document.getElementById('checkout_district_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/districts/${cityId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.districts = result.data;
-            
-            districtSelect.innerHTML = '<option value="">Select District...</option>';
-            
-            result.data.forEach(district => {
-                const option = document.createElement('option');
-                option.value = district.id;
-                option.textContent = district.name;
-                districtSelect.appendChild(option);
-            });
-            
-            districtSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} districts for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading districts for checkout:', error);
-        districtSelect.innerHTML = '<option value="">Error loading districts</option>';
-        districtSelect.disabled = false;
-    }
-}
-
-async function loadCheckoutSubDistricts(districtId) {
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.subDistricts = result.data;
-            
-            subDistrictSelect.innerHTML = '<option value="">Select Sub-District...</option>';
-            
-            result.data.forEach(subDistrict => {
-                const option = document.createElement('option');
-                option.value = subDistrict.id;
-                option.textContent = subDistrict.name;
-                
-                if (subDistrict.zip_code) {
-                    option.setAttribute('data-zip', subDistrict.zip_code);
-                }
-                
-                subDistrictSelect.appendChild(option);
-            });
-            
-            subDistrictSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} sub-districts for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading sub-districts for checkout:', error);
-        subDistrictSelect.innerHTML = '<option value="">Error loading sub-districts</option>';
-        subDistrictSelect.disabled = false;
-    }
-}
-
-function resetCheckoutSelect(selectElement, placeholder) {
-    selectElement.innerHTML = `<option value="">${placeholder}</option>`;
-    selectElement.disabled = true;
-}
-
-function resetAllCheckoutSelects() {
-    const citySelect = document.getElementById('checkout_city_id');
-    const districtSelect = document.getElementById('checkout_district_id');
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    resetCheckoutSelect(citySelect, 'Select province first...');
-    resetCheckoutSelect(districtSelect, 'Select city first...');
-    resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-    
-    // Clear hidden fields
-    document.getElementById('checkout_province_name').value = '';
-    clearCheckoutPostalCode();
-    clearCheckoutDestination();
-}
-
-function clearCheckoutPostalCode() {
-    document.getElementById('checkout_postal_code_display').value = '';
-    document.getElementById('checkout_postal_code').value = '';
-}
-
-function clearCheckoutDestination() {
-    document.getElementById('destination_id').value = '';
-    document.getElementById('destination_label').value = '';
-    document.getElementById('checkout_sub_district_name').value = '';
-}
-
-function setupAddressSelectionToggle() {
-    const useSavedBtn = document.getElementById('use-saved-address-btn');
-    const useNewBtn = document.getElementById('use-new-address-btn');
-    const savedSection = document.getElementById('saved-addresses-section');
-    const newSection = document.getElementById('new-address-section');
-    
-    useSavedBtn.addEventListener('click', function() {
-        // Toggle button states
-        useSavedBtn.classList.add('bg-orange-500', 'text-white');
-        useSavedBtn.classList.remove('border-orange-500', 'text-orange-500');
-        useNewBtn.classList.remove('bg-orange-500', 'text-white');
-        useNewBtn.classList.add('border-orange-500', 'text-orange-500');
-        
-        // Toggle sections
-        savedSection.classList.remove('hidden');
-        newSection.classList.add('hidden');
-    });
-    
-    useNewBtn.addEventListener('click', function() {
-        // Toggle button states
-        useNewBtn.classList.add('bg-orange-500', 'text-white');
-        useNewBtn.classList.remove('border-orange-500', 'text-orange-500');
-        useSavedBtn.classList.remove('bg-orange-500', 'text-white');
-        useSavedBtn.classList.add('border-orange-500', 'text-orange-500');
-        
-        // Toggle sections
-        newSection.classList.remove('hidden');
-        savedSection.classList.add('hidden');
-        
-        // Clear saved address selection
-        checkoutSelectedAddress = null;
-        clearCheckoutDestination();
-    });
-}
-
-async function loadSavedAddresses() {
-    try {
-        const response = await fetch('/api/addresses/all', {
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        if (response.ok) {
-            const result = await response.json();
-            
-            if (result.success && result.addresses) {
-                displaySavedAddresses(result.addresses);
-            }
-        }
-    } catch (error) {
-        console.error('Error loading saved addresses:', error);
-    }
-}
-
-function displaySavedAddresses(addresses) {
-    const container = document.getElementById('saved-addresses-list');
-    
-    if (addresses.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-center py-4">No saved addresses found</p>';
-        return;
-    }
-    
-    container.innerHTML = addresses.map(address => `
-        <div class="border rounded-lg p-4 cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors" 
-             onclick="selectSavedAddress(${JSON.stringify(address).replace(/"/g, '&quot;')})">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="font-medium text-gray-900">${address.label}</div>
-                    <div class="text-sm text-gray-600">${address.recipient_name} - ${address.phone_recipient}</div>
-                    <div class="text-sm text-gray-500 mt-1">${address.full_address || address.location_string}</div>
-                    ${address.is_primary ? '<span class="inline-block bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full mt-2">Primary</span>' : ''}
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function selectSavedAddress(address) {
-    console.log('📍 Selected saved address:', address);
-    
-    checkoutSelectedAddress = address;
-    
-    // Fill form with selected address data
-    document.getElementById('recipient_name').value = address.recipient_name || '';
-    document.getElementById('phone_recipient').value = address.phone_recipient || '';
-    document.getElementById('street_address').value = address.street_address || '';
-    
-    // Set destination fields for shipping calculation
-    document.getElementById('destination_id').value = address.destination_id || '';
-    document.getElementById('destination_label').value = address.location_string || address.full_address || '';
-    
-    // Set address label
-    const labelInput = document.querySelector(`input[name="address_label"][value="${address.label}"]`);
-    if (labelInput) {
-        labelInput.checked = true;
-    }
-    
-    // Visual feedback
-    const addressElements = document.querySelectorAll('#saved-addresses-list > div');
-    addressElements.forEach(el => {
-        el.classList.remove('border-orange-500', 'bg-orange-50');
-        el.classList.add('border-gray-300');
-    });
-    
-    // Highlight selected
-    event.currentTarget.classList.add('border-orange-500', 'bg-orange-50');
-    event.currentTarget.classList.remove('border-gray-300');
-}
-
-// Integration with existing checkout validation
-function validateDeliveryInformation() {
-    const errors = [];
-    
-    // Check if using saved address or new address
-    const savedSection = document.getElementById('saved-addresses-section');
-    const newSection = document.getElementById('new-address-section');
-    
-    if (!savedSection.classList.contains('hidden')) {
-        // Validate saved address selection
-        if (!checkoutSelectedAddress || !document.getElementById('destination_id').value) {
-            errors.push('Please select a saved address');
-        }
-    } else {
-        // Validate new address form
-        const requiredFields = [
-            { id: 'recipient_name', name: 'Recipient Name' },
-            { id: 'phone_recipient', name: 'Phone Number' },
-            { id: 'checkout_province_id', name: 'Province' },
-            { id: 'checkout_city_id', name: 'City' },
-            { id: 'checkout_district_id', name: 'District' },
-            { id: 'checkout_sub_district_id', name: 'Sub District' },
-            { id: 'street_address', name: 'Street Address' }
-        ];
-        
-        requiredFields.forEach(field => {
-            const element = document.getElementById(field.id);
-            if (!element || !element.value.trim()) {
-                errors.push(`${field.name} is required`);
-            }
-        });
-        
-        // Validate destination_id is set (for shipping calculation)
-        if (!document.getElementById('destination_id').value) {
-            errors.push('Please complete the location selection');
-        }
-    }
-    
-    return errors;
-}
-
-console.log('🚀 Checkout hierarchical location system loaded');
-});
+console.log('🚀 Checkout location functions defined globally with shipping fix');
 </script>
 
 <!-- Load the NO TAX JavaScript file -->
-<script src="{{ asset('js/enhanced-checkout.js') }}"></script>
+<script src="{{ asset('js/enhanced-checkout.js') }}?v={{ time() }}"></script>
 
 <script src="{{ asset('js/voucher-checkout.js') }}"></script>
 
