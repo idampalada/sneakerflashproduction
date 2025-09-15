@@ -243,174 +243,217 @@
                     </div>
 
                     <!-- Step 2: Delivery Address - UPDATED WITH ADDRESS INTEGRATION -->
-                    <!-- Step 2: Delivery Information (Updated with Hierarchical) -->
-<div id="section-2" class="hidden">
-    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-900 mb-4">📦 Delivery Information</h2>
-        
-        <!-- Address Selection Options -->
-        <div class="mb-6">
-            <div class="flex space-x-4">
-                <button type="button" id="use-saved-address-btn" 
-                        class="px-4 py-2 border border-orange-500 text-orange-500 rounded-lg hover:bg-orange-50 transition-colors">
-                    Use Saved Address
-                </button>
-                <button type="button" id="use-new-address-btn"
-                        class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
-                    Enter New Address
-                </button>
-            </div>
-        </div>
+                    <div class="checkout-section hidden" id="section-2">
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h2 class="text-xl font-semibold text-gray-900 mb-6">Delivery Address</h2>
+                            
+                            @if(Auth::check() && $userAddresses->count() > 0)
+                                <!-- Existing Addresses for Logged In Users -->
+                                <div class="mb-6">
+                                    <h3 class="text-lg font-medium text-gray-900 mb-4">Select Saved Address</h3>
+                                    <div class="space-y-3" id="saved-addresses">
+                                        @foreach($userAddresses as $address)
+                                            <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors {{ $address->is_primary ? 'border-orange-500 bg-orange-50' : 'border-gray-200' }}" 
+                                                   data-address-id="{{ $address->id }}">
+                                                <input type="radio" 
+                                                       name="saved_address_id" 
+                                                       value="{{ $address->id }}" 
+                                                       class="mt-1 mr-4" 
+                                                       {{ $address->is_primary ? 'checked' : '' }}
+                                                       data-address-id="{{ $address->id }}"
+                                                       onchange="loadSavedAddress(this.dataset.addressId)">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center mb-2">
+                                                        <span class="font-medium text-gray-900">{{ $address->label }}</span>
+                                                        @if($address->is_primary)
+                                                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                                                Primary
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                    <div class="text-sm text-gray-700">
+                                                        <p class="font-medium">{{ $address->recipient_name }}</p>
+                                                        <p>{{ $address->phone_recipient }}</p>
+                                                        <p>{{ $address->street_address }}</p>
+                                                        <p class="text-gray-500">{{ $address->location_string }}</p>
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                    
+                                    <!-- Add New Address Option -->
+                                    <label class="flex items-center p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors mt-3">
+                                        <input type="radio" name="saved_address_id" value="new" class="mr-4" onchange="showNewAddressForm()">
+                                        <div class="text-center w-full">
+                                            <svg class="w-6 h-6 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                            </svg>
+                                            <span class="text-sm font-medium text-gray-700">Add New Address</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <!-- Divider -->
+                                <div class="relative mb-6">
+                                    <div class="absolute inset-0 flex items-center">
+                                        <div class="w-full border-t border-gray-300"></div>
+                                    </div>
+                                    <div class="relative flex justify-center text-sm">
+                                        <span class="px-2 bg-white text-gray-500">Or use different address</span>
+                                    </div>
+                                </div>
+                            @endif
+                            
+                            <!-- New Address Form -->
+                            <div id="new-address-form" class="{{ Auth::check() && $userAddresses->count() > 0 ? 'hidden' : '' }}">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">
+                                    {{ Auth::check() && $userAddresses->count() > 0 ? 'New Address Details' : 'Delivery Address Details' }}
+                                </h3>
+                                
+                                <!-- Address Label with Radio Buttons -->
+                                <div class="mb-6">
+                                    <label class="block text-sm font-medium text-gray-700 mb-3">
+                                        Address Label *
+                                    </label>
+                                    <div class="flex space-x-4">
+                                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                            <input type="radio" 
+                                                   name="address_label" 
+                                                   value="Kantor" 
+                                                   class="sr-only" 
+                                                   {{ old('address_label') == 'Kantor' ? 'checked' : '' }}
+                                                   onchange="updateAddressLabelStyles()">
+                                            <div class="radio-custom mr-3"></div>
+                                            <span class="text-sm font-medium text-gray-700">Kantor</span>
+                                        </label>
+                                        
+                                        <label class="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                            <input type="radio" 
+                                                   name="address_label" 
+                                                   value="Rumah" 
+                                                   class="sr-only" 
+                                                   {{ old('address_label', 'Rumah') == 'Rumah' ? 'checked' : '' }}
+                                                   onchange="updateAddressLabelStyles()">
+                                            <div class="radio-custom mr-3"></div>
+                                            <span class="text-sm font-medium text-gray-700">Rumah</span>
+                                        </label>
+                                    </div>
+                                </div>
 
-        <!-- Saved Addresses Section -->
-        <div id="saved-addresses-section" class="hidden mb-6">
-            <h3 class="text-lg font-medium text-gray-900 mb-3">Select Saved Address</h3>
-            <div id="saved-addresses-list" class="space-y-3">
-                <!-- Will be populated by JavaScript -->
-            </div>
-        </div>
+                                <!-- Recipient Name -->
+                                <div class="mb-4">
+                                    <label for="recipient_name" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Recipient Name *
+                                    </label>
+                                    <input type="text" name="recipient_name" id="recipient_name" required
+                                           value="{{ old('recipient_name', $authenticatedUserName) }}"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                </div>
 
-        <!-- New Address Form -->
-        <div id="new-address-section">
-            <!-- Address Label -->
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-3">
-                    Address Label *
-                </label>
-                <div class="flex space-x-4">
-                    <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                        <input type="radio" name="address_label" value="Kantor" class="mr-3 text-orange-500">
-                        <span class="text-sm font-medium">Kantor</span>
-                    </label>
-                    <label class="flex items-center p-3 border border-orange-500 bg-orange-50 rounded-lg cursor-pointer">
-                        <input type="radio" name="address_label" value="Rumah" class="mr-3 text-orange-500" checked>
-                        <span class="text-sm font-medium">Rumah</span>
-                    </label>
-                </div>
-            </div>
+                                <!-- Phone Recipient -->
+                                <div class="mb-4">
+                                    <label for="phone_recipient" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Recipient Phone Number *
+                                    </label>
+                                    <input type="tel" name="phone_recipient" id="phone_recipient" required
+                                           value="{{ old('phone_recipient', $authenticatedUserPhone) }}"
+                                           placeholder="08xxxxxxxxxx"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                    <p class="text-xs text-gray-500 mt-1">Phone number for the recipient (can be different from your account phone)</p>
+                                </div>
 
-            <!-- Recipient Info -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label for="recipient_name" class="block text-sm font-medium text-gray-700 mb-2">
-                        Recipient Name *
-                    </label>
-                    <input type="text" name="recipient_name" id="recipient_name" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                </div>
-                <div>
-                    <label for="phone_recipient" class="block text-sm font-medium text-gray-700 mb-2">
-                        Phone Number *
-                    </label>
-                    <input type="tel" name="phone_recipient" id="phone_recipient" required
-                           placeholder="08xxxxxxxxxx"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                </div>
-            </div>
+                                <!-- Location Search -->
+                                <div class="mb-4">
+                                    <label for="location_search" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Search Location *
+                                        <span class="text-xs text-gray-500">(Province, City, Subdistrict, Postal Code)</span>
+                                    </label>
+                                    <div class="relative">
+                                        <input type="text" id="location_search" 
+                                               placeholder="e.g., kebayoran lama, jakarta selatan"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                               autocomplete="off">
+                                        
+                                        <!-- Search Results -->
+                                        <div id="location-results" class="hidden absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            <!-- Results will be populated here -->
+                                        </div>
+                                    </div>
+                                </div>
 
-            <!-- Hierarchical Location Selection -->
-            <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">Location Selection</h3>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Province -->
-                    <div>
-                        <label for="checkout_province_id" class="block text-sm font-medium text-gray-700 mb-2">
-                            Province *
-                        </label>
-                        <select name="province_id" id="checkout_province_id" required
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
-                            <option value="">Loading provinces...</option>
-                        </select>
-                        <input type="hidden" name="province_name" id="checkout_province_name">
+                                <!-- Selected Location Display -->
+                                <div id="selected-location" class="hidden mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h4 class="font-medium text-green-800">Selected Location:</h4>
+                                            <p id="selected-location-text" class="text-sm text-green-700"></p>
+                                        </div>
+                                        <button type="button" onclick="clearLocation()" class="text-red-600 hover:text-red-800 text-sm">
+                                            Change
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Hidden Location Fields -->
+                                <input type="hidden" name="province_name" id="province_name" required>
+                                <input type="hidden" name="city_name" id="city_name" required>
+                                <input type="hidden" name="subdistrict_name" id="subdistrict_name" required>
+                                <input type="hidden" name="postal_code" id="postal_code" required>
+                                <input type="hidden" name="destination_id" id="destination_id">
+
+                                <!-- Street Address -->
+                                <div class="mb-4">
+                                    <label for="street_address" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Street Address *
+                                        <span class="text-xs text-gray-500">(Street Name, Building, House Number)</span>
+                                    </label>
+                                    <textarea name="street_address" id="street_address" rows="3" required
+                                              placeholder="Enter complete street address, building name, house number"
+                                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500">{{ old('street_address') }}</textarea>
+                                </div>
+
+                                @if(Auth::check())
+                                    <!-- Save Address Option -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center">
+                                            <input type="checkbox" name="save_address" value="1" 
+                                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
+                                                   {{ old('save_address', 'checked') ? 'checked' : '' }}>
+                                            <span class="text-sm font-medium">Save this address to my account</span>
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">You can use this address for future orders</p>
+                                    </div>
+
+                                    <!-- Set as Primary Option -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center">
+                                            <input type="checkbox" name="set_as_primary" value="1" 
+                                                   class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" 
+                                                   {{ old('set_as_primary') ? 'checked' : '' }}>
+                                            <span class="text-sm font-medium">Set as primary address</span>
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">Primary address will be used as default for future checkouts</p>
+                                    </div>
+                                @endif
+                            </div>
+                            
+                            <!-- Keep legacy fields for backward compatibility -->
+                            <input type="hidden" name="address" id="legacy_address">
+                            <input type="hidden" name="destination_label" id="legacy_destination_label">
+                            
+                            <div class="flex space-x-4 mt-8">
+                                <button type="button" onclick="prevStep(1)" 
+                                        class="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition-colors font-medium">
+                                    Previous
+                                </button>
+                                <button type="button" onclick="nextStep(3)" id="continue-step-2"
+                                        class="flex-1 bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium">
+                                    Continue
+                                </button>
+                            </div>
+                        </div>
                     </div>
-
-                    <!-- City -->
-                    <div>
-                        <label for="checkout_city_id" class="block text-sm font-medium text-gray-700 mb-2">
-                            City/Regency *
-                        </label>
-                        <select name="city_id" id="checkout_city_id" required disabled
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
-                            <option value="">Select province first...</option>
-                        </select>
-                        <input type="hidden" name="city_name" id="checkout_city_name">
-                    </div>
-
-                    <!-- District -->
-                    <div>
-                        <label for="checkout_district_id" class="block text-sm font-medium text-gray-700 mb-2">
-                            District *
-                        </label>
-                        <select name="district_id" id="checkout_district_id" required disabled
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
-                            <option value="">Select city first...</option>
-                        </select>
-                        <input type="hidden" name="district_name" id="checkout_district_name">
-                    </div>
-
-                    <!-- Sub District -->
-                    <div>
-                        <label for="checkout_sub_district_id" class="block text-sm font-medium text-gray-700 mb-2">
-                            Sub District *
-                        </label>
-                        <select name="sub_district_id" id="checkout_sub_district_id" required disabled
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100">
-                            <option value="">Select district first...</option>
-                        </select>
-                        <input type="hidden" name="sub_district_name" id="checkout_sub_district_name">
-                    </div>
-                </div>
-
-                <!-- Postal Code Display -->
-                <div class="mt-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Postal Code
-                    </label>
-                    <input type="text" id="checkout_postal_code_display" readonly
-                           class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md" 
-                           placeholder="Will be filled automatically">
-                    <input type="hidden" name="postal_code" id="checkout_postal_code">
-                </div>
-            </div>
-
-            <!-- Street Address -->
-            <div class="mb-4">
-                <label for="street_address" class="block text-sm font-medium text-gray-700 mb-2">
-                    Street Address *
-                </label>
-                <textarea name="street_address" id="street_address" rows="3" required
-                          placeholder="Enter complete street address, building name, house number"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"></textarea>
-            </div>
-
-            <!-- Save Address Option -->
-            <div class="mb-4">
-                <label class="flex items-center">
-                    <input type="checkbox" name="save_address" value="1" 
-                           class="mr-3 h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded">
-                    <span class="text-sm font-medium">Save this address for future use</span>
-                </label>
-            </div>
-        </div>
-
-        <!-- Hidden fields for compatibility -->
-        <input type="hidden" name="destination_id" id="destination_id">
-        <input type="hidden" name="destination_label" id="destination_label">
-
-        <!-- Navigation Buttons -->
-        <div class="flex space-x-4 pt-4">
-            <button type="button" onclick="previousStep()" 
-                    class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-                Previous
-            </button>
-            <button type="button" onclick="nextStep(3)" 
-                    class="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors">
-                Continue to Shipping
-            </button>
-        </div>
-    </div>
-</div>
 
                     <!-- Step 3: Shipping Method -->
                     <div class="checkout-section hidden" id="section-3">
@@ -967,427 +1010,6 @@ label:has(input[name="saved_address_id"]:checked) {
 
 <!-- Script to ensure Order Summary updates properly WITHOUT TAX + VOUCHER SUPPORT -->
 <script>
-    let checkoutLocationData = {
-    provinces: [],
-    cities: [],
-    districts: [],
-    subDistricts: []
-};
-
-let checkoutSelectedAddress = null;
-
-document.addEventListener('DOMContentLoaded', function() {
-    initializeCheckoutLocation();
-    setupAddressSelectionToggle();
-    loadSavedAddresses();
-});
-
-function initializeCheckoutLocation() {
-    console.log('🚀 Initializing checkout location selection');
-    
-    const provinceSelect = document.getElementById('checkout_province_id');
-    const citySelect = document.getElementById('checkout_city_id');
-    const districtSelect = document.getElementById('checkout_district_id');
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    // Load provinces immediately
-    loadCheckoutProvinces();
-    
-    // Province change handler
-    provinceSelect.addEventListener('change', function() {
-        const provinceId = this.value;
-        const provinceName = this.options[this.selectedIndex].text;
-        
-        if (provinceId) {
-            document.getElementById('checkout_province_name').value = provinceName;
-            loadCheckoutCities(provinceId);
-            resetCheckoutSelect(citySelect, 'Loading cities...');
-            resetCheckoutSelect(districtSelect, 'Select city first...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        } else {
-            resetAllCheckoutSelects();
-        }
-    });
-    
-    // City change handler
-    citySelect.addEventListener('change', function() {
-        const cityId = this.value;
-        const cityName = this.options[this.selectedIndex].text;
-        
-        if (cityId) {
-            document.getElementById('checkout_city_name').value = cityName;
-            loadCheckoutDistricts(cityId);
-            resetCheckoutSelect(districtSelect, 'Loading districts...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        } else {
-            resetCheckoutSelect(districtSelect, 'Select city first...');
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        }
-    });
-    
-    // District change handler
-    districtSelect.addEventListener('change', function() {
-        const districtId = this.value;
-        const districtName = this.options[this.selectedIndex].text;
-        
-        if (districtId) {
-            document.getElementById('checkout_district_name').value = districtName;
-            loadCheckoutSubDistricts(districtId);
-            resetCheckoutSelect(subDistrictSelect, 'Loading sub-districts...');
-            clearCheckoutPostalCode();
-        } else {
-            resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-            clearCheckoutPostalCode();
-        }
-    });
-    
-    // Sub-district change handler
-    subDistrictSelect.addEventListener('change', function() {
-        const subDistrictId = this.value;
-        const subDistrictName = this.options[this.selectedIndex].text;
-        const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
-        
-        if (subDistrictId) {
-            document.getElementById('checkout_sub_district_name').value = subDistrictName;
-            
-            // Set destination_id for shipping calculation
-            document.getElementById('destination_id').value = subDistrictId;
-            
-            // Create destination label
-            const provinceName = document.getElementById('checkout_province_name').value;
-            const cityName = document.getElementById('checkout_city_name').value;
-            const districtName = document.getElementById('checkout_district_name').value;
-            
-            const destinationLabel = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`;
-            document.getElementById('destination_label').value = destinationLabel;
-            
-            // Update postal code
-            if (zipCode && zipCode !== '0') {
-                document.getElementById('checkout_postal_code_display').value = zipCode;
-                document.getElementById('checkout_postal_code').value = zipCode;
-            }
-            
-            console.log('✅ Location selected:', {
-                destination_id: subDistrictId,
-                destination_label: destinationLabel,
-                postal_code: zipCode
-            });
-            
-        } else {
-            clearCheckoutDestination();
-        }
-    });
-}
-
-async function loadCheckoutProvinces() {
-    const provinceSelect = document.getElementById('checkout_province_id');
-    
-    try {
-        console.log('🔄 Loading provinces for checkout...');
-        
-        const response = await fetch('/api/addresses/provinces');
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.provinces = result.data;
-            
-            provinceSelect.innerHTML = '<option value="">Select Province...</option>';
-            
-            result.data.forEach(province => {
-                const option = document.createElement('option');
-                option.value = province.id;
-                option.textContent = province.name;
-                provinceSelect.appendChild(option);
-            });
-            
-            provinceSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} provinces for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading provinces for checkout:', error);
-        provinceSelect.innerHTML = '<option value="">Error loading provinces</option>';
-    }
-}
-
-async function loadCheckoutCities(provinceId) {
-    const citySelect = document.getElementById('checkout_city_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/cities/${provinceId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.cities = result.data;
-            
-            citySelect.innerHTML = '<option value="">Select City/Regency...</option>';
-            
-            result.data.forEach(city => {
-                const option = document.createElement('option');
-                option.value = city.id;
-                option.textContent = city.name;
-                citySelect.appendChild(option);
-            });
-            
-            citySelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} cities for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading cities for checkout:', error);
-        citySelect.innerHTML = '<option value="">Error loading cities</option>';
-        citySelect.disabled = false;
-    }
-}
-
-async function loadCheckoutDistricts(cityId) {
-    const districtSelect = document.getElementById('checkout_district_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/districts/${cityId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.districts = result.data;
-            
-            districtSelect.innerHTML = '<option value="">Select District...</option>';
-            
-            result.data.forEach(district => {
-                const option = document.createElement('option');
-                option.value = district.id;
-                option.textContent = district.name;
-                districtSelect.appendChild(option);
-            });
-            
-            districtSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} districts for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading districts for checkout:', error);
-        districtSelect.innerHTML = '<option value="">Error loading districts</option>';
-        districtSelect.disabled = false;
-    }
-}
-
-async function loadCheckoutSubDistricts(districtId) {
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    try {
-        const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
-        const result = await response.json();
-        
-        if (result.success && result.data) {
-            checkoutLocationData.subDistricts = result.data;
-            
-            subDistrictSelect.innerHTML = '<option value="">Select Sub-District...</option>';
-            
-            result.data.forEach(subDistrict => {
-                const option = document.createElement('option');
-                option.value = subDistrict.id;
-                option.textContent = subDistrict.name;
-                
-                if (subDistrict.zip_code) {
-                    option.setAttribute('data-zip', subDistrict.zip_code);
-                }
-                
-                subDistrictSelect.appendChild(option);
-            });
-            
-            subDistrictSelect.disabled = false;
-            console.log(`✅ Loaded ${result.data.length} sub-districts for checkout`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading sub-districts for checkout:', error);
-        subDistrictSelect.innerHTML = '<option value="">Error loading sub-districts</option>';
-        subDistrictSelect.disabled = false;
-    }
-}
-
-function resetCheckoutSelect(selectElement, placeholder) {
-    selectElement.innerHTML = `<option value="">${placeholder}</option>`;
-    selectElement.disabled = true;
-}
-
-function resetAllCheckoutSelects() {
-    const citySelect = document.getElementById('checkout_city_id');
-    const districtSelect = document.getElementById('checkout_district_id');
-    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
-    
-    resetCheckoutSelect(citySelect, 'Select province first...');
-    resetCheckoutSelect(districtSelect, 'Select city first...');
-    resetCheckoutSelect(subDistrictSelect, 'Select district first...');
-    
-    // Clear hidden fields
-    document.getElementById('checkout_province_name').value = '';
-    clearCheckoutPostalCode();
-    clearCheckoutDestination();
-}
-
-function clearCheckoutPostalCode() {
-    document.getElementById('checkout_postal_code_display').value = '';
-    document.getElementById('checkout_postal_code').value = '';
-}
-
-function clearCheckoutDestination() {
-    document.getElementById('destination_id').value = '';
-    document.getElementById('destination_label').value = '';
-    document.getElementById('checkout_sub_district_name').value = '';
-}
-
-function setupAddressSelectionToggle() {
-    const useSavedBtn = document.getElementById('use-saved-address-btn');
-    const useNewBtn = document.getElementById('use-new-address-btn');
-    const savedSection = document.getElementById('saved-addresses-section');
-    const newSection = document.getElementById('new-address-section');
-    
-    useSavedBtn.addEventListener('click', function() {
-        // Toggle button states
-        useSavedBtn.classList.add('bg-orange-500', 'text-white');
-        useSavedBtn.classList.remove('border-orange-500', 'text-orange-500');
-        useNewBtn.classList.remove('bg-orange-500', 'text-white');
-        useNewBtn.classList.add('border-orange-500', 'text-orange-500');
-        
-        // Toggle sections
-        savedSection.classList.remove('hidden');
-        newSection.classList.add('hidden');
-    });
-    
-    useNewBtn.addEventListener('click', function() {
-        // Toggle button states
-        useNewBtn.classList.add('bg-orange-500', 'text-white');
-        useNewBtn.classList.remove('border-orange-500', 'text-orange-500');
-        useSavedBtn.classList.remove('bg-orange-500', 'text-white');
-        useSavedBtn.classList.add('border-orange-500', 'text-orange-500');
-        
-        // Toggle sections
-        newSection.classList.remove('hidden');
-        savedSection.classList.add('hidden');
-        
-        // Clear saved address selection
-        checkoutSelectedAddress = null;
-        clearCheckoutDestination();
-    });
-}
-
-async function loadSavedAddresses() {
-    try {
-        const response = await fetch('/api/addresses/all', {
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-        
-        if (response.ok) {
-            const result = await response.json();
-            
-            if (result.success && result.addresses) {
-                displaySavedAddresses(result.addresses);
-            }
-        }
-    } catch (error) {
-        console.error('Error loading saved addresses:', error);
-    }
-}
-
-function displaySavedAddresses(addresses) {
-    const container = document.getElementById('saved-addresses-list');
-    
-    if (addresses.length === 0) {
-        container.innerHTML = '<p class="text-gray-500 text-center py-4">No saved addresses found</p>';
-        return;
-    }
-    
-    container.innerHTML = addresses.map(address => `
-        <div class="border rounded-lg p-4 cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors" 
-             onclick="selectSavedAddress(${JSON.stringify(address).replace(/"/g, '&quot;')})">
-            <div class="flex justify-between items-start">
-                <div>
-                    <div class="font-medium text-gray-900">${address.label}</div>
-                    <div class="text-sm text-gray-600">${address.recipient_name} - ${address.phone_recipient}</div>
-                    <div class="text-sm text-gray-500 mt-1">${address.full_address || address.location_string}</div>
-                    ${address.is_primary ? '<span class="inline-block bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full mt-2">Primary</span>' : ''}
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function selectSavedAddress(address) {
-    console.log('📍 Selected saved address:', address);
-    
-    checkoutSelectedAddress = address;
-    
-    // Fill form with selected address data
-    document.getElementById('recipient_name').value = address.recipient_name || '';
-    document.getElementById('phone_recipient').value = address.phone_recipient || '';
-    document.getElementById('street_address').value = address.street_address || '';
-    
-    // Set destination fields for shipping calculation
-    document.getElementById('destination_id').value = address.destination_id || '';
-    document.getElementById('destination_label').value = address.location_string || address.full_address || '';
-    
-    // Set address label
-    const labelInput = document.querySelector(`input[name="address_label"][value="${address.label}"]`);
-    if (labelInput) {
-        labelInput.checked = true;
-    }
-    
-    // Visual feedback
-    const addressElements = document.querySelectorAll('#saved-addresses-list > div');
-    addressElements.forEach(el => {
-        el.classList.remove('border-orange-500', 'bg-orange-50');
-        el.classList.add('border-gray-300');
-    });
-    
-    // Highlight selected
-    event.currentTarget.classList.add('border-orange-500', 'bg-orange-50');
-    event.currentTarget.classList.remove('border-gray-300');
-}
-
-// Integration with existing checkout validation
-function validateDeliveryInformation() {
-    const errors = [];
-    
-    // Check if using saved address or new address
-    const savedSection = document.getElementById('saved-addresses-section');
-    const newSection = document.getElementById('new-address-section');
-    
-    if (!savedSection.classList.contains('hidden')) {
-        // Validate saved address selection
-        if (!checkoutSelectedAddress || !document.getElementById('destination_id').value) {
-            errors.push('Please select a saved address');
-        }
-    } else {
-        // Validate new address form
-        const requiredFields = [
-            { id: 'recipient_name', name: 'Recipient Name' },
-            { id: 'phone_recipient', name: 'Phone Number' },
-            { id: 'checkout_province_id', name: 'Province' },
-            { id: 'checkout_city_id', name: 'City' },
-            { id: 'checkout_district_id', name: 'District' },
-            { id: 'checkout_sub_district_id', name: 'Sub District' },
-            { id: 'street_address', name: 'Street Address' }
-        ];
-        
-        requiredFields.forEach(field => {
-            const element = document.getElementById(field.id);
-            if (!element || !element.value.trim()) {
-                errors.push(`${field.name} is required`);
-            }
-        });
-        
-        // Validate destination_id is set (for shipping calculation)
-        if (!document.getElementById('destination_id').value) {
-            errors.push('Please complete the location selection');
-        }
-    }
-    
-    return errors;
-}
-
-console.log('🚀 Checkout hierarchical location system loaded');
 document.addEventListener('DOMContentLoaded', function() {
     // Log Order Summary initialization
     console.log('📊 Order Summary DOM elements loaded - NO TAX VERSION + VOUCHER SUPPORT');
