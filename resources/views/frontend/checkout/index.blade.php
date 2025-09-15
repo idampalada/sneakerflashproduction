@@ -48,8 +48,8 @@
     <div class="max-w-6xl mx-auto">
         <h1 class="text-3xl font-bold text-gray-900 mb-8">Checkout</h1>
         
-        <!-- Step Indicator -->
-        <div class="flex justify-between mb-8 px-8">
+        <!-- Step Indicator LAGI DI DISABLE -->
+        <!-- <div class="flex justify-between mb-8 px-8">
             <div class="step active" id="step-1">
                 <div class="step-number">1</div>
                 <div class="step-title">Personal Information</div>
@@ -66,7 +66,7 @@
                 <div class="step-number">4</div>
                 <div class="step-title">Payment</div>
             </div>
-        </div>
+        </div> -->
         
         @if ($errors->any())
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
@@ -127,11 +127,6 @@
                                         <input type="radio" name="gender" value="womens" class="mr-2" 
                                                {{ old('gender', Auth::user()->gender ?? '') == 'womens' ? 'checked' : '' }}>
                                         <span class="text-sm">Womens</span>
-                                    </label>
-                                    <label class="flex items-center">
-                                        <input type="radio" name="gender" value="kids" class="mr-2" 
-                                               {{ old('gender', Auth::user()->gender ?? '') == 'kids' ? 'checked' : '' }}>
-                                        <span class="text-sm">Kids</span>
                                     </label>
                                 </div>
                             </div>
@@ -399,7 +394,7 @@
 
         <!-- Navigation Buttons -->
         <div class="flex space-x-4 pt-4">
-            <button type="button" onclick="previousStep()" 
+            <button type="button" onclick="prevStep(1)"  
                     class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                 Previous
             </button>
@@ -839,6 +834,26 @@
 
 <!-- Custom Radio Button Styles -->
 <style>
+    /* FORCE HIDE SECTIONS - TAMBAHKAN DI AWAL */
+.checkout-section {
+    transition: none !important;
+}
+
+.checkout-section.hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
+
+.checkout-section.active {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    left: auto !important;
+}
 .radio-custom {
     width: 20px;
     height: 20px;
@@ -962,6 +977,14 @@ label:has(input[name="saved_address_id"]:checked) {
     border-color: #3b82f6;
     background-color: #eff6ff;
 }
+body:has(#step-3.active) #section-2,
+body:has(#step-4.active) #section-2 {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
+
 </style>
 
 <!-- Script to ensure Order Summary updates properly WITHOUT TAX + VOUCHER SUPPORT -->

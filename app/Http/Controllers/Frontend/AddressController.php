@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Services\RajaOngkirService;
+use Illuminate\Support\Facades\Validator;
 
 class AddressController extends Controller
 {
@@ -65,85 +66,121 @@ class AddressController extends Controller
     /**
      * Store new address
      */
-    public function store(Request $request)
+public function store(Request $request)
 {
+    if (!Auth::check()) {
+        if ($request->expectsJson()) {
+            return response()->json(['success' => false, 'message' => 'Authentication required'], 401);
+        }
+        return redirect()->route('login')->with('error', 'Please login to add address.');
+    }
+
     try {
-        $validator = Validator::make($request->all(), [
+        // Validation sesuai dengan struktur database yang sudah dibersihkan
+        $validated = $request->validate([
             'label' => 'required|in:Kantor,Rumah',
             'recipient_name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
+            'phone_recipient' => 'required|string|max:20|regex:/^[0-9+\-\s\(\)]{10,}$/',
+            
+            // Hierarchical ID fields (dari dropdown frontend)
             'province_id' => 'required|integer|min:1',
-            'province_name' => 'required|string|max:255',
             'city_id' => 'required|integer|min:1', 
-            'city_name' => 'required|string|max:255',
             'district_id' => 'required|integer|min:1',
-            'district_name' => 'required|string|max:255',
             'sub_district_id' => 'required|integer|min:1',
+            
+            // Hierarchical name fields (auto-filled oleh JavaScript)
+            'province_name' => 'required|string|max:255',
+            'city_name' => 'required|string|max:255',
+            'district_name' => 'required|string|max:255',
             'sub_district_name' => 'required|string|max:255',
-            'postal_code_api' => 'nullable|string|max:10',
+            
+            'postal_code' => 'nullable|string|max:10',
+            'destination_id' => 'nullable|string|max:50',
             'street_address' => 'required|string|max:1000',
+            'notes' => 'nullable|string|max:500',
             'is_primary' => 'nullable|boolean'
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        DB::transaction(function() use ($request) {
+        DB::transaction(function() use ($validated) {
             // Set primary address logic
-            if ($request->input('is_primary', false)) {
+            if ($validated['is_primary'] ?? false) {
                 UserAddress::where('user_id', Auth::id())
                           ->update(['is_primary' => false]);
             }
 
-            // Create new address
-            $address = UserAddress::create([
+            // Create new address dengan field yang sesuai struktur database
+            UserAddress::create([
                 'user_id' => Auth::id(),
-                'label' => $request->input('label'),
-                'recipient_name' => $request->input('recipient_name'),
-                'phone' => $request->input('phone'),
-                'province_id' => $request->input('province_id'),
-                'province_name' => $request->input('province_name'),
-                'city_id' => $request->input('city_id'),
-                'city_name' => $request->input('city_name'),
-                'district_id' => $request->input('district_id'),
-                'district_name' => $request->input('district_name'),
-                'sub_district_id' => $request->input('sub_district_id'),
-                'sub_district_name' => $request->input('sub_district_name'),
-                'postal_code_api' => $request->input('postal_code_api'),
-                'street_address' => $request->input('street_address'),
-                'is_primary' => $request->input('is_primary', false),
+                'label' => $validated['label'],
+                'recipient_name' => $validated['recipient_name'],
+                'phone_recipient' => $validated['phone_recipient'],
+                
+                // Hierarchical IDs
+                'province_id' => $validated['province_id'],
+                'city_id' => $validated['city_id'],
+                'district_id' => $validated['district_id'],
+                'sub_district_id' => $validated['sub_district_id'],
+                
+                // Hierarchical names
+                'province_name' => $validated['province_name'],
+                'city_name' => $validated['city_name'],
+                'district_name' => $validated['district_name'],
+                'sub_district_name' => $validated['sub_district_name'],
+                
+                // Optional fields with fallback
+                'postal_code' => $validated['postal_code'] ?? null,
+                'destination_id' => $validated['destination_id'] ?? null,
+                'street_address' => $validated['street_address'],
+                'notes' => $validated['notes'] ?? null,
+                'is_primary' => $validated['is_primary'] ?? false,
+                'is_active' => true,
                 
                 // Keep search_location for backward compatibility
-                'search_location' => $request->input('city_name') . ', ' . $request->input('province_name')
+                'search_location' => $validated['city_name'] . ', ' . $validated['province_name']
             ]);
-
-            // If this is the user's first address, make it primary
-            $addressCount = UserAddress::where('user_id', Auth::id())->count();
-            if ($addressCount === 1) {
-                $address->update(['is_primary' => true]);
-            }
         });
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Address saved successfully'
-        ]);
+        // Handle different request types
+        if ($request->expectsJson()) {
+            // For AJAX requests
+            return response()->json([
+                'success' => true,
+                'message' => 'Address saved successfully!'
+            ]);
+        } else {
+            // For form submissions - redirect to addresses index
+            return redirect()->route('profile.addresses.index')
+                           ->with('success', 'Address saved successfully!');
+        }
 
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors()
+            ], 422);
+        } else {
+            return redirect()->back()
+                           ->withErrors($e->validator)
+                           ->withInput();
+        }
     } catch (\Exception $e) {
-        Log::error('Error saving address', [
+        Log::error('Error saving address: ' . $e->getMessage(), [
             'user_id' => Auth::id(),
-            'error' => $e->getMessage(),
-            'line' => $e->getLine()
+            'request_data' => $request->except(['_token']),
+            'trace' => $e->getTraceAsString()
         ]);
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to save address: ' . $e->getMessage()
-        ], 500);
+        
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save address'
+            ], 500);
+        } else {
+            return redirect()->back()
+                           ->withErrors(['error' => 'Failed to save address. Please try again.'])
+                           ->withInput();
+        }
     }
 }
 
@@ -151,137 +188,193 @@ class AddressController extends Controller
      * Show form to edit address
      */
     public function edit($id)
-    {
-        if (!Auth::check()) {
-            return redirect()->route('login')->with('error', 'Please login to edit address.');
-        }
-
-        try {
-            $user = Auth::user();
-            $address = UserAddress::where('user_id', $user->id)
-                          ->where('is_active', true)
-                          ->findOrFail($id);
-
-            return view('frontend.profile.addresses.edit', compact('address'));
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('Address not found for edit', [
-                'user_id' => Auth::id(),
-                'address_id' => $id
-            ]);
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('error', 'Address not found or has been deleted.');
-        } catch (\Exception $e) {
-            Log::error('Error loading address for edit: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'address_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('error', 'Failed to load address for editing.');
-        }
+{
+    if (!Auth::check()) {
+        return redirect()->route('login')->with('error', 'Please login to edit address.');
     }
+
+    try {
+        $user = Auth::user();
+        $address = UserAddress::where('user_id', $user->id)
+                      ->where('is_active', true)
+                      ->findOrFail($id);
+
+        return view('frontend.profile.addresses.edit', compact('address'));
+
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        Log::warning('Address not found for editing', [
+            'user_id' => Auth::id(),
+            'address_id' => $id
+        ]);
+
+        return redirect()->route('profile.addresses.index')
+                       ->with('error', 'Address not found or has been deleted.');
+    } catch (\Exception $e) {
+        Log::error('Error loading address for editing: ' . $e->getMessage(), [
+            'user_id' => Auth::id(),
+            'address_id' => $id,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return redirect()->route('profile.addresses.index')
+                       ->with('error', 'Failed to load address for editing.');
+    }
+}
 
     /**
      * Update address
      */
     public function update(Request $request, $id)
-    {
-        if (!Auth::check()) {
-            return redirect()->route('login')->with('error', 'Please login to update address.');
+{
+    if (!Auth::check()) {
+        if ($request->expectsJson()) {
+            return response()->json(['success' => false, 'message' => 'Authentication required'], 401);
         }
+        return redirect()->route('login')->with('error', 'Please login to update address.');
+    }
 
-        try {
-            $validated = $request->validate([
-                'label' => 'required|string|in:Kantor,Rumah',
-                'recipient_name' => 'required|string|max:255',
-                'phone_recipient' => 'required|string|max:20|regex:/^[0-9+\-\s\(\)]{10,}$/',
-                'province_name' => 'required|string|max:100',
-                'city_name' => 'required|string|max:100',
-                'subdistrict_name' => 'required|string|max:100',
-                'postal_code' => 'required|string|size:5|regex:/^[0-9]{5}$/',
-                'destination_id' => 'nullable|string|max:50',
-                'street_address' => 'required|string|min:10|max:500',
-                'notes' => 'nullable|string|max:500',
-                'is_primary' => 'nullable|boolean'
-            ], [
-                'recipient_name.required' => 'Recipient name is required',
-                'phone_recipient.required' => 'Recipient phone number is required',
-                'phone_recipient.regex' => 'Please enter a valid phone number (minimum 10 digits)',
-                'province_name.required' => 'Please select a location',
-                'city_name.required' => 'Please select a location',
-                'subdistrict_name.required' => 'Please select a location',
-                'postal_code.required' => 'Postal code is required',
-                'postal_code.size' => 'Postal code must be exactly 5 digits',
-                'postal_code.regex' => 'Postal code must contain only numbers',
-                'street_address.required' => 'Street address is required',
-                'street_address.min' => 'Street address must be at least 10 characters long'
+    try {
+        $validated = $request->validate([
+            'label' => 'required|string|in:Kantor,Rumah',
+            'recipient_name' => 'required|string|max:255',
+            'phone_recipient' => 'required|string|max:20|regex:/^[0-9+\-\s\(\)]{10,}$/',
+            
+            // Hierarchical ID fields (dari dropdown frontend)
+            'province_id' => 'required|integer|min:1',
+            'city_id' => 'required|integer|min:1', 
+            'district_id' => 'required|integer|min:1',
+            'sub_district_id' => 'required|integer|min:1',
+            
+            // Hierarchical name fields (auto-filled oleh JavaScript)
+            'province_name' => 'required|string|max:255',
+            'city_name' => 'required|string|max:255',
+            'district_name' => 'required|string|max:255',
+            'sub_district_name' => 'required|string|max:255',
+            
+            'postal_code' => 'nullable|string|max:10',
+            'destination_id' => 'nullable|string|max:50',
+            'street_address' => 'required|string|max:1000',
+            'notes' => 'nullable|string|max:500',
+            'is_primary' => 'nullable|boolean'
+        ], [
+            'recipient_name.required' => 'Recipient name is required',
+            'phone_recipient.required' => 'Recipient phone number is required',
+            'phone_recipient.regex' => 'Please enter a valid phone number (minimum 10 digits)',
+            'province_name.required' => 'Please select a location',
+            'city_name.required' => 'Please select a location',
+            'district_name.required' => 'Please select a location',
+            'sub_district_name.required' => 'Please select a location',
+            'street_address.required' => 'Street address is required'
+        ]);
+
+        $user = Auth::user();
+        $address = UserAddress::where('user_id', $user->id)
+                      ->where('is_active', true)
+                      ->findOrFail($id);
+
+        // Use database transaction for data consistency
+        DB::transaction(function () use ($address, $validated) {
+            // Handle primary address logic
+            if ($validated['is_primary'] ?? false) {
+                // Remove primary from other addresses first
+                UserAddress::where('user_id', $address->user_id)
+                           ->where('id', '!=', $address->id)
+                           ->update(['is_primary' => false]);
+            }
+
+            // Update address fields
+            $address->update([
+                'label' => $validated['label'],
+                'recipient_name' => trim($validated['recipient_name']),
+                'phone_recipient' => $validated['phone_recipient'],
+                
+                // Hierarchical IDs
+                'province_id' => $validated['province_id'],
+                'city_id' => $validated['city_id'],
+                'district_id' => $validated['district_id'],
+                'sub_district_id' => $validated['sub_district_id'],
+                
+                // Hierarchical names
+                'province_name' => $validated['province_name'],
+                'city_name' => $validated['city_name'],
+                'district_name' => $validated['district_name'],
+                'sub_district_name' => $validated['sub_district_name'],
+                
+                'postal_code' => $validated['postal_code'] ?? null,
+                'destination_id' => $validated['destination_id'] ?? null,
+                'street_address' => $validated['street_address'],
+                'notes' => $validated['notes'] ?? null,
+                'is_primary' => $validated['is_primary'] ?? false,
+                
+                // Update search_location for backward compatibility
+                'search_location' => $validated['city_name'] . ', ' . $validated['province_name']
             ]);
+        });
 
-            $user = Auth::user();
-            $address = UserAddress::where('user_id', $user->id)
-                          ->where('is_active', true)
-                          ->findOrFail($id);
+        Log::info('Address updated', [
+            'user_id' => $user->id,
+            'address_id' => $address->id,
+            'updated_fields' => array_keys($validated),
+            'is_primary' => $address->is_primary
+        ]);
 
-            // Use database transaction for data consistency
-            DB::transaction(function () use ($address, $validated) {
-                // Update address fields
-                $address->update([
-                    'label' => $validated['label'],
-                    'recipient_name' => trim($validated['recipient_name']),
-                    'phone_recipient' => preg_replace('/[^0-9+\-\s\(\)]/', '', $validated['phone_recipient']),
-                    'province_name' => $validated['province_name'],
-                    'city_name' => $validated['city_name'],
-                    'subdistrict_name' => $validated['subdistrict_name'],
-                    'postal_code' => $validated['postal_code'],
-                    'destination_id' => $validated['destination_id'] ?? null,
-                    'street_address' => trim($validated['street_address']),
-                    'notes' => !empty($validated['notes']) ? trim($validated['notes']) : null,
-                ]);
-
-                // Set as primary if requested
-                if ($validated['is_primary'] ?? false) {
-                    $address->setPrimary();
-                }
-            });
-
-            Log::info('Address updated', [
-                'user_id' => $user->id,
-                'address_id' => $address->id,
-                'updated_fields' => array_keys($validated),
-                'is_primary' => $address->is_primary
+        // Handle different request types
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Address updated successfully!'
             ]);
-
+        } else {
             return redirect()->route('profile.addresses.index')
                            ->with('success', 'Address updated successfully!');
+        }
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $e->errors()
+            ], 422);
+        } else {
             return redirect()->back()
                            ->withErrors($e->validator)
                            ->withInput();
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('Address not found for update', [
-                'user_id' => Auth::id(),
-                'address_id' => $id
-            ]);
+        }
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        Log::warning('Address not found for update', [
+            'user_id' => Auth::id(),
+            'address_id' => $id
+        ]);
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Address not found'
+            ], 404);
+        } else {
             return redirect()->route('profile.addresses.index')
                            ->with('error', 'Address not found or has been deleted.');
-        } catch (\Exception $e) {
-            Log::error('Error updating address: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'address_id' => $id,
-                'request_data' => $request->except(['_token']),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
+        }
+    } catch (\Exception $e) {
+        Log::error('Error updating address: ' . $e->getMessage(), [
+            'user_id' => Auth::id(),
+            'address_id' => $id,
+            'request_data' => $request->except(['_token']),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update address'
+            ], 500);
+        } else {
             return redirect()->back()
-                           ->withErrors(['error' => 'Failed to update address: ' . $e->getMessage()])
+                           ->withErrors(['error' => 'Failed to update address. Please try again.'])
                            ->withInput();
         }
     }
+}
 
     /**
      * Set address as primary
@@ -358,85 +451,109 @@ class AddressController extends Controller
     /**
      * Soft delete address
      */
-    public function destroy($id)
-    {
-        if (!Auth::check()) {
+public function destroy($id)
+{
+    if (!Auth::check()) {
+        if (request()->expectsJson()) {
             return response()->json(['success' => false, 'message' => 'Authentication required'], 401);
         }
-
-        try {
-            $user = Auth::user();
-            $address = UserAddress::where('user_id', $user->id)
-                          ->where('is_active', true)
-                          ->findOrFail($id);
-
-            // Use the model's soft delete method which handles primary address logic
-            if (!$address->softDelete()) {
-                $errorMessage = 'Cannot delete primary address. Please set another address as primary first.';
-                
-                if (request()->expectsJson()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $errorMessage
-                    ], 400);
-                }
-
-                return redirect()->route('profile.addresses.index')
-                               ->with('error', $errorMessage);
-            }
-
-            $label = $address->label;
-
-            Log::info('Address soft deleted', [
-                'user_id' => $user->id,
-                'address_id' => $id,
-                'label' => $label
-            ]);
-
-            if (request()->expectsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Address deleted successfully!'
-                ]);
-            }
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('success', 'Address deleted successfully!');
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('Address not found for deletion', [
-                'user_id' => Auth::id(),
-                'address_id' => $id
-            ]);
-
-            if (request()->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Address not found'
-                ], 404);
-            }
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('error', 'Address not found.');
-        } catch (\Exception $e) {
-            Log::error('Error deleting address: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'address_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            if (request()->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to delete address'
-                ], 500);
-            }
-
-            return redirect()->route('profile.addresses.index')
-                           ->with('error', 'Failed to delete address.');
-        }
+        return redirect()->route('login')->with('error', 'Please login to delete address.');
     }
 
+    try {
+        $user = Auth::user();
+        $address = UserAddress::where('user_id', $user->id)
+                      ->where('is_active', true)
+                      ->findOrFail($id);
+
+        // Check if this is the only address
+        $addressCount = UserAddress::where('user_id', $user->id)
+                           ->where('is_active', true)
+                           ->count();
+
+        if ($addressCount === 1) {
+            $errorMessage = 'Cannot delete the only address. Please add another address first.';
+            
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 400);
+            }
+
+            return redirect()->route('profile.addresses.index')
+                           ->with('error', $errorMessage);
+        }
+
+        // Check if this is primary address and there are other addresses
+        if ($address->is_primary && $addressCount > 1) {
+            $errorMessage = 'Cannot delete primary address. Please set another address as primary first.';
+            
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage
+                ], 400);
+            }
+
+            return redirect()->route('profile.addresses.index')
+                           ->with('error', $errorMessage);
+        }
+
+        $label = $address->label;
+
+        // Soft delete by setting is_active = false
+        $address->update(['is_active' => false]);
+
+        Log::info('Address soft deleted', [
+            'user_id' => $user->id,
+            'address_id' => $id,
+            'label' => $label
+        ]);
+
+        if (request()->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Address deleted successfully!'
+            ]);
+        }
+
+        return redirect()->route('profile.addresses.index')
+                       ->with('success', 'Address deleted successfully!');
+
+    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        Log::warning('Address not found for deletion', [
+            'user_id' => Auth::id(),
+            'address_id' => $id
+        ]);
+
+        if (request()->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Address not found'
+            ], 404);
+        }
+
+        return redirect()->route('profile.addresses.index')
+                       ->with('error', 'Address not found.');
+    } catch (\Exception $e) {
+        Log::error('Error deleting address: ' . $e->getMessage(), [
+            'user_id' => Auth::id(),
+            'address_id' => $id,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        if (request()->expectsJson()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete address'
+            ], 500);
+        }
+
+        return redirect()->route('profile.addresses.index')
+                       ->with('error', 'Failed to delete address.');
+    }
+}
     /**
      * Get address data for API/AJAX requests
      */
