@@ -29,13 +29,6 @@ let totalWeight = 1000;
 let taxRate = 0; // NO TAX
 let currentStep = 1;
 let selectedDestination = null;
-// Address data cache for hierarchical structure
-let addressData = {
-    provinces: [],
-    cities: [],
-    districts: [],
-    subDistricts: []
-};
 let isSubmittingOrder = false;
 let userHasPrimaryAddress = false;
 let primaryAddressId = null;
@@ -82,7 +75,6 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeVariables();
     initializeOrderSummary(); // ADDED: Initialize Order Summary
     setupEventListeners();
-    setupHierarchicalAddressForm();
     initializeAddressIntegration();
 
     // CRITICAL FIX: Auto-fill personal information from authenticated user
@@ -604,7 +596,6 @@ function initializeAddressIntegration() {
 
     setupAddressLabelSelection();
     setupLocationSearch();
-    setupHierarchicalAddressForm();
     setupSavedAddressSelection();
 
     // Auto-load primary address if available
@@ -1085,17 +1076,6 @@ function setupEventListeners() {
         });
     }
 
-    // Continue button for step 1
-const continueStep1 = document.getElementById("continue-step-1");
-if (continueStep1) {
-    continueStep1.addEventListener('click', function(e) {
-        e.preventDefault();
-        console.log('🎯 Step 1 continue clicked via event listener');
-        if (validateStep1()) {
-            showStep(2);
-        }
-    });
-}
     // FIXED: Override continue buttons with proper validation
     const continueStep2 = document.getElementById("continue-step-2");
     if (continueStep2) {
@@ -1134,9 +1114,14 @@ if (continueStep1) {
     });
 }
 
-// ENHANCED: Step 2 validation with better error handling
+// ============================================================================
+// COMPLETE REPLACEMENT CODE FOR enhanced-checkout.js
+// Ganti function-function lama dengan yang baru untuk hierarchical system
+// ============================================================================
+
+// STEP 1: REPLACE validateStep2Enhanced function
 function validateStep2Enhanced() {
-    console.log("🔍 Enhanced Step 2 validation starting...");
+    console.log("🔍 Enhanced Step 2 validation starting (HIERARCHICAL)...");
 
     let isValid = true;
     const errors = [];
@@ -1160,11 +1145,11 @@ function validateStep2Enhanced() {
     if (!savedAddressInput) {
         // No address selection made - this means customer wants to add new address
         console.log("No saved address selected - validating new address");
-        isValid = validateNewAddressForm(errors);
+        isValid = validateNewAddressFormHierarchical(errors); // CHANGED: Use hierarchical validation
     } else if (savedAddressInput.value === "new") {
         // New address explicitly selected
         console.log("New address explicitly selected");
-        isValid = validateNewAddressForm(errors);
+        isValid = validateNewAddressFormHierarchical(errors); // CHANGED: Use hierarchical validation
     } else {
         // Saved address selected, ensure it's loaded
         console.log("Saved address selected:", savedAddressInput.value);
@@ -1180,62 +1165,52 @@ function validateStep2Enhanced() {
     return true;
 }
 
-function validateNewAddressForm(errors) {
+// STEP 2: NEW FUNCTION - validateNewAddressFormHierarchical (REPLACE OLD validateNewAddressForm)
+function validateNewAddressFormHierarchical(errors) {
     let isValid = true;
 
-    // Required fields validation
-    const requiredFields = [
-    { id: "recipient_name", name: "Recipient Name" },
-    { id: "phone_recipient", name: "Recipient Phone" },
-    { id: "street_address", name: "Street Address" },
-    { id: "province_name", name: "Province" },
-    { id: "city_name", name: "City" },
-    { id: "district_name", name: "District" },
-    { id: "sub_district_name", name: "Sub District" },
-    { id: "postal_code", name: "Postal Code" },
-    { id: "destination_id", name: "Destination ID" },
-];
+    console.log("🔍 Validating hierarchical address form...");
 
-    requiredFields.forEach((field) => {
+    // Required fields validation - UPDATED untuk hierarchical system
+    const requiredFields = [
+        { id: "recipient_name", name: "Recipient Name" },
+        { id: "phone_recipient", name: "Recipient Phone" },
+        { id: "street_address", name: "Street Address" },
+        { id: "checkout_province_id", name: "Province" },
+        { id: "checkout_city_id", name: "City" },
+        { id: "checkout_district_id", name: "District" },
+        { id: "checkout_sub_district_id", name: "Sub District" },
+    ];
+
+    requiredFields.forEach(field => {
         const element = document.getElementById(field.id);
         if (!element || !element.value.trim()) {
-            // For location fields, give more specific error message
-            if (
-                [
-                    "province_name",
-                    "city_name",
-                    "subdistrict_name",
-                    "postal_code",
-                    "destination_id",
-                ].includes(field.id)
-            ) {
-                if (
-                    !errors.includes(
-                        "Please select a delivery location from the search results"
-                    )
-                ) {
-                    errors.push(
-                        "Please select a delivery location from the search results"
-                    );
-                }
-            } else {
-                errors.push(field.name + " is required");
-            }
-            isValid = false;
-
-            // Add error styling
+            errors.push(`${field.name} is required`);
             if (element) {
                 element.classList.add("border-red-500");
             }
+            isValid = false;
         }
     });
 
-    // Special handling for location search field
-    if (!document.getElementById("destination_id")?.value.trim()) {
-        const locationSearch = document.getElementById("location_search");
-        if (locationSearch) {
-            locationSearch.classList.add("border-red-500");
+    // CRITICAL: Validate destination_id is set (for shipping calculation)
+    const destinationId = document.getElementById('destination_id');
+    if (!destinationId || !destinationId.value) {
+        errors.push('Please complete the location selection');
+        // Highlight the sub-district select as it should trigger destination_id
+        const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+        if (subDistrictSelect) {
+            subDistrictSelect.classList.add("border-red-500");
         }
+        isValid = false;
+    }
+
+    // Validate postal code (if field exists)
+    const postalCodeField = document.getElementById('checkout_postal_code');
+    if (postalCodeField && !postalCodeField.value.trim()) {
+        errors.push('Postal code is required');
+        postalCodeField.classList.add("border-red-500");
+        isValid = false;
     }
 
     // Phone number format validation
@@ -1243,34 +1218,17 @@ function validateNewAddressForm(errors) {
     if (phoneInput && phoneInput.value) {
         const phoneRegex = /^[0-9+\-\s\(\)]{10,}$/;
         if (!phoneRegex.test(phoneInput.value.trim())) {
-            errors.push(
-                "Please enter a valid phone number (minimum 10 digits)"
-            );
+            errors.push("Please enter a valid phone number (minimum 10 digits)");
             isValid = false;
             phoneInput.classList.add("border-red-500");
         }
     }
 
-    // Postal code format validation
-    const postalInput = document.getElementById("postal_code");
-    if (postalInput && postalInput.value) {
-        const postalRegex = /^[0-9]{5}$/;
-        if (!postalRegex.test(postalInput.value.trim())) {
-            errors.push("Postal code must be exactly 5 digits");
-            isValid = false;
-            postalInput.classList.add("border-red-500");
-        }
-    }
-
     // Address label validation
-    const addressLabel = document.querySelector(
-        'input[name="address_label"]:checked'
-    );
+    const addressLabel = document.querySelector('input[name="address_label"]:checked');
     if (!addressLabel) {
         // Auto-set to "Rumah" if not selected
-        const rumahOption = document.querySelector(
-            'input[name="address_label"][value="Rumah"]'
-        );
+        const rumahOption = document.querySelector('input[name="address_label"][value="Rumah"]');
         if (rumahOption) {
             rumahOption.checked = true;
             if (typeof updateAddressLabelStyles === "function") {
@@ -1284,33 +1242,33 @@ function validateNewAddressForm(errors) {
 
     // Fill legacy fields if validation passes
     if (isValid) {
-        fillLegacyFieldsForValidation();
+        fillLegacyFieldsFromHierarchical();
     }
 
+    console.log(`Validation result: ${isValid ? 'PASSED' : 'FAILED'}`);
     return isValid;
 }
 
-// Tambahkan fungsi baru ini di enhanced-checkout.js:
-function fillLegacyFieldsForValidation() {
-    console.log("🔧 Filling legacy fields for form submission...");
+// STEP 3: NEW FUNCTION - fillLegacyFieldsFromHierarchical
+function fillLegacyFieldsFromHierarchical() {
+    console.log("🔧 Filling legacy fields from hierarchical system...");
 
-    const streetAddress =
-        document.getElementById("street_address")?.value || "";
-    const provinceName = document.getElementById("province_name")?.value || "";
-    const cityName = document.getElementById("city_name")?.value || "";
-    const subdistrictName =
-        document.getElementById("subdistrict_name")?.value || "";
-    const postalCode = document.getElementById("postal_code")?.value || "";
+    const streetAddress = document.getElementById("street_address")?.value || "";
+    const provinceName = document.getElementById("checkout_province_name")?.value || "";
+    const cityName = document.getElementById("checkout_city_name")?.value || "";
+    const districtName = document.getElementById("checkout_district_name")?.value || "";
+    const subDistrictName = document.getElementById("checkout_sub_district_name")?.value || "";
+    const postalCode = document.getElementById("checkout_postal_code")?.value || "";
 
     // Create full address string
-    const fullAddress = `${streetAddress}, ${subdistrictName}, ${cityName}, ${provinceName} ${postalCode}`;
-    const locationString = `${subdistrictName}, ${cityName}, ${provinceName}`;
+    const fullAddress = `${streetAddress}, ${subDistrictName}, ${districtName}, ${cityName}, ${provinceName} ${postalCode}`.trim();
+    const locationString = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`.trim();
 
     // Set legacy fields
     setFieldValueSafe("legacy_address", fullAddress);
     setFieldValueSafe("legacy_destination_label", locationString);
-
-    // Also set the main address fields for form submission
+    
+    // Also set the main fields for form submission
     setFieldValueSafe("address", fullAddress);
     setFieldValueSafe("destination_label", locationString);
 
@@ -1319,6 +1277,193 @@ function fillLegacyFieldsForValidation() {
         destination_label: locationString,
     });
 }
+
+// STEP 4: NEW FUNCTION - setupHierarchicalLocationHandlers
+function setupHierarchicalLocationHandlers() {
+    console.log("🔧 Setting up hierarchical location handlers...");
+    
+    const provinceSelect = document.getElementById('checkout_province_id');
+    const citySelect = document.getElementById('checkout_city_id');
+    const districtSelect = document.getElementById('checkout_district_id');
+    const subDistrictSelect = document.getElementById('checkout_sub_district_id');
+
+    if (!provinceSelect || !citySelect || !districtSelect || !subDistrictSelect) {
+        console.log('⚠️ Hierarchical select elements not found');
+        return;
+    }
+
+    // CRITICAL: Sub-district change handler - Set destination_id
+    subDistrictSelect.addEventListener('change', function() {
+        const subDistrictId = this.value;
+        const subDistrictName = this.options[this.selectedIndex].text;
+        const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
+        
+        console.log('📍 Sub-district selected:', {
+            id: subDistrictId,
+            name: subDistrictName,
+            zipCode: zipCode
+        });
+        
+        if (subDistrictId) {
+            // Set hidden field values
+            document.getElementById('checkout_sub_district_name').value = subDistrictName;
+            
+            // CRITICAL: Set destination_id for shipping calculation
+            document.getElementById('destination_id').value = subDistrictId;
+            
+            // Set postal code if available
+            if (zipCode) {
+                const postalCodeField = document.getElementById('checkout_postal_code');
+                const postalCodeDisplayField = document.getElementById('checkout_postal_code_display');
+                if (postalCodeField) {
+                    postalCodeField.value = zipCode;
+                }
+                if (postalCodeDisplayField) {
+                    postalCodeDisplayField.value = zipCode;
+                }
+            }
+            
+            // Create destination label for display
+            const provinceName = document.getElementById('checkout_province_name').value;
+            const cityName = document.getElementById('checkout_city_name').value;
+            const districtName = document.getElementById('checkout_district_name').value;
+            
+            const destinationLabel = `${subDistrictName}, ${districtName}, ${cityName}, ${provinceName}`;
+            
+            // Update legacy fields for backward compatibility
+            const legacyAddressField = document.getElementById('legacy_address');
+            const legacyDestinationField = document.getElementById('legacy_destination_label');
+            
+            if (legacyAddressField) {
+                legacyAddressField.value = destinationLabel;
+            }
+            if (legacyDestinationField) {
+                legacyDestinationField.value = destinationLabel;
+            }
+            
+            // Update selectedDestination global variable
+            selectedDestination = {
+                destination_id: subDistrictId,
+                location_id: subDistrictId,
+                sub_district_id: subDistrictId,
+                sub_district_name: subDistrictName,
+                district_name: districtName,
+                city_name: cityName,
+                province_name: provinceName,
+                postal_code: zipCode,
+                full_address: destinationLabel,
+                label: destinationLabel
+            };
+            
+            console.log('✅ Destination set:', selectedDestination);
+            
+            // Auto-calculate shipping if we're on step 3
+            if (currentStep >= 3) {
+                setTimeout(() => {
+                    calculateShipping();
+                }, 500);
+            }
+            
+        } else {
+            // Clear destination_id if no sub-district selected
+            document.getElementById('destination_id').value = '';
+            selectedDestination = null;
+            console.log('🗑️ Destination cleared');
+        }
+    });
+}
+
+// STEP 5: ENHANCED DOMContentLoaded event listener
+// TAMBAHKAN INI KE DOMContentLoaded yang sudah ada atau ganti yang lama
+function initializeHierarchicalCheckout() {
+    console.log('🚀 Enhanced checkout hierarchical system initializing...');
+    
+    // Setup hierarchical location handlers - TAMBAHAN BARU
+    setupHierarchicalLocationHandlers();
+    
+    // Initialize existing systems
+    if (typeof initializeOrderSummary === 'function') {
+        initializeOrderSummary();
+    }
+    if (typeof setupEventListeners === 'function') {
+        setupEventListeners();
+    }
+    
+    console.log('✅ Enhanced checkout system ready with hierarchical support');
+}
+
+// Call initialization
+document.addEventListener('DOMContentLoaded', function() {
+    initializeHierarchicalCheckout();
+});
+
+// STEP 6: UTILITY FUNCTIONS untuk debugging
+function debugHierarchicalFields() {
+    console.log('🔍 Debug Hierarchical Fields:');
+    
+    const fieldMap = {
+        'recipient_name': document.getElementById('recipient_name')?.value || 'NOT FOUND',
+        'phone_recipient': document.getElementById('phone_recipient')?.value || 'NOT FOUND',
+        'street_address': document.getElementById('street_address')?.value || 'NOT FOUND',
+        'checkout_province_id': document.getElementById('checkout_province_id')?.value || 'NOT FOUND',
+        'checkout_province_name': document.getElementById('checkout_province_name')?.value || 'NOT FOUND',
+        'checkout_city_id': document.getElementById('checkout_city_id')?.value || 'NOT FOUND',
+        'checkout_city_name': document.getElementById('checkout_city_name')?.value || 'NOT FOUND',
+        'checkout_district_id': document.getElementById('checkout_district_id')?.value || 'NOT FOUND',
+        'checkout_district_name': document.getElementById('checkout_district_name')?.value || 'NOT FOUND',
+        'checkout_sub_district_id': document.getElementById('checkout_sub_district_id')?.value || 'NOT FOUND',
+        'checkout_sub_district_name': document.getElementById('checkout_sub_district_name')?.value || 'NOT FOUND',
+        'checkout_postal_code': document.getElementById('checkout_postal_code')?.value || 'NOT FOUND',
+        'destination_id': document.getElementById('destination_id')?.value || 'NOT FOUND'
+    };
+    
+    Object.entries(fieldMap).forEach(([key, value]) => {
+        console.log(`   ${key}: ${value}`);
+    });
+    
+    console.log('   selectedDestination:', selectedDestination);
+}
+
+// STEP 7: HELPER FUNCTION untuk set field values
+function setFieldValueSafe(fieldId, value) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+        field.value = value || "";
+    } else {
+        // If field doesn't exist, create hidden input
+        const hiddenField = document.createElement("input");
+        hiddenField.type = "hidden";
+        hiddenField.id = fieldId;
+        hiddenField.name = fieldId;
+        hiddenField.value = value || "";
+
+        // Add to the form
+        const form = document.getElementById("checkout-form");
+        if (form) {
+            form.appendChild(hiddenField);
+        }
+    }
+}
+
+// Make functions available globally
+window.debugHierarchicalFields = debugHierarchicalFields;
+window.validateNewAddressFormHierarchical = validateNewAddressFormHierarchical;
+window.fillLegacyFieldsFromHierarchical = fillLegacyFieldsFromHierarchical;
+window.setupHierarchicalLocationHandlers = setupHierarchicalLocationHandlers;
+
+console.log('🎯 Hierarchical checkout system loaded successfully!');
+
+// ============================================================================
+// IMPLEMENTATION INSTRUCTIONS:
+// ============================================================================
+// 1. BACKUP your current enhanced-checkout.js file
+// 2. COPY semua code di atas dan PASTE ke enhanced-checkout.js
+// 3. COMMENT OUT function validateNewAddressForm yang lama 
+// 4. COMMENT OUT function fillLegacyFieldsForValidation yang lama
+// 5. FIND dan REPLACE validateNewAddressForm(errors) dengan validateNewAddressFormHierarchical(errors)
+// 6. Test dengan debugHierarchicalFields() di browser console
+// 7. Pastikan tidak ada duplicate DOMContentLoaded listeners
+// ============================================================================
 
 // Tambahkan fungsi utility ini di enhanced-checkout.js:
 function setFieldValueSafe(fieldId, value) {
@@ -1390,8 +1535,16 @@ function showValidationErrors(errors) {
 
 // Step navigation functions
 function nextStep(step) {
-    console.log('🔄 Moving to step:', step);
-    showStep(step);
+    if (validateCurrentStep()) {
+        showStep(step);
+
+        // Auto-calculate shipping when reaching step 3
+        if (step === 3 && selectedDestination) {
+            setTimeout(() => {
+                calculateShipping();
+            }, 500);
+        }
+    }
 }
 
 function prevStep(step) {
@@ -1438,7 +1591,6 @@ function showStep(step) {
 }
 
 function validateCurrentStep() {
-    console.log('🔍 Validating current step:', currentStep);
     switch (currentStep) {
         case 1:
             return validateStep1();
@@ -1456,10 +1608,13 @@ function validateStep1() {
     const lastName = document.getElementById("last_name")?.value.trim();
     const email = document.getElementById("email")?.value.trim();
     const phone = document.getElementById("phone")?.value.trim();
-    const privacyAccepted = document.getElementById("privacy_accepted")?.checked;
+    const privacyAccepted =
+        document.getElementById("privacy_accepted")?.checked;
 
     if (!firstName || !lastName || !email || !phone) {
-        alert("Please fill in all required fields: First name, Last name, Email, and Phone.");
+        alert(
+            "Please fill in all required fields: First name, Last name, Email, and Phone."
+        );
         return false;
     }
 
@@ -1477,7 +1632,9 @@ function validateStep1() {
     const createAccount = document.getElementById("create_account")?.checked;
     if (createAccount) {
         const password = document.getElementById("password")?.value;
-        const passwordConfirmation = document.getElementById("password_confirmation")?.value;
+        const passwordConfirmation = document.getElementById(
+            "password_confirmation"
+        )?.value;
 
         if (!password || password.length < 8) {
             alert("Password must be at least 8 characters long.");
@@ -2435,350 +2592,6 @@ function checkAppliedPoints() {
     }
 }
 
-// ===========================================
-// HIERARCHICAL ADDRESS FUNCTIONS
-// ===========================================
-
-function setupHierarchicalAddressForm() {
-    console.log("🏗️ Setting up hierarchical address form");
-    
-    const provinceSelect = document.getElementById('province_id');
-    if (!provinceSelect) {
-        console.log("Province select not found, keeping existing search system");
-        return;
-    }
-    
-    loadProvinces();
-    setupAddressCascade();
-}
-
-function setupAddressCascade() {
-    const provinceSelect = document.getElementById('province_id');
-    if (provinceSelect) {
-        provinceSelect.addEventListener('change', function() {
-            const provinceId = this.value;
-            const provinceName = this.options[this.selectedIndex].text;
-            
-            if (provinceId) {
-                document.getElementById('province_name').value = provinceName;
-                loadCities(provinceId);
-                resetSelect('city_id', 'Loading cities...');
-                resetSelect('district_id', 'Select city first...');
-                resetSelect('sub_district_id', 'Select district first...');
-                clearLocationData();
-            } else {
-                clearAllLocationData();
-            }
-        });
-    }
-    
-    const citySelect = document.getElementById('city_id');
-    if (citySelect) {
-        citySelect.addEventListener('change', function() {
-            const cityId = this.value;
-            const cityName = this.options[this.selectedIndex].text;
-            
-            if (cityId) {
-                document.getElementById('city_name').value = cityName;
-                loadDistricts(cityId);
-                resetSelect('district_id', 'Loading districts...');
-                resetSelect('sub_district_id', 'Select district first...');
-                clearLocationData();
-            } else {
-                document.getElementById('city_name').value = '';
-                resetSelect('district_id', 'Select city first...');
-                resetSelect('sub_district_id', 'Select district first...');
-                clearLocationData();
-            }
-        });
-    }
-    
-    const districtSelect = document.getElementById('district_id');
-    if (districtSelect) {
-        districtSelect.addEventListener('change', function() {
-            const districtId = this.value;
-            const districtName = this.options[this.selectedIndex].text;
-            
-            if (districtId) {
-                document.getElementById('district_name').value = districtName;
-                loadSubDistricts(districtId);
-                resetSelect('sub_district_id', 'Loading sub-districts...');
-                clearLocationData();
-            } else {
-                document.getElementById('district_name').value = '';
-                resetSelect('sub_district_id', 'Select district first...');
-                clearLocationData();
-            }
-        });
-    }
-    
-    const subDistrictSelect = document.getElementById('sub_district_id');
-    if (subDistrictSelect) {
-        subDistrictSelect.addEventListener('change', function() {
-            const subDistrictId = this.value;
-            const subDistrictName = this.options[this.selectedIndex].text;
-            const zipCode = this.options[this.selectedIndex].getAttribute('data-zip');
-            
-            if (subDistrictId) {
-                document.getElementById('sub_district_name').value = subDistrictName;
-                document.getElementById('destination_id').value = subDistrictId;
-                
-                if (zipCode) {
-                    setFieldValueSafe('postal_code', zipCode);
-                    setFieldValueSafe('postal_code_display', zipCode);
-                }
-                
-                updateSelectedDestinationFromHierarchy();
-            } else {
-                clearLocationData();
-            }
-        });
-    }
-}
-
-async function loadProvinces() {
-    try {
-        const response = await fetch('/api/provinces', {
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            }
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            const provinces = data.rajaongkir?.results || data.data || data || [];
-            
-            populateSelect('province_id', provinces.map(province => ({
-                id: province.province_id || province.id,
-                name: province.province || province.name
-            })), 'Select Province...');
-            
-            addressData.provinces = provinces;
-        }
-    } catch (error) {
-        console.error('Error loading provinces:', error);
-    }
-}
-
-async function loadCities(provinceId) {
-    try {
-        const response = await fetch(`/api/cities?province=${provinceId}`, {
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            }
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            const cities = data.rajaongkir?.results || data.data || data || [];
-            
-            populateSelect('city_id', cities.map(city => ({
-                id: city.city_id || city.id,
-                name: city.city_name || city.name
-            })), 'Select City...');
-            
-            addressData.cities = cities;
-            document.getElementById('city_id').disabled = false;
-        }
-    } catch (error) {
-        console.error('Error loading cities:', error);
-    }
-}
-
-async function loadDistricts(cityId) {
-    try {
-        const response = await fetch(`/api/subdistricts?city=${cityId}`, {
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            }
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            const subdistricts = data.rajaongkir?.results || data.data || data || [];
-            
-            const districts = new Map();
-            subdistricts.forEach(sub => {
-                const subdistrictName = sub.subdistrict_name || sub.name;
-                const districtName = subdistrictName.split(',')[0].trim();
-                
-                if (!districts.has(districtName)) {
-                    districts.set(districtName, {
-                        id: sub.subdistrict_id || sub.id,
-                        name: districtName
-                    });
-                }
-            });
-            
-            const districtArray = Array.from(districts.values());
-            populateSelect('district_id', districtArray, 'Select District...');
-            addressData.districts = districtArray;
-            addressData.subDistricts = subdistricts;
-            
-            document.getElementById('district_id').disabled = false;
-        }
-    } catch (error) {
-        console.error('Error loading districts:', error);
-    }
-}
-
-async function loadSubDistricts(districtId) {
-    try {
-        const districtName = document.getElementById('district_name').value;
-        const filteredSubdistricts = addressData.subDistricts.filter(sub => {
-            const subdistrictName = sub.subdistrict_name || sub.name;
-            return subdistrictName.startsWith(districtName);
-        });
-        
-        populateSelectWithZip('sub_district_id', filteredSubdistricts.map(sub => ({
-            id: sub.subdistrict_id || sub.id,
-            name: sub.subdistrict_name || sub.name,
-            zip_code: extractZipCode(sub.subdistrict_name || sub.name)
-        })), 'Select Sub-District...');
-        
-        document.getElementById('sub_district_id').disabled = false;
-    } catch (error) {
-        console.error('Error loading sub-districts:', error);
-    }
-}
-
-function extractZipCode(subdistrictName) {
-    const match = subdistrictName.match(/\b(\d{5})\b/);
-    return match ? match[1] : null;
-}
-
-function populateSelect(selectId, data, placeholder) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-    
-    select.innerHTML = `<option value="">${placeholder}</option>`;
-    
-    data.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.name;
-        select.appendChild(option);
-    });
-}
-
-function populateSelectWithZip(selectId, data, placeholder) {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-    
-    select.innerHTML = `<option value="">${placeholder}</option>`;
-    
-    data.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.name;
-        if (item.zip_code) {
-            option.setAttribute('data-zip', item.zip_code);
-        }
-        select.appendChild(option);
-    });
-}
-
-function resetSelect(selectId, placeholder) {
-    const select = document.getElementById(selectId);
-    if (select) {
-        select.innerHTML = `<option value="">${placeholder}</option>`;
-        select.disabled = true;
-    }
-}
-
-function clearLocationData() {
-    setFieldValueSafe('postal_code', '');
-    setFieldValueSafe('postal_code_display', '');
-    setFieldValueSafe('destination_id', '');
-}
-
-function clearAllLocationData() {
-    setFieldValueSafe('province_name', '');
-    setFieldValueSafe('city_name', '');
-    setFieldValueSafe('district_name', '');
-    setFieldValueSafe('sub_district_name', '');
-    clearLocationData();
-    
-    resetSelect('city_id', 'Select province first...');
-    resetSelect('district_id', 'Select city first...');
-    resetSelect('sub_district_id', 'Select district first...');
-}
-
-function updateSelectedDestinationFromHierarchy() {
-    const provinceName = document.getElementById('province_name')?.value || '';
-    const cityName = document.getElementById('city_name')?.value || '';
-    const districtName = document.getElementById('district_name')?.value || '';
-    const subDistrictName = document.getElementById('sub_district_name')?.value || '';
-    const streetAddress = document.getElementById('street_address')?.value || '';
-    const postalCode = document.getElementById('postal_code')?.value || '';
-    const destinationId = document.getElementById('destination_id')?.value || '';
-    
-    if (destinationId) {
-        const addressParts = [streetAddress, subDistrictName, districtName, cityName, provinceName, postalCode].filter(part => part.trim());
-        const fullAddress = addressParts.join(', ');
-        
-        selectedDestination = {
-            location_id: destinationId,
-            destination_id: destinationId,
-            label: fullAddress,
-            full_address: fullAddress,
-            province_name: provinceName,
-            city_name: cityName,
-            district_name: districtName,
-            subdistrict_name: subDistrictName,
-            postal_code: postalCode
-        };
-        
-        setFieldValueSafe('legacy_address', fullAddress);
-        setFieldValueSafe('legacy_destination_label', [subDistrictName, districtName, cityName, provinceName].filter(p => p).join(', '));
-        
-        console.log('📍 Selected destination updated from hierarchy:', selectedDestination);
-    }
-}
-
-// Manual continue handler for step 1
-function handleContinueStep1() {
-    console.log('🎯 Step 1 continue clicked');
-    
-    // Basic validation
-    const firstName = document.getElementById("first_name")?.value.trim();
-    const lastName = document.getElementById("last_name")?.value.trim();
-    const email = document.getElementById("email")?.value.trim();
-    const phone = document.getElementById("phone")?.value.trim();
-    const privacyAccepted = document.getElementById("privacy_accepted")?.checked;
-
-    console.log('Form data:', { firstName, lastName, email, phone, privacyAccepted });
-
-    if (!firstName || !lastName || !email || !phone) {
-        alert("Please fill in all required fields: First name, Last name, Email, and Phone.");
-        return;
-    }
-
-    if (!privacyAccepted) {
-        alert("Please accept the privacy policy to continue.");
-        return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        alert("Please enter a valid email address.");
-        return;
-    }
-
-    // If validation passes, move to step 2
-    console.log('✅ Step 1 validation passed, moving to step 2');
-    showStep(2);
-}
-
-// Export function globally
-window.handleContinueStep1 = handleContinueStep1;
-
 // Make functions available globally for onclick handlers
 window.nextStep = nextStep;
 window.prevStep = prevStep;
@@ -2793,13 +2606,6 @@ window.loadSavedAddress = loadSavedAddress;
 window.showNewAddressForm = showNewAddressForm;
 window.updateAddressLabelStyles = updateAddressLabelStyles;
 window.updateOrderSummaryTotals = updateOrderSummaryTotals;
-window.setupHierarchicalAddressForm = setupHierarchicalAddressForm;
-window.loadProvinces = loadProvinces;
-window.loadCities = loadCities;
-window.loadDistricts = loadDistricts;
-window.loadSubDistricts = loadSubDistricts;
-
-
 
 console.log(
     "🎯 Complete checkout fix loaded successfully - NO TAX VERSION + VOUCHER SYSTEM!"
