@@ -557,56 +557,51 @@ public function destroy($id)
     /**
      * Get address data for API/AJAX requests
      */
-    public function show($id)
-    {
-        if (!Auth::check()) {
-            return response()->json(['success' => false, 'message' => 'Authentication required'], 401);
-        }
-
-        try {
-            $user = Auth::user();
-            $address = UserAddress::where('user_id', $user->id)
-                          ->where('is_active', true)
-                          ->findOrFail($id);
-
-            return response()->json([
-                'success' => true,
-                'address' => [
-                    'id' => $address->id,
-                    'label' => $address->label,
-                    'recipient_name' => $address->recipient_name,
-                    'phone_recipient' => $address->phone_recipient,
-                    'province_name' => $address->province_name,
-                    'city_name' => $address->city_name,
-                    'subdistrict_name' => $address->subdistrict_name,
-                    'postal_code' => $address->postal_code,
-                    'destination_id' => $address->destination_id,
-                    'street_address' => $address->street_address,
-                    'notes' => $address->notes,
-                    'is_primary' => $address->is_primary,
-                    'full_address' => $address->full_address,
-                    'location_string' => $address->location_string,
-                    'recipient_info' => $address->recipient_info
-                ]
-            ]);
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Address not found'
-            ], 404);
-        } catch (\Exception $e) {
-            Log::error('Error getting address data: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
-                'address_id' => $id
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get address data'
-            ], 500);
-        }
+public function show($id)
+{
+    $address = UserAddress::where('id', $id)
+                         ->where('user_id', Auth::id())
+                         ->first();
+    
+    if (!$address) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Address not found'
+        ], 404);
     }
+    
+    // Pastikan semua field ada
+    $addressData = [
+        'id' => $address->id,
+        'label' => $address->label,
+        'recipient_name' => $address->recipient_name,
+        'phone_recipient' => $address->phone_recipient,
+        'street_address' => $address->street_address,
+        
+        // Hierarchical IDs (CRITICAL)
+        'province_id' => $address->province_id,
+        'city_id' => $address->city_id,
+        'district_id' => $address->district_id,
+        'sub_district_id' => $address->sub_district_id,
+        
+        // Names
+        'province_name' => $address->province_name,
+        'city_name' => $address->city_name,
+        'district_name' => $address->district_name,
+        'sub_district_name' => $address->sub_district_name,
+        
+        // Other
+        'postal_code' => $address->postal_code,
+        'destination_id' => $address->destination_id,
+        'full_address' => $address->full_address,
+        'location_string' => $address->location_string
+    ];
+    
+    return response()->json([
+        'success' => true,
+        'address' => $addressData
+    ]);
+}
 
     /**
      * Get all user addresses for API/AJAX requests

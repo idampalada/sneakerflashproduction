@@ -232,6 +232,80 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load provinces dan setup cascade
     loadProvinces();
+    
+    // Province change handler
+    document.getElementById('province_id').addEventListener('change', function() {
+        const provinceId = this.value;
+        const provinceName = this.options[this.selectedIndex].text;
+        
+        console.log('Province changed:', provinceId, provinceName);
+        
+        if (provinceId) {
+            document.getElementById('province_name').value = provinceName;
+            selectProvince(provinceId);
+        } else {
+            // Clear dependent dropdowns
+            document.getElementById('province_name').value = '';
+            clearCities();
+            clearDistricts();
+            clearSubDistricts();
+        }
+    });
+    
+    // City change handler
+    document.getElementById('city_id').addEventListener('change', function() {
+        const cityId = this.value;
+        const cityName = this.options[this.selectedIndex].text;
+        
+        console.log('City changed:', cityId, cityName);
+        
+        if (cityId) {
+            document.getElementById('city_name').value = cityName;
+            selectCity(cityId);
+        } else {
+            document.getElementById('city_name').value = '';
+            clearDistricts();
+            clearSubDistricts();
+        }
+    });
+    
+    // District change handler
+    document.getElementById('district_id').addEventListener('change', function() {
+        const districtId = this.value;
+        const districtName = this.options[this.selectedIndex].text;
+        
+        console.log('District changed:', districtId, districtName);
+        
+        if (districtId) {
+            document.getElementById('district_name').value = districtName;
+            selectDistrict(districtId);
+        } else {
+            document.getElementById('district_name').value = '';
+            clearSubDistricts();
+        }
+    });
+    
+    // Sub-district change handler
+    document.getElementById('sub_district_id').addEventListener('change', function() {
+        const subDistrictId = this.value;
+        const selectedOption = this.options[this.selectedIndex];
+        const subDistrictName = selectedOption.text;
+        const zipCode = selectedOption.getAttribute('data-zip');
+        
+        console.log('Sub-district changed:', subDistrictId, subDistrictName, zipCode);
+        
+        if (subDistrictId) {
+            document.getElementById('sub_district_name').value = subDistrictName;
+            
+            // Update postal code jika ada
+            if (zipCode && zipCode !== '0') {
+                document.getElementById('postal_code').value = zipCode;
+            }
+        } else {
+            document.getElementById('sub_district_name').value = '';
+            document.getElementById('postal_code').value = '';
+        }
+    });
 });
 
 // Load provinces menggunakan endpoint yang benar
@@ -239,37 +313,22 @@ async function loadProvinces() {
     try {
         console.log('🌍 Loading provinces...');
         
-        // Coba beberapa endpoint yang mungkin ada
-        const endpoints = [
-            '/api/location/provinces',
-            '/api/addresses/hierarchical/provinces', 
-            '/provinces'
-        ];
+        // Gunakan endpoint yang benar sesuai dengan routes
+        const response = await fetch('/api/addresses/provinces');
+        const data = await response.json();
         
-        for (const endpoint of endpoints) {
-            try {
-                const response = await fetch(endpoint);
-                const data = await response.json();
-                
-                if (data.success && (data.provinces || data.data)) {
-                    const provinces = data.provinces || data.data;
-                    console.log('✅ Provinces loaded from:', endpoint, provinces.length, 'items');
-                    
-                    populateProvinces(provinces);
-                    
-                    // Auto-select current province jika ada
-                    if (currentAddress.province_id) {
-                        await selectProvince(currentAddress.province_id);
-                    }
-                    return;
-                }
-            } catch (e) {
-                console.log('❌ Endpoint failed:', endpoint, e.message);
-                continue;
+        if (data.success && data.data) {
+            console.log('✅ Provinces loaded successfully:', data.data.length, 'items');
+            
+            populateProvinces(data.data);
+            
+            // Auto-select current province jika ada
+            if (currentAddress.province_id) {
+                await selectProvince(currentAddress.province_id);
             }
+        } else {
+            console.error('❌ Failed to load provinces:', data.message);
         }
-        
-        console.error('❌ All province endpoints failed');
         
     } catch (error) {
         console.error('❌ Error loading provinces:', error);
@@ -300,36 +359,22 @@ async function selectProvince(provinceId) {
     try {
         console.log('🏙️ Loading cities for province:', provinceId);
         
-        const endpoints = [
-            `/api/location/cities/${provinceId}`,
-            `/api/addresses/hierarchical/cities/${provinceId}`,
-            `/cities/${provinceId}`
-        ];
+        // Gunakan endpoint yang benar
+        const response = await fetch(`/api/addresses/cities/${provinceId}`);
+        const data = await response.json();
         
-        for (const endpoint of endpoints) {
-            try {
-                const response = await fetch(endpoint);
-                const data = await response.json();
-                
-                if (data.success && (data.cities || data.data)) {
-                    const cities = data.cities || data.data;
-                    console.log('✅ Cities loaded from:', endpoint, cities.length, 'items');
-                    
-                    populateCities(cities);
-                    
-                    // Auto-select current city jika ada
-                    if (currentAddress.city_id) {
-                        await selectCity(currentAddress.city_id);
-                    }
-                    return;
-                }
-            } catch (e) {
-                console.log('❌ Cities endpoint failed:', endpoint, e.message);
-                continue;
+        if (data.success && data.data) {
+            console.log('✅ Cities loaded successfully:', data.data.length, 'items');
+            
+            populateCities(data.data);
+            
+            // Auto-select current city jika ada
+            if (currentAddress.city_id) {
+                await selectCity(currentAddress.city_id);
             }
+        } else {
+            console.error('❌ Failed to load cities:', data.message);
         }
-        
-        console.error('❌ All cities endpoints failed for province:', provinceId);
         
     } catch (error) {
         console.error('❌ Error loading cities:', error);
@@ -360,40 +405,49 @@ async function selectCity(cityId) {
     try {
         console.log('🏘️ Loading districts for city:', cityId);
         
-        const endpoints = [
-            `/api/location/districts/${cityId}`,
-            `/api/addresses/hierarchical/districts/${cityId}`,
-            `/districts/${cityId}`
-        ];
+        // Gunakan endpoint yang benar
+        const response = await fetch(`/api/addresses/districts/${cityId}`);
+        const data = await response.json();
         
-        for (const endpoint of endpoints) {
-            try {
-                const response = await fetch(endpoint);
-                const data = await response.json();
-                
-                if (data.success && (data.districts || data.data)) {
-                    const districts = data.districts || data.data;
-                    console.log('✅ Districts loaded from:', endpoint, districts.length, 'items');
-                    
-                    populateDistricts(districts);
-                    
-                    // Auto-select current district jika ada
-                    if (currentAddress.district_id) {
-                        await selectDistrict(currentAddress.district_id);
-                    }
-                    return;
-                }
-            } catch (e) {
-                console.log('❌ Districts endpoint failed:', endpoint, e.message);
-                continue;
+        if (data.success && data.data) {
+            console.log('✅ Districts loaded successfully:', data.data.length, 'items');
+            
+            populateDistricts(data.data);
+            
+            // Auto-select current district jika ada
+            if (currentAddress.district_id) {
+                await selectDistrict(currentAddress.district_id);
             }
+        } else {
+            console.error('❌ Failed to load districts:', data.message);
         }
-        
-        console.error('❌ All districts endpoints failed for city:', cityId);
         
     } catch (error) {
         console.error('❌ Error loading districts:', error);
     }
+}
+
+// Helper functions untuk clear dropdowns
+function clearCities() {
+    const citySelect = document.getElementById('city_id');
+    citySelect.innerHTML = '<option value="">Select province first...</option>';
+    citySelect.disabled = true;
+    document.getElementById('city_name').value = '';
+}
+
+function clearDistricts() {
+    const districtSelect = document.getElementById('district_id');
+    districtSelect.innerHTML = '<option value="">Select city first...</option>';
+    districtSelect.disabled = true;
+    document.getElementById('district_name').value = '';
+}
+
+function clearSubDistricts() {
+    const subDistrictSelect = document.getElementById('sub_district_id');
+    subDistrictSelect.innerHTML = '<option value="">Select district first...</option>';
+    subDistrictSelect.disabled = true;
+    document.getElementById('sub_district_name').value = '';
+    document.getElementById('postal_code').value = '';
 }
 
 // Populate district dropdown
@@ -420,21 +474,25 @@ async function selectDistrict(districtId) {
     try {
         console.log('🏠 Loading sub-districts for district:', districtId);
         
-        const response = await fetch(`/api/location/sub-districts/${districtId}`);
+        // Gunakan endpoint yang benar
+        const response = await fetch(`/api/addresses/sub-districts/${districtId}`);
         const data = await response.json();
         
         if (data.success && data.data) {
-            console.log('✅ Sub-districts loaded:', data.data.length, 'items');
+            console.log('✅ Sub-districts loaded successfully:', data.data.length, 'items');
             
             populateSubDistricts(data.data);
             
             // Auto-select current sub-district jika ada
             if (currentAddress.sub_district_id) {
-                selectSubDistrict(currentAddress.sub_district_id);
+                const subDistrictSelect = document.getElementById('sub_district_id');
+                subDistrictSelect.value = currentAddress.sub_district_id;
+                
+                // Trigger change event untuk update postal code
+                subDistrictSelect.dispatchEvent(new Event('change'));
             }
-            return;
         } else {
-            console.error('❌ Failed to load sub-districts:', data);
+            console.error('❌ Failed to load sub-districts:', data.message);
         }
         
     } catch (error) {
