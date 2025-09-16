@@ -238,7 +238,7 @@
                     </div>
 
                     <!-- Step 2: Delivery Information (Updated with Hierarchical) -->
-<div id="section-2" class="hidden">
+<div id="section-2" class="checkout-section hidden">
     <div class="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 class="text-xl font-bold text-gray-900 mb-4">📦 Delivery Information</h2>
         
