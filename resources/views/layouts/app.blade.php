@@ -479,11 +479,11 @@
 /* Tinggi banner (desktop=480) */
 .carousel-container{
  position:relative; width:100%;
- height:480px;                       /* iBox desktop */
+ height:700px;                       /* Naikan dari 480px ke 600px */
  overflow:hidden;
- background:transparent;               /* sama seperti iBox */
+ background:transparent;
  display:flex; align-items:center; justify-content:center;
- padding-bottom:50px;                 /* Tambahkan ruang untuk dots */
+ padding-bottom:50px;
 }
 
 /* Slide */
@@ -573,7 +573,7 @@
 
 @media (min-width: 1024px) {
     .carousel-container {
-        height: 480px !important; /* Desktop height */
+        height: 700px !important; /* Naikan dari 480px ke 600px */
     }
 }
 /* Hindari scrollbar horizontal dari full-bleed */

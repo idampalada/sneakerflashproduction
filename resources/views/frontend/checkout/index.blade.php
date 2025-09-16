@@ -1388,6 +1388,50 @@ function initializeCheckoutLocation() {
         }
     });
 }
+function resetNewAddressForm() {
+  // kosongkan input teks/hidden (TERMASUK street_address)
+  ['recipient_name','phone_recipient','street_address','checkout_postal_code',
+   'checkout_province_name','checkout_city_name','checkout_district_name','checkout_subdistrict_name',
+   'destination_id','destination_label'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  // kosongkan display postal
+  const postalDisplay = document.getElementById('checkout_postal_code_display');
+  if (postalDisplay) postalDisplay.value = '';
+
+  // reset radio label ke "Rumah"
+  const rumah = document.querySelector('input[name="address_label"][value="Rumah"]');
+  if (rumah) rumah.checked = true;
+
+  // reset select berantai
+  const province = document.getElementById('checkout_province_id');
+  const city     = document.getElementById('checkout_city_id');
+  const district = document.getElementById('checkout_district_id');
+  const subdist  = document.getElementById('checkout_sub_district_id');
+  if (province) province.value = '';
+  resetCheckoutSelect(city, 'Select province first...');
+  resetCheckoutSelect(district, 'Select city first...');
+  resetCheckoutSelect(subdist, 'Select district first...');
+
+  // hapus selectedDestination & shipping
+  window.selectedDestination = null;
+  const shipMethod = document.getElementById('shipping_method');
+  const shipCost   = document.getElementById('shipping_cost');
+  if (shipMethod) shipMethod.value = '';
+  if (shipCost)   shipCost.value   = 0;
+
+  // refresh tampilan biaya kirim
+  const shipDisp = document.querySelector('[data-shipping-display]') || document.getElementById('shipping-cost-display');
+  if (shipDisp) shipDisp.textContent = 'To be calculated';
+
+  // bersihkan state error/validasi yg mungkin nempel di street_address
+  const street = document.getElementById('street_address');
+  if (street) street.classList.remove('is-invalid','error');
+}
+
 
 function setupAddressSelectionToggle() {
     const useSavedBtn = document.getElementById('use-saved-address-btn');
@@ -1425,6 +1469,7 @@ function setupAddressSelectionToggle() {
         
         // Clear saved address selection
         checkoutSelectedAddress = null;
+        resetNewAddressForm();
         clearCheckoutDestination();
     });
 }
