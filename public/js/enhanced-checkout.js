@@ -745,63 +745,45 @@ function populateAddressForm(address) {
     if (primaryCheckbox) primaryCheckbox.checked = false;
 }
 
-function showNewAddressForm() {
-    console.log("📝 Showing new address form");
+function showNewAddressFormFixed() {
+    console.log("📝 Showing new address form (FIXED VERSION)");
 
     const newAddressForm = document.getElementById("new-address-form");
     if (newAddressForm) {
         newAddressForm.classList.remove("hidden");
     }
 
-    // FIXED: Get user data from meta tags and pre-fill
-    const authenticatedUserName =
-        document.querySelector('meta[name="authenticated-user-name"]')
-            ?.content || "";
-    const authenticatedUserPhone =
-        document.querySelector('meta[name="authenticated-user-phone"]')
-            ?.content || "";
-
-    // Pre-fill with user data
-    fillFieldIfEmpty("recipient_name", authenticatedUserName);
-    fillFieldIfEmpty("phone_recipient", authenticatedUserPhone);
-
-    // Clear other fields
-    document.getElementById("street_address").value = "";
-    document.getElementById("province_name").value = "";
-    document.getElementById("city_name").value = "";
-    document.getElementById("subdistrict_name").value = "";
-    document.getElementById("postal_code").value = "";
-    document.getElementById("destination_id").value = "";
-
-    // Clear legacy fields
-    const legacyAddress = document.getElementById("legacy_address");
-    const legacyDestinationLabel = document.getElementById(
-        "legacy_destination_label"
-    );
-    if (legacyAddress) legacyAddress.value = "";
-    if (legacyDestinationLabel) legacyDestinationLabel.value = "";
-
-    // Hide selected location
-    const selectedLocation = document.getElementById("selected-location");
-    if (selectedLocation) {
-        selectedLocation.classList.add("hidden");
-    }
+    // HANYA clear form jika dipanggil dari saved address selection
+    // TIDAK otomatis pre-fill dengan saved address data
+    
+    // Pre-fill HANYA dengan user data account
+    prefillUserDataOnly();
+    
+    // PASTIKAN semua address fields kosong
+    const addressOnlyFields = [
+        'street_address',
+        'province_name', 
+        'city_name',
+        'subdistrict_name',
+        'postal_code',
+        'destination_id',
+        'destination_label'
+    ];
+    
+    addressOnlyFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.value = '';
+        }
+    });
 
     // Reset selectedDestination
     selectedDestination = null;
 
-    // Reset address label to default
-    const rumahOption = document.querySelector(
-        'input[name="address_label"][value="Rumah"]'
-    );
-    if (rumahOption) {
-        rumahOption.checked = true;
-        updateAddressLabelStyles();
-    }
+    // Reset address label ke default
+    resetAddressLabelToDefault();
 
-    // Enable save options
-    const saveCheckbox = document.querySelector('input[name="save_address"]');
-    if (saveCheckbox) saveCheckbox.checked = true;
+    console.log("✅ New address form shown with clean fields");
 }
 
 function setupAddressLabelSelection() {
@@ -1121,7 +1103,7 @@ function setupEventListeners() {
 
 // STEP 1: REPLACE validateStep2Enhanced function
 function validateStep2Enhanced() {
-    console.log("🔍 Enhanced Step 2 validation starting (HIERARCHICAL)...");
+    console.log("🔍 Enhanced Step 2 validation starting (FIXED FOR SAVED ADDRESS)...");
 
     let isValid = true;
     const errors = [];
@@ -1137,32 +1119,44 @@ function validateStep2Enhanced() {
         el.classList.remove("border-red-500");
     });
 
-    // Check if using saved address or new address
-    const savedAddressInput = document.querySelector(
-        'input[name="saved_address_id"]:checked'
-    );
-
-    if (!savedAddressInput) {
-        // No address selection made - this means customer wants to add new address
-        console.log("No saved address selected - validating new address");
-        isValid = validateNewAddressFormHierarchical(errors); // CHANGED: Use hierarchical validation
-    } else if (savedAddressInput.value === "new") {
-        // New address explicitly selected
-        console.log("New address explicitly selected");
-        isValid = validateNewAddressFormHierarchical(errors); // CHANGED: Use hierarchical validation
+    // Check address selection method
+    const savedSection = document.getElementById('saved-addresses-section');
+    const newSection = document.getElementById('new-address-section');
+    
+    // FIXED: Cek apakah menggunakan saved address
+    if (savedSection && !savedSection.classList.contains('hidden')) {
+        // Menggunakan saved address - validasi berbeda
+        console.log("🏠 Validating saved address selection...");
+        
+        if (!checkoutSelectedAddress) {
+            errors.push('Please select a saved address');
+            isValid = false;
+        } else {
+            // Pastikan destination_id terisi
+            const destId = document.getElementById('destination_id');
+            if (!destId || !destId.value) {
+                console.error("❌ Destination ID missing for saved address");
+                errors.push('Address location data is incomplete');
+                isValid = false;
+            } else {
+                console.log("✅ Saved address validation passed");
+                // Auto-set required fields dari saved address
+                ensureSavedAddressFieldsSet();
+            }
+        }
     } else {
-        // Saved address selected, ensure it's loaded
-        console.log("Saved address selected:", savedAddressInput.value);
-        isValid = validateSavedAddressSelection(errors);
+        // Menggunakan new address - validasi hierarchical lengkap
+        console.log("📝 Validating new address form...");
+        isValid = validateNewAddressFormHierarchical(errors);
     }
 
-    if (!isValid) {
-        showValidationErrors(errors);
-        return false;
+    // Show errors if any
+    if (!isValid && errors.length > 0) {
+        showValidationErrors(errors, 'step2-errors', 'section-2');
     }
 
-    console.log("✅ Step 2 validation passed");
-    return true;
+    console.log(isValid ? "✅ Step 2 validation passed" : "❌ Step 2 validation failed");
+    return isValid;
 }
 
 // STEP 2: NEW FUNCTION - validateNewAddressFormHierarchical (REPLACE OLD validateNewAddressForm)
@@ -2621,3 +2615,381 @@ console.log("  - Cart data properly displayed in Order Summary");
 console.log("  - TAX COMPLETELY REMOVED from all calculations");
 console.log("  - VOUCHER SYSTEM integrated with proper event handling");
 console.log("  - MIDTRANS POPUP FIXED with robust fallback mechanism");
+
+// 2. PASTIKAN SAVED ADDRESS FIELDS TERISI
+function ensureSavedAddressFieldsSet() {
+    if (!checkoutSelectedAddress) return;
+    
+    console.log("🔧 Ensuring saved address fields are properly set...");
+    
+    const address = checkoutSelectedAddress;
+    
+    // Set semua field yang required
+    const fieldsToSet = {
+        'recipient_name': address.recipient_name,
+        'phone_recipient': address.phone_recipient,
+        'street_address': address.street_address,
+        'destination_id': address.destination_id,
+        'destination_label': address.location_string || address.full_address,
+        'province_name': address.province_name,
+        'city_name': address.city_name,
+        'subdistrict_name': address.subdistrict_name,
+        'postal_code': address.postal_code
+    };
+    
+    Object.entries(fieldsToSet).forEach(([fieldId, value]) => {
+        const field = document.getElementById(fieldId);
+        if (field && value) {
+            field.value = value;
+            console.log(`✅ Set ${fieldId}: ${value}`);
+        }
+    });
+    
+    // Set hidden input untuk saved_address_id
+    let savedAddressInput = document.querySelector('input[name="saved_address_id"]');
+    if (!savedAddressInput) {
+        savedAddressInput = document.createElement('input');
+        savedAddressInput.type = 'hidden';
+        savedAddressInput.name = 'saved_address_id';
+        document.querySelector('form').appendChild(savedAddressInput);
+    }
+    savedAddressInput.value = address.id;
+    
+    // Set selectedDestination untuk shipping calculation
+    selectedDestination = {
+        destination_id: address.destination_id,
+        id: address.destination_id,
+        label: address.location_string || address.full_address,
+        subdistrict_name: address.subdistrict_name || '',
+        city_name: address.city_name || '',
+        province_name: address.province_name || '',
+        postal_code: address.postal_code || ''
+    };
+    
+    console.log("🎯 selectedDestination set:", selectedDestination);
+}
+
+// 3. PERBAIKI FUNCTION selectSavedAddress
+function selectSavedAddressFixed(address) {
+    console.log('📍 Selected saved address:', address);
+    
+    // Check apakah sedang dalam saved address mode
+    const savedSection = document.getElementById('saved-addresses-section');
+    if (savedSection && savedSection.classList.contains('hidden')) {
+        console.log('⚠️ Not in saved address mode - ignoring selection');
+        return;
+    }
+    
+    // Lanjutkan dengan normal saved address logic
+    checkoutSelectedAddress = address;
+    
+    // Fill form fields
+    const fieldMappings = {
+        'recipient_name': address.recipient_name,
+        'phone_recipient': address.phone_recipient,
+        'street_address': address.street_address,
+        'destination_id': address.destination_id,
+        'destination_label': address.location_string || address.full_address,
+        'province_name': address.province_name,
+        'city_name': address.city_name,
+        'subdistrict_name': address.subdistrict_name,
+        'postal_code': address.postal_code
+    };
+    
+    Object.entries(fieldMappings).forEach(([fieldId, value]) => {
+        const field = document.getElementById(fieldId);
+        if (field && value !== undefined && value !== null) {
+            field.value = value;
+        }
+    });
+    
+    // Set selectedDestination
+    selectedDestination = {
+        destination_id: address.destination_id,
+        id: address.destination_id,
+        label: address.location_string || address.full_address,
+        subdistrict_name: address.subdistrict_name || '',
+        city_name: address.city_name || '',
+        province_name: address.province_name || '',
+        postal_code: address.postal_code || ''
+    };
+    
+    console.log('✅ Saved address filled (only in saved address mode)');
+}
+
+// 4. PERBAIKI FUNCTION nextStep untuk Step 2
+function nextStepFixed(step) {
+    console.log(`🚀 Moving to step ${step}...`);
+    
+    if (step === 2) {
+        // Validasi step 1 dulu
+        if (!validateStep1()) {
+            console.log("❌ Step 1 validation failed");
+            return;
+        }
+    } else if (step === 3) {
+        // Validasi step 2 dengan fix untuk saved address
+        if (!validateStep2Enhanced()) {
+            console.log("❌ Step 2 validation failed");
+            return;
+        }
+        
+        // Pastikan shipping cost sudah dihitung jika menggunakan saved address
+        if (checkoutSelectedAddress && selectedDestination) {
+            console.log("🚚 Ensuring shipping cost calculated for saved address...");
+            if (typeof calculateShippingCost === 'function') {
+                calculateShippingCost();
+            }
+        }
+    }
+    
+    // Hide current step
+    document.querySelectorAll('[id^="section-"]').forEach(section => {
+        section.classList.add('hidden');
+    });
+    
+    // Show target step
+    const targetSection = document.getElementById(`section-${step}`);
+    if (targetSection) {
+        targetSection.classList.remove('hidden');
+        
+        // Update progress indicator
+        updateProgressIndicator(step);
+        
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    
+    console.log(`✅ Successfully moved to step ${step}`);
+}
+
+// 5. FUNCTION HELPER UNTUK DEBUG
+function debugCheckoutState() {
+    console.log("🔍 CHECKOUT DEBUG STATE:");
+    console.log("checkoutSelectedAddress:", checkoutSelectedAddress);
+    console.log("selectedDestination:", selectedDestination);
+    
+    const destId = document.getElementById('destination_id');
+    console.log("destination_id field value:", destId ? destId.value : 'NOT FOUND');
+    
+    const savedAddressInput = document.querySelector('input[name="saved_address_id"]');
+    console.log("saved_address_id input:", savedAddressInput ? savedAddressInput.value : 'NOT FOUND');
+    
+    const recipientName = document.getElementById('recipient_name');
+    console.log("recipient_name:", recipientName ? recipientName.value : 'NOT FOUND');
+}
+
+// 1. PERBAIKI EVENT LISTENER UNTUK TOMBOL TOGGLE
+function setupAddressToggleButtons() {
+    const useSavedBtn = document.getElementById('use-saved-address-btn');
+    const useNewBtn = document.getElementById('use-new-address-btn');
+    const savedSection = document.getElementById('saved-addresses-section');
+    const newSection = document.getElementById('new-address-section');
+
+    if (!useSavedBtn || !useNewBtn) {
+        console.log('Address toggle buttons not found');
+        return;
+    }
+
+    // TOMBOL "USE SAVED ADDRESS"
+    useSavedBtn.addEventListener('click', function() {
+        console.log('🏠 Switching to saved address mode');
+        
+        // Update button states
+        useSavedBtn.classList.add('bg-orange-500', 'text-white');
+        useSavedBtn.classList.remove('border-orange-500', 'text-orange-500');
+        useNewBtn.classList.remove('bg-orange-500', 'text-white');
+        useNewBtn.classList.add('border-orange-500', 'text-orange-500');
+        
+        // Toggle sections
+        if (savedSection) savedSection.classList.remove('hidden');
+        if (newSection) newSection.classList.add('hidden');
+        
+        // TIDAK PERLU CLEAR FORM - biarkan user lihat saved addresses
+        console.log('✅ Switched to saved address mode');
+    });
+    
+    // TOMBOL "ENTER NEW ADDRESS" - PERBAIKAN UTAMA ADA DI SINI
+    useNewBtn.addEventListener('click', function() {
+    // Update button states
+    useNewBtn.classList.add('bg-orange-500', 'text-white');
+    useNewBtn.classList.remove('border-orange-500', 'text-orange-500');
+    useSavedBtn.classList.remove('bg-orange-500', 'text-white');
+    useSavedBtn.classList.add('border-orange-500', 'text-orange-500');
+    
+    // Toggle sections
+    if (newSection) newSection.classList.remove('hidden');
+    if (savedSection) savedSection.classList.add('hidden');
+    
+    // TAMBAHKAN INI - CLEAR SEMUA FIELDS
+    checkoutSelectedAddress = null;
+    selectedDestination = null;
+    
+    // Clear form fields
+    const fieldsToeClear = [
+        'recipient_name', 'phone_recipient', 'street_address',
+        'province_name', 'city_name', 'subdistrict_name', 
+        'postal_code', 'destination_id', 'destination_label'
+    ];
+    
+    fieldsToeClear.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) field.value = '';
+    });
+    
+    // Pre-fill hanya user data
+    const userName = document.querySelector('meta[name="authenticated-user-name"]')?.content || '';
+    const userPhone = document.querySelector('meta[name="authenticated-user-phone"]')?.content || '';
+    
+    if (userName) document.getElementById('recipient_name').value = userName;
+    if (userPhone) document.getElementById('phone_recipient').value = userPhone;
+});
+}
+
+// 2. FUNCTION UNTUK CLEAR SEMUA ADDRESS FIELDS
+function clearAllAddressFields() {
+    console.log('🧹 Clearing all address fields...');
+    
+    // Clear address form fields
+    const fieldsToeClear = [
+        'recipient_name',
+        'phone_recipient', 
+        'street_address',
+        'province_name',
+        'city_name',
+        'subdistrict_name',
+        'postal_code',
+        'destination_id',
+        'destination_label'
+    ];
+    
+    fieldsToeClear.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.value = '';
+            console.log(`🗑️ Cleared ${fieldId}`);
+        }
+    });
+    
+    // Clear dropdown selections (hierarchical)
+    const dropdowns = [
+        'checkout_province_id',
+        'checkout_city_id', 
+        'checkout_subdistrict_id'
+    ];
+    
+    dropdowns.forEach(dropdownId => {
+        const dropdown = document.getElementById(dropdownId);
+        if (dropdown) {
+            dropdown.selectedIndex = 0; // Reset to first option
+            // Trigger change event to update dependent dropdowns
+            dropdown.dispatchEvent(new Event('change'));
+        }
+    });
+    
+    // Clear legacy fields
+    const legacyFields = ['legacy_address', 'legacy_destination_label'];
+    legacyFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) field.value = '';
+    });
+    
+    // Hide selected location display
+    const selectedLocation = document.getElementById('selected-location');
+    if (selectedLocation) {
+        selectedLocation.classList.add('hidden');
+    }
+    
+    // Reset address label ke default (Rumah)
+    resetAddressLabelToDefault();
+    
+    // Enable save options
+    const saveCheckbox = document.querySelector('input[name="save_address"]');
+    if (saveCheckbox) saveCheckbox.checked = true;
+    
+    console.log('✅ All address fields cleared');
+}
+
+// 3. FUNCTION UNTUK PRE-FILL HANYA USER DATA (BUKAN SAVED ADDRESS)
+function prefillUserDataOnly() {
+    console.log('👤 Pre-filling user data only...');
+    
+    // Ambil user data dari meta tags
+    const authenticatedUserName = document.querySelector('meta[name="authenticated-user-name"]')?.content || '';
+    const authenticatedUserPhone = document.querySelector('meta[name="authenticated-user-phone"]')?.content || '';
+    
+    // Pre-fill HANYA name dan phone dari user account
+    const recipientNameField = document.getElementById('recipient_name');
+    const phoneRecipientField = document.getElementById('phone_recipient');
+    
+    if (recipientNameField && authenticatedUserName) {
+        recipientNameField.value = authenticatedUserName;
+        console.log('📝 Pre-filled recipient_name:', authenticatedUserName);
+    }
+    
+    if (phoneRecipientField && authenticatedUserPhone) {
+        phoneRecipientField.value = authenticatedUserPhone;
+        console.log('📝 Pre-filled phone_recipient:', authenticatedUserPhone);
+    }
+    
+    // JANGAN pre-fill address fields - biarkan kosong untuk input manual
+    console.log('✅ User data pre-filled (address fields left empty)');
+}
+
+// 4. FUNCTION UNTUK RESET ADDRESS LABEL KE DEFAULT
+function resetAddressLabelToDefault() {
+    // Reset semua address label selections
+    const addressLabels = document.querySelectorAll('input[name="address_label"]');
+    addressLabels.forEach(radio => {
+        radio.checked = false;
+    });
+    
+    // Set default ke "Rumah"
+    const rumahOption = document.querySelector('input[name="address_label"][value="Rumah"]');
+    if (rumahOption) {
+        rumahOption.checked = true;
+        updateAddressLabelStyles();
+        console.log('🏠 Address label reset to "Rumah"');
+    }
+}
+
+
+// 6. FUNCTION UNTUK CLEAR CHECKOUT DESTINATION
+function clearCheckoutDestination() {
+    console.log('🎯 Clearing checkout destination...');
+    
+    selectedDestination = null;
+    checkoutSelectedAddress = null;
+    
+    // Clear destination fields
+    const destId = document.getElementById('destination_id');
+    const destLabel = document.getElementById('destination_label');
+    
+    if (destId) destId.value = '';
+    if (destLabel) destLabel.value = '';
+    
+    // Hide shipping calculation jika ada
+    const shippingSection = document.getElementById('shipping-calculation');
+    if (shippingSection) {
+        shippingSection.classList.add('hidden');
+    }
+    
+    console.log('✅ Checkout destination cleared');
+}
+
+// 7. INITIALIZATION - PANGGIL SAAT PAGE LOAD
+function initializeAddressToggleFixed() {
+    console.log('🚀 Initializing address toggle (FIXED VERSION)...');
+    
+    // Setup toggle buttons dengan clearing behavior yang benar
+    setupAddressToggleButtons();
+    
+    // Set default state - new address mode dengan form kosong
+    const useNewBtn = document.getElementById('use-new-address-btn');
+    if (useNewBtn) {
+        // Trigger click untuk set default state
+        useNewBtn.click();
+    }
+    
+    console.log('✅ Address toggle initialized with proper clearing');
+}
