@@ -504,398 +504,164 @@
 </div>
 
 <script>
-    // Copy Product Link Function
-window.copyProductLink = function(button) {
-    const container = button.closest('.copy-link-container');
-    const input = container.querySelector('.copy-link-input');
-    const originalText = button.innerHTML;
-    
-    // Coba clipboard API modern dulu
-    if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(input.value).then(() => {
-            showCopySuccess(button, originalText);
-        }).catch(() => {
-            fallbackCopy(input, button, originalText);
-        });
-    } else {
-        // Fallback untuk browser lama
-        fallbackCopy(input, button, originalText);
-    }
-};
-
-function showCopySuccess(button, originalText) {
-    button.classList.add('copied');
-    button.innerHTML = '<i class="fas fa-check"></i> Copied!';
-    
-    // Tampilkan toast notification jika tersedia
-    if (window.showToast) {
-        showToast('Link berhasil disalin!', 'success');
-    }
-    
-    // Reset setelah 2 detik
-    setTimeout(() => {
-        button.classList.remove('copied');
-        button.innerHTML = originalText;
-    }, 2500);
-}
-
-function fallbackCopy(input, button, originalText) {
-    try {
-        // Select text
-        input.select();
-        input.setSelectionRange(0, 99999); // Untuk mobile
-        
-        // Copy menggunakan execCommand
-        const successful = document.execCommand('copy');
-        
-        if (successful) {
-            showCopySuccess(button, originalText);
-        } else {
-            throw new Error('execCommand failed');
-        }
-        
-        // Hapus selection
-        window.getSelection().removeAllRanges();
-        
-    } catch (err) {
-        console.error('Copy failed: ', err);
-        
-        // Tampilkan error
-        button.innerHTML = 'Failed';
-        button.style.background = '#dc2626';
-        
-        if (window.showToast) {
-            showToast('Gagal menyalin link', 'error');
-        }
-        
-        setTimeout(() => {
-            button.innerHTML = originalText;
-            button.style.background = '';
-        }, 2500);
-    }
-}
-
-// Auto-focus input saat diklik untuk memudahkan copy manual
-document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('copy-link-input')) {
-        e.target.select();
-    }
-});
-    // ⭐ Quantity controls
-window.increaseQuantity = function() {
-    const quantityInput = document.getElementById('quantity');
-    const currentValue = parseInt(quantityInput.value);
-    const maxValue = parseInt(quantityInput.max);
-    
-    if (currentValue < maxValue) {
-        quantityInput.value = currentValue + 1;
-    }
-};
-
-window.decreaseQuantity = function() {
-    const quantityInput = document.getElementById('quantity');
-    const currentValue = parseInt(quantityInput.value);
-    
-    if (currentValue > 1) {
-        quantityInput.value = currentValue - 1;
-    }
-};
+    // Enhanced Add to Cart and Buy Now JavaScript with Authentication Check
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🛍️ Product detail page loaded with clean product names');
-    
-    // Get CSRF token
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    
-    let selectedProductId = '{{ $product->id }}';
-    let selectedSize = '{{ ($product->available_sizes && count($product->available_sizes) > 0) ? $product->available_sizes[0] : "" }}';
-    
-    // ⭐ Size selection functionality
-    window.selectSize = function(element) {
-        console.log('📏 Size selected:', element.dataset.size);
-        
-        // Remove previous selection
-        document.querySelectorAll('.size-option').forEach(opt => {
-            opt.classList.remove('border-blue-500', 'bg-blue-50');
-            opt.classList.add('border-gray-300');
-        });
-        
-        // Select current size
-        element.classList.remove('border-gray-300');
-        element.classList.add('border-blue-500', 'bg-blue-50');
-        
-        // Update form data
-        selectedProductId = element.dataset.productId;
-        selectedSize = element.dataset.size;
-        const stock = parseInt(element.dataset.stock);
-        const price = parseFloat(element.dataset.price);
-        const originalPrice = parseFloat(element.dataset.originalPrice);
-        
-        // Update hidden form fields
-        document.getElementById('selectedProductId').value = selectedProductId;
-        document.getElementById('selectedSizeValue').value = selectedSize;
-        
-        // Update size display
-        document.getElementById('selectedSizeDisplay').textContent = selectedSize;
-        document.getElementById('selectedSizeInfo').classList.remove('hidden');
-        
-        // ⭐ Show/hide limited stock warning - ONLY when stock = 1
-        const limitedStockWarning = document.getElementById('limitedStockWarning');
-        if (limitedStockWarning) {
-            if (stock === 1) {
-                limitedStockWarning.classList.remove('hidden');
-            } else {
-                limitedStockWarning.classList.add('hidden');
-            }
-        }
-        
-        // Update price display
-        updatePriceDisplay(price, originalPrice);
-        
-        // Update quantity input max
-        const quantityInput = document.getElementById('quantity');
-        quantityInput.max = stock;
-        if (parseInt(quantityInput.value) > stock) {
-            quantityInput.value = Math.min(stock, 1);
-        }
-        
-        // Update max quantity text
-        document.getElementById('maxQuantityText').textContent = 'Max: ' + stock;
-        
-        // Update add to cart button
-        updateAddToCartButton(stock);
-        
-        console.log('✅ Size updated:', {
-            productId: selectedProductId,
-            size: selectedSize,
-            stock: stock,
-            price: price
-        });
-    };
-    
-    // ⭐ Update price display
-    function updatePriceDisplay(price, originalPrice) {
-    const currentPriceEl = document.getElementById('currentPrice');
-    const originalPriceEl = document.getElementById('originalPrice');
-    
-    if (currentPriceEl) {
-        currentPriceEl.className = 'text-2xl font-bold text-red-600';
-        currentPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(price);
-    }
-    
-    if (originalPriceEl && price < originalPrice) {
-        originalPriceEl.className = 'text-sm text-gray-500 line-through';
-        originalPriceEl.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(originalPrice);
-        originalPriceEl.style.display = 'inline';
-    } else if (originalPriceEl) {
-        originalPriceEl.style.display = 'none';
-    }
-}
-    
-    // ⭐ Update add to cart button
-function updateAddToCartButton(stock) {
+    // Add to Cart functionality
     const addToCartBtn = document.getElementById('addToCartBtn');
-    
-    if (stock > 0) {
-        addToCartBtn.disabled = false;
-        addToCartBtn.className = 'w-16 bg-white text-black border border-gray-300 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors font-medium flex items-center justify-center';
-        addToCartBtn.innerHTML = '<i class="fas fa-shopping-cart"></i>';
-    } else {
-        addToCartBtn.disabled = true;
-        addToCartBtn.className = 'w-16 bg-gray-400 text-white py-3 px-4 rounded-lg cursor-not-allowed flex items-center justify-center';
-        addToCartBtn.innerHTML = '<i class="fas fa-times"></i>';
+    const addToCartForm = document.getElementById('addToCartForm');
+    const buyNowBtn = document.querySelector('.buy-now-btn');
+
+    // Add to Cart Form Handler
+    if (addToCartForm && addToCartBtn) {
+        addToCartForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            handleAddToCart();
+        });
     }
-}
-    
-    // ⭐ Image gallery functionality
-    window.changeMainImage = function(imageUrl, element) {
-        const mainImage = document.getElementById('mainImage');
-        if (mainImage) {
-            mainImage.src = imageUrl;
-        }
-        
-        // Update thumbnail selection
-        document.querySelectorAll('.thumbnail').forEach(thumb => {
-            thumb.classList.remove('ring-2', 'ring-blue-500');
+
+    // Buy Now Button Handler
+    if (buyNowBtn) {
+        buyNowBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            handleBuyNow();
         });
-        element.classList.add('ring-2', 'ring-blue-500');
-    };
-    
-    // ⭐ Add to cart form submission
-    document.getElementById('addToCartForm').addEventListener('submit', function(e) {
-        e.preventDefault();
+    }
+
+    // Handle Add to Cart
+    function handleAddToCart() {
+        const btn = addToCartBtn;
+        const originalText = btn.innerHTML;
         
-        const formData = new FormData(this);
-        const button = document.getElementById('addToCartBtn');
-        const originalText = button.innerHTML;
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
-        console.log('🛒 Adding to cart:', {
-            product_id: formData.get('product_id'),
-            size: formData.get('size'),
-            quantity: formData.get('quantity')
-        });
+        const formData = new FormData(addToCartForm);
         
-        // Show loading
-        button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Adding...';
-        button.disabled = true;
-        
-        fetch(this.action, {
+        fetch(addToCartForm.action, {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRF-TOKEN': token,
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
-        .then(response => {
-            console.log('📡 Response status:', response.status);
-            
-            // Check if response is JSON
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json();
-            } else {
-                // If not JSON, return the text to see what's wrong
-                return response.text().then(function(text) {
-                    console.error('❌ Non-JSON response:', text.substring(0, 500));
-                    throw new Error('Server returned HTML instead of JSON. Response: ' + text.substring(0, 100));
-                });
-            }
-        })
+        .then(response => response.json())
         .then(data => {
-            console.log('✅ Add to cart response:', data);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
             
             if (data.success) {
-                button.innerHTML = '<i class="fas fa-check mr-2"></i>Added!';
-                button.style.backgroundColor = '#10b981';
-                
+                // Success - show toast and update cart counter
                 showToast(data.message || 'Product added to cart successfully!', 'success');
-                
-                // Update cart counter if available
-                if (data.cart_count !== undefined) {
-                    updateCartCounter(data.cart_count);
-                }
-                
-                // Reset button after delay
-                setTimeout(() => {
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                    button.style.backgroundColor = '';
-                }, 2000);
+                updateCartCounter(data.cart_count || 0);
             } else {
-                button.innerHTML = '<i class="fas fa-exclamation mr-2"></i>Failed';
-                showToast(data.message || 'Failed to add product to cart', 'error');
-                
-                setTimeout(() => {
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                }, 2000);
+                // Check if it's an authentication error
+                if (data.redirect && data.redirect.includes('login')) {
+                    // Redirect to login page
+                    showToast('Please login to add items to cart', 'info');
+                    setTimeout(() => {
+                        window.location.href = data.redirect;
+                    }, 1000);
+                } else {
+                    // Show error message
+                    showToast(data.message || 'Failed to add product to cart', 'error');
+                }
             }
         })
         .catch(error => {
-            console.error('💥 Add to cart error:', error);
-            button.innerHTML = '<i class="fas fa-exclamation mr-2"></i>Error';
-            
-            // More specific error messages
-            if (error.message.includes('HTML instead of JSON')) {
-                showToast('Server error - please check if cart route exists', 'error');
-            } else if (error.message.includes('Failed to fetch')) {
-                showToast('Network error - please check your connection', 'error');
-            } else {
-                showToast('Error: ' + error.message, 'error');
-            }
-            
-            setTimeout(() => {
-                button.innerHTML = originalText;
-                button.disabled = false;
-            }, 2000);
-        });
-    });
-    
-    // ⭐ Buy Now functionality
-document.addEventListener('click', function (ev) {
-    const btn = ev.target.closest('.buy-now-btn');
-    if (!btn) return;
-
-    ev.preventDefault();
-    ev.stopPropagation();
-
-    const productId = btn.dataset.productId;
-    const productName = btn.dataset.productName || 'Product';
-    
-    // Get selected size and quantity
-    const selectedSizeInput = document.getElementById('selectedSizeValue');
-    const quantityInput = document.getElementById('quantity');
-    const selectedProductIdInput = document.getElementById('selectedProductId');
-    
-    const size = selectedSizeInput ? selectedSizeInput.value : '';
-    const quantity = quantityInput ? parseInt(quantityInput.value) : 1;
-    const finalProductId = selectedProductIdInput ? selectedProductIdInput.value : productId;
-
-    if (!size && document.querySelectorAll('.size-option').length > 0) {
-        showToast('Please select a size first', 'error');
-        return;
-    }
-
-    btn.disabled = true;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
-
-    // Create form data
-    const formData = new FormData();
-    formData.append('product_id', finalProductId);
-    formData.append('size', size);
-    formData.append('quantity', quantity);
-    formData.append('buy_now', '1');
-
-    fetch('/cart/add', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRF-TOKEN': token,
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            return response.json();
-        } else {
-            return response.text().then(text => {
-                throw new Error('Server returned HTML instead of JSON');
-            });
-        }
-    })
-    .then(data => {
-        if (data.success) {
-            showToast(`${productName} added to cart. Redirecting to checkout...`, 'success');
-            
-            // Redirect to checkout after short delay
-            setTimeout(() => {
-                window.location.href = '/checkout';
-            }, 1000);
-        } else {
+            console.error('Add to Cart error:', error);
             btn.innerHTML = originalText;
             btn.disabled = false;
-            showToast(data.message || 'Failed to add product to cart', 'error');
+            showToast('Error adding product to cart. Please try again.', 'error');
+        });
+    }
+
+    // Handle Buy Now
+    function handleBuyNow() {
+        const btn = buyNowBtn;
+        const originalText = btn.innerHTML;
+        
+        // Get product details
+        const productId = btn.getAttribute('data-product-id');
+        const quantityInput = document.getElementById('quantity');
+        const sizeSelect = document.getElementById('size');
+        
+        if (!productId) {
+            showToast('Product information not found', 'error');
+            return;
         }
-    })
-    .catch(error => {
-        console.error('Buy Now error:', error);
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        showToast('Error processing Buy Now request', 'error');
-    });
-});
-    
-    // ⭐ Utility functions
+        
+        const quantity = quantityInput ? parseInt(quantityInput.value) || 1 : 1;
+        const size = sizeSelect ? sizeSelect.value : null;
+        
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+        
+        // Prepare form data
+        const formData = new FormData();
+        formData.append('product_id', productId);
+        formData.append('quantity', quantity);
+        if (size) {
+            formData.append('size', size);
+        }
+        formData.append('_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
+        
+        // First add to cart, then redirect to checkout
+        fetch('/cart/add', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Success - show message and redirect to checkout
+                showToast('Product added to cart! Redirecting to checkout...', 'success');
+                updateCartCounter(data.cart_count || 0);
+                
+                // Redirect to checkout after short delay
+                setTimeout(() => {
+                    window.location.href = '/checkout';
+                }, 1000);
+            } else {
+                // Check if it's an authentication error
+                if (data.redirect && data.redirect.includes('login')) {
+                    // Redirect to login page
+                    showToast('Please login to purchase items', 'info');
+                    setTimeout(() => {
+                        window.location.href = data.redirect;
+                    }, 1000);
+                } else {
+                    // Show error message
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    showToast(data.message || 'Failed to add product to cart', 'error');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Buy Now error:', error);
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            showToast('Error processing Buy Now request', 'error');
+        });
+    }
+
+    // Utility function to show toast notifications
     function showToast(message, type = 'success') {
         const toast = document.getElementById('toastNotification');
         const icon = document.getElementById('toastIcon');
         const messageEl = document.getElementById('toastMessage');
         
-        if (!toast || !icon || !messageEl) return;
+        if (!toast || !icon || !messageEl) {
+            // Fallback to alert if toast elements not found
+            alert(message);
+            return;
+        }
         
         messageEl.textContent = message;
         
@@ -904,49 +670,117 @@ document.addEventListener('click', function (ev) {
         switch(type) {
             case 'success':
                 icon.className += 'fa-check-circle text-green-500';
+                toast.className = toast.className.replace(/bg-\w+-100/, 'bg-green-100');
+                toast.className = toast.className.replace(/border-\w+-400/, 'border-green-400');
                 break;
             case 'error':
                 icon.className += 'fa-exclamation-circle text-red-500';
+                toast.className = toast.className.replace(/bg-\w+-100/, 'bg-red-100');
+                toast.className = toast.className.replace(/border-\w+-400/, 'border-red-400');
                 break;
             case 'info':
                 icon.className += 'fa-info-circle text-blue-500';
+                toast.className = toast.className.replace(/bg-\w+-100/, 'bg-blue-100');
+                toast.className = toast.className.replace(/border-\w+-400/, 'border-blue-400');
+                break;
+            case 'warning':
+                icon.className += 'fa-exclamation-triangle text-yellow-500';
+                toast.className = toast.className.replace(/bg-\w+-100/, 'bg-yellow-100');
+                toast.className = toast.className.replace(/border-\w+-400/, 'border-yellow-400');
                 break;
             default:
                 icon.className += 'fa-check-circle text-green-500';
         }
         
+        // Show toast
         toast.classList.remove('hidden');
+        
+        // Auto-hide after 3 seconds
         setTimeout(() => hideToast(), 3000);
     }
     
-    window.hideToast = function() {
+    // Function to hide toast
+    function hideToast() {
         const toast = document.getElementById('toastNotification');
         if (toast) {
             toast.classList.add('hidden');
         }
-    };
+    }
     
+    // Function to update cart counter in header/navbar
     function updateCartCounter(count) {
-        const cartCounters = document.querySelectorAll('.cart-counter, [data-cart-count], .cart-badge');
+        const cartCounters = document.querySelectorAll('.cart-counter, [data-cart-count], .cart-badge, .cart-count');
         cartCounters.forEach(counter => {
             counter.textContent = count;
+            
             if (count > 0) {
-                counter.style.display = 'inline';
+                counter.style.display = 'inline-block';
+                counter.classList.remove('hidden');
+                
+                // Add animation class if available
+                counter.classList.add('animate-pulse');
+                setTimeout(() => {
+                    counter.classList.remove('animate-pulse');
+                }, 500);
             } else {
+                // Hide counter if count is 0
                 counter.style.display = 'none';
+                counter.classList.add('hidden');
             }
         });
-        console.log('🔢 Cart counter updated to:', count);
+        
+        // Also update any cart icons with badges
+        const cartIcons = document.querySelectorAll('.cart-icon-wrapper, .relative .cart-badge');
+        cartIcons.forEach(icon => {
+            const badge = icon.querySelector('.cart-badge, .cart-count, [data-cart-count]');
+            if (badge) {
+                badge.textContent = count;
+                if (count > 0) {
+                    badge.style.display = 'inline-block';
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.style.display = 'none';
+                    badge.classList.add('hidden');
+                }
+            }
+        });
     }
-    
-    // ⭐ Initialize default size selection
-    const firstAvailableSize = document.querySelector('.size-option:not([disabled])');
-    if (firstAvailableSize) {
-        selectSize(firstAvailableSize);
+
+    // Quantity controls
+    const quantityInput = document.getElementById('quantity');
+    const increaseBtn = document.querySelector('button[onclick="increaseQuantity()"]');
+    const decreaseBtn = document.querySelector('button[onclick="decreaseQuantity()"]');
+
+    // Global functions for quantity controls (keep existing functionality)
+    window.increaseQuantity = function() {
+        if (quantityInput) {
+            const currentValue = parseInt(quantityInput.value) || 1;
+            const maxQuantity = parseInt(quantityInput.getAttribute('max')) || 99;
+            
+            if (currentValue < maxQuantity) {
+                quantityInput.value = currentValue + 1;
+            }
+        }
     }
-    
-    console.log('✅ Product detail JavaScript initialized with clean product names');
+
+    window.decreaseQuantity = function() {
+        if (quantityInput) {
+            const currentValue = parseInt(quantityInput.value) || 1;
+            const minQuantity = parseInt(quantityInput.getAttribute('min')) || 1;
+            
+            if (currentValue > minQuantity) {
+                quantityInput.value = currentValue - 1;
+            }
+        }
+    }
+
+    // Make functions globally available
+    window.showToast = showToast;
+    window.hideToast = hideToast;
+    window.updateCartCounter = updateCartCounter;
 });
+
+console.log('✅ Enhanced product page loaded with authentication checks for Add to Cart and Buy Now');
 </script>
 
 <style>
@@ -1263,3 +1097,156 @@ document.addEventListener('click', function (ev) {
 .text-orange-600 { color: #ea580c; }
 </style>
 @endsection
+
+<!-- Toast Notification Component -->
+<!-- Letakkan di bagian bawah layout atau di show.blade.php -->
+<div id="toastNotification" class="fixed top-20 right-4 z-50 max-w-sm w-full bg-white border border-gray-300 rounded-lg shadow-lg p-4 hidden animate-slide-in-right">
+    <div class="flex items-center">
+        <div class="flex-shrink-0">
+            <i id="toastIcon" class="fas fa-check-circle text-green-500"></i>
+        </div>
+        <div class="ml-3 flex-1">
+            <p id="toastMessage" class="text-sm font-medium text-gray-900"></p>
+        </div>
+        <div class="ml-4 flex-shrink-0 flex">
+            <button onclick="hideToast()" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <span class="sr-only">Close</span>
+                <i class="fas fa-times h-4 w-4"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- CSS untuk animations -->
+<style>
+@keyframes slide-in-right {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slide-out-right {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.animate-slide-in-right {
+    animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-slide-out-right {
+    animation: slide-out-right 0.3s ease-in;
+}
+
+/* Toast variants */
+.toast-success {
+    @apply bg-green-50 border-green-200;
+}
+
+.toast-error {
+    @apply bg-red-50 border-red-200;
+}
+
+.toast-info {
+    @apply bg-blue-50 border-blue-200;
+}
+
+.toast-warning {
+    @apply bg-yellow-50 border-yellow-200;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    #toastNotification {
+        @apply left-4 right-4 max-w-none;
+    }
+}
+</style>
+
+<!-- Alternative: Simple Toast without animations -->
+<div id="simpleToast" class="fixed top-20 right-4 z-50 max-w-sm w-full hidden">
+    <div class="bg-white border border-gray-300 rounded-lg shadow-lg p-4">
+        <div class="flex items-center">
+            <div class="flex-shrink-0">
+                <i id="simpleToastIcon" class="fas fa-check-circle text-green-500"></i>
+            </div>
+            <div class="ml-3 flex-1">
+                <p id="simpleToastMessage" class="text-sm font-medium text-gray-900"></p>
+            </div>
+            <div class="ml-4 flex-shrink-0">
+                <button onclick="hideSimpleToast()" class="text-gray-400 hover:text-gray-500">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Simple toast functions if the main JavaScript isn't loaded
+if (typeof showToast === 'undefined') {
+    function showSimpleToast(message, type = 'success') {
+        const toast = document.getElementById('simpleToast');
+        const icon = document.getElementById('simpleToastIcon');
+        const messageEl = document.getElementById('simpleToastMessage');
+        
+        if (!toast || !icon || !messageEl) return;
+        
+        messageEl.textContent = message;
+        
+        // Set icon and colors based on type
+        icon.className = 'fas ';
+        const toastDiv = toast.querySelector('div');
+        
+        switch(type) {
+            case 'success':
+                icon.className += 'fa-check-circle text-green-500';
+                toastDiv.className = toastDiv.className.replace(/bg-\w+-50/, 'bg-green-50');
+                toastDiv.className = toastDiv.className.replace(/border-\w+-300/, 'border-green-300');
+                break;
+            case 'error':
+                icon.className += 'fa-exclamation-circle text-red-500';
+                toastDiv.className = toastDiv.className.replace(/bg-\w+-50/, 'bg-red-50');
+                toastDiv.className = toastDiv.className.replace(/border-\w+-300/, 'border-red-300');
+                break;
+            case 'info':
+                icon.className += 'fa-info-circle text-blue-500';
+                toastDiv.className = toastDiv.className.replace(/bg-\w+-50/, 'bg-blue-50');
+                toastDiv.className = toastDiv.className.replace(/border-\w+-300/, 'border-blue-300');
+                break;
+            case 'warning':
+                icon.className += 'fa-exclamation-triangle text-yellow-500';
+                toastDiv.className = toastDiv.className.replace(/bg-\w+-50/, 'bg-yellow-50');
+                toastDiv.className = toastDiv.className.replace(/border-\w+-300/, 'border-yellow-300');
+                break;
+        }
+        
+        toast.classList.remove('hidden');
+        
+        // Auto-hide after 3 seconds
+        setTimeout(() => hideSimpleToast(), 3000);
+    }
+    
+    function hideSimpleToast() {
+        const toast = document.getElementById('simpleToast');
+        if (toast) {
+            toast.classList.add('hidden');
+        }
+    }
+    
+    // Make functions globally available
+    window.showToast = showSimpleToast;
+    window.hideToast = hideSimpleToast;
+}
+</script>
