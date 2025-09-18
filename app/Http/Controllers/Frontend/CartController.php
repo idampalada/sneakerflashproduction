@@ -4,26 +4,31 @@ namespace App\Http\Controllers\Frontend;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ShoppingCart;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class CartController extends Controller
 {
     public function index()
     {
+        // Sync cart on page load if user is authenticated
+        if (Auth::check()) {
+            $this->syncCartOnPageLoad();
+        }
+        
         $cartItems = $this->getCartItems();
         $total = $this->calculateTotal($cartItems);
         
         return view('frontend.cart.index', compact('cartItems', 'total'));
     }
 
-    // ⭐ ENHANCED: Method signature untuk handle size selection
     public function add(Request $request, $productId = null)
     {
         try {
-            // Jika productId tidak ada di URL parameter, ambil dari request body
             if (!$productId) {
                 $productId = $request->input('product_id');
             }
@@ -38,7 +43,6 @@ class CartController extends Controller
                 return back()->with('error', 'Product ID is required.');
             }
 
-            // ⭐ ENHANCED: Validate request with size support
             $request->validate([
                 'quantity' => 'nullable|integer|min:1|max:10',
                 'size' => 'nullable|string|max:50'
@@ -47,7 +51,6 @@ class CartController extends Controller
             $quantity = $request->quantity ?? 1;
             $selectedSize = $request->size;
             
-            // Get product with safety check
             $product = Product::find($productId);
             
             if (!$product || !$product->is_active) {
@@ -60,7 +63,6 @@ class CartController extends Controller
                 return back()->with('error', 'Product not found or not available.');
             }
             
-            // Check stock availability
             $currentStock = $product->stock_quantity ?? 0;
             if ($currentStock < $quantity) {
                 if ($request->ajax()) {
@@ -72,64 +74,19 @@ class CartController extends Controller
                 return back()->with('error', 'Insufficient stock. Available: ' . $currentStock);
             }
 
-            // Get cart from session
-            $cart = Session::get('cart', []);
+            // Add to session cart
+            $this->addToSessionCart($productId, $quantity, $selectedSize, $product);
             
-            // ⭐ ENHANCED: Create unique cart key for size variants
-            $cartKey = $this->getCartKey($productId, $selectedSize);
-            
-            if (isset($cart[$cartKey])) {
-                $newQuantity = $cart[$cartKey]['quantity'] + $quantity;
-                
-                if ($newQuantity > $currentStock) {
-                    if ($request->ajax()) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Cannot add more items. Stock limit reached.'
-                        ], 400);
-                    }
-                    return back()->with('error', 'Cannot add more items. Stock limit reached.');
-                }
-                
-                $cart[$cartKey]['quantity'] = $newQuantity;
-                $cart[$cartKey]['stock'] = $currentStock;
-            } else {
-                // ⭐ ENHANCED: Add new product to cart with size information
-                $cart[$cartKey] = [
-                    'cart_key' => $cartKey, // ⭐ ADDED: Store cart key for reference
-                    'product_id' => $product->id,
-                    'name' => $product->name ?? 'Unknown Product',
-                    'price' => $product->sale_price ?: ($product->price ?? 0),
-                    'original_price' => $product->price ?? 0,
-                    'quantity' => $quantity,
-                    'image' => $product->images[0] ?? '/images/default-product.jpg',
-                    'slug' => $product->slug ?? '',
-                    'stock' => $currentStock,
-                    'brand' => $product->brand ?? 'Unknown Brand',
-                    'category' => $product->category->name ?? 'Unknown Category',
-                    'sku' => $product->sku ?? '',
-                    'sku_parent' => $product->sku_parent ?? '',
-                    // ⭐ ENHANCED: Size information
-                    'size' => $selectedSize ?: ($product->available_sizes ?? 'One Size'),
-                    'color' => $request->color ?? 'Default',
-                    'weight' => $product->weight ?? 500,
-                    // Product options for detailed tracking
-                    'product_options' => [
-                        'size' => $selectedSize ?: ($product->available_sizes ?? 'One Size'),
-                        'color' => $request->color ?? 'Default',
-                        'material' => $product->material ?? null,
-                        'variant' => $request->variant ?? null
-                    ]
-                ];
+            // Add to database cart if user is authenticated
+            if (Auth::check()) {
+                $this->addToDatabaseCart(Auth::id(), $productId, $quantity, $selectedSize);
             }
-
-            Session::put('cart', $cart);
             
             Log::info('Product added to cart successfully', [
                 'product_id' => $productId,
                 'size' => $selectedSize,
                 'quantity' => $quantity,
-                'cart_key' => $cartKey,
+                'user_id' => Auth::id(),
                 'cart_count' => $this->getCartItemCount()
             ]);
             
@@ -175,7 +132,6 @@ class CartController extends Controller
         }
     }
 
-    // ⭐ FIXED: Update method to handle both product ID and cart key
     public function update(Request $request, $identifier)
     {
         try {
@@ -184,8 +140,6 @@ class CartController extends Controller
             ]);
 
             $cart = Session::get('cart', []);
-            
-            // ⭐ NEW: Try to find cart item by product ID or cart key
             $cartKey = $this->findCartKey($cart, $identifier);
             
             if (!$cartKey || !isset($cart[$cartKey])) {
@@ -198,7 +152,6 @@ class CartController extends Controller
                 return back()->with('error', 'Product not found in cart');
             }
 
-            // Get fresh product data
             $productId = $cart[$cartKey]['product_id'];
             $product = Product::find($productId);
             
@@ -212,7 +165,6 @@ class CartController extends Controller
                 return back()->with('error', 'Product is no longer available');
             }
             
-            // Check current stock
             $currentStock = $product->stock_quantity ?? 0;
             
             if ($currentStock <= 0) {
@@ -235,13 +187,17 @@ class CartController extends Controller
                 return back()->with('error', "Quantity exceeds available stock ({$currentStock} left)");
             }
 
-            // Update cart with fresh data
+            // Update session cart
             $cart[$cartKey]['quantity'] = $request->quantity;
             $cart[$cartKey]['price'] = $product->sale_price ?: $product->price;
             $cart[$cartKey]['original_price'] = $product->price;
             $cart[$cartKey]['stock'] = $currentStock;
-            
             Session::put('cart', $cart);
+            
+            // Update database cart if user is authenticated
+            if (Auth::check()) {
+                $this->updateDatabaseCartItem(Auth::id(), $productId, $cart[$cartKey]['size'] ?? null, $request->quantity);
+            }
             
             if ($request->ajax()) {
                 $cartItems = $this->getCartItems();
@@ -273,21 +229,24 @@ class CartController extends Controller
         }
     }
 
-    // ⭐ FIXED: Remove method to handle both product ID and cart key
     public function remove($identifier)
     {
         try {
             $cart = Session::get('cart', []);
-            
-            // ⭐ NEW: Try to find cart item by product ID or cart key
             $cartKey = $this->findCartKey($cart, $identifier);
             
             if ($cartKey && isset($cart[$cartKey])) {
                 $productName = $cart[$cartKey]['name'];
                 $productSize = $cart[$cartKey]['size'] ?? null;
+                $productId = $cart[$cartKey]['product_id'];
                 
                 unset($cart[$cartKey]);
                 Session::put('cart', $cart);
+                
+                // Remove from database if user is authenticated
+                if (Auth::check()) {
+                    $this->removeDatabaseCartItem(Auth::id(), $productId, $productSize);
+                }
                 
                 $message = $productSize && $productSize !== 'One Size' ? 
                     "'{$productName}' (Size: {$productSize}) removed from cart!" :
@@ -332,6 +291,11 @@ class CartController extends Controller
         try {
             Session::forget('cart');
             
+            // Clear database cart if user is authenticated
+            if (Auth::check()) {
+                ShoppingCart::where('user_id', Auth::id())->delete();
+            }
+            
             if (request()->ajax()) {
                 return response()->json([
                     'success' => true,
@@ -356,7 +320,264 @@ class CartController extends Controller
         }
     }
 
-    // ⭐ NEW: Generate unique cart key for product variants
+    // ===============================================
+    // DATABASE CART METHODS
+    // ===============================================
+
+    private function addToSessionCart($productId, $quantity, $selectedSize, $product)
+    {
+        $cart = Session::get('cart', []);
+        $cartKey = $this->getCartKey($productId, $selectedSize);
+        
+        if (isset($cart[$cartKey])) {
+            $cart[$cartKey]['quantity'] += $quantity;
+        } else {
+            $cart[$cartKey] = [
+                'cart_key' => $cartKey,
+                'product_id' => $product->id,
+                'name' => $product->name ?? 'Unknown Product',
+                'price' => $product->sale_price ?: ($product->price ?? 0),
+                'original_price' => $product->price ?? 0,
+                'quantity' => $quantity,
+                'image' => $product->images[0] ?? '/images/default-product.jpg',
+                'slug' => $product->slug ?? '',
+                'stock' => $product->stock_quantity ?? 0,
+                'brand' => $product->brand ?? 'Unknown Brand',
+                'category' => $product->category->name ?? 'Unknown Category',
+                'sku' => $product->sku ?? '',
+                'sku_parent' => $product->sku_parent ?? '',
+                'size' => $selectedSize ?: ($product->available_sizes ?? 'One Size'),
+                'color' => 'Default',
+                'weight' => $product->weight ?? 500,
+                'product_options' => [
+                    'size' => $selectedSize ?: ($product->available_sizes ?? 'One Size'),
+                    'color' => 'Default'
+                ]
+            ];
+        }
+
+        Session::put('cart', $cart);
+    }
+
+    private function addToDatabaseCart($userId, $productId, $quantity, $size)
+    {
+        $productOptions = $size ? json_encode(['size' => $size]) : null;
+        
+        // For PostgreSQL JSON comparison, we need to use JSON operators
+        $existingItem = ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where(function($query) use ($productOptions) {
+                if ($productOptions) {
+                    // Use JSON containment operator for PostgreSQL
+                    $query->whereRaw('product_options::jsonb @> ?::jsonb', [$productOptions]);
+                } else {
+                    $query->whereNull('product_options');
+                }
+            })
+            ->first();
+
+        if ($existingItem) {
+            $existingItem->update([
+                'quantity' => $existingItem->quantity + $quantity
+            ]);
+        } else {
+            ShoppingCart::create([
+                'user_id' => $userId,
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'product_options' => $productOptions ? json_decode($productOptions, true) : null
+            ]);
+        }
+    }
+
+    private function updateDatabaseCartItem($userId, $productId, $size, $quantity)
+    {
+        $productOptions = $size ? json_encode(['size' => $size]) : null;
+        
+        $item = ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where(function($query) use ($productOptions) {
+                if ($productOptions) {
+                    $query->whereRaw('product_options::jsonb @> ?::jsonb', [$productOptions]);
+                } else {
+                    $query->whereNull('product_options');
+                }
+            })
+            ->first();
+
+        if ($item) {
+            $item->update(['quantity' => $quantity]);
+        }
+    }
+
+    private function removeDatabaseCartItem($userId, $productId, $size)
+    {
+        $productOptions = $size ? json_encode(['size' => $size]) : null;
+        
+        ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where(function($query) use ($productOptions) {
+                if ($productOptions) {
+                    $query->whereRaw('product_options::jsonb @> ?::jsonb', [$productOptions]);
+                } else {
+                    $query->whereNull('product_options');
+                }
+            })
+            ->delete();
+    }
+
+    public function syncCartOnLogin($userId)
+    {
+        try {
+            // Get session cart
+            $sessionCart = Session::get('cart', []);
+            
+            // Get database cart
+            $databaseCartItems = ShoppingCart::where('user_id', $userId)
+                ->with('product')
+                ->get();
+
+            // Merge carts - prioritize session cart (more recent)
+            foreach ($sessionCart as $cartKey => $sessionItem) {
+                $productId = $sessionItem['product_id'];
+                $size = $sessionItem['size'] ?? null;
+                $quantity = $sessionItem['quantity'];
+                
+                $productOptions = $size ? json_encode(['size' => $size]) : null;
+                
+                // Find if item exists in database using PostgreSQL-compatible query
+                $dbItem = $databaseCartItems
+                    ->where('product_id', $productId)
+                    ->filter(function($item) use ($productOptions) {
+                        if ($productOptions) {
+                            return json_encode($item->product_options ?? []) === $productOptions;
+                        }
+                        return empty($item->product_options);
+                    })
+                    ->first();
+
+                if ($dbItem) {
+                    // Update database with session quantity (session is more recent)
+                    $dbItem->update(['quantity' => $quantity]);
+                } else {
+                    // Add new item to database
+                    ShoppingCart::create([
+                        'user_id' => $userId,
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'product_options' => $productOptions ? json_decode($productOptions, true) : null
+                    ]);
+                }
+            }
+
+            // Update session cart with complete merged cart
+            $this->loadDatabaseCartToSession($userId);
+            
+            Log::info('Cart synced successfully for user', ['user_id' => $userId]);
+
+        } catch (\Exception $e) {
+            Log::error('Cart sync failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function loadDatabaseCartToSession($userId)
+    {
+        $databaseCartItems = ShoppingCart::where('user_id', $userId)
+            ->with('product')
+            ->get();
+
+        $sessionCart = [];
+        
+        foreach ($databaseCartItems as $item) {
+            if ($item->product && $item->product->is_active) {
+                $size = $item->product_options['size'] ?? null;
+                $cartKey = $this->getCartKey($item->product_id, $size);
+                
+                $sessionCart[$cartKey] = [
+                    'cart_key' => $cartKey,
+                    'product_id' => $item->product_id,
+                    'name' => $item->product->name,
+                    'price' => $item->product->sale_price ?: $item->product->price,
+                    'original_price' => $item->product->price,
+                    'quantity' => $item->quantity,
+                    'image' => $item->product->images[0] ?? '/images/default-product.jpg',
+                    'slug' => $item->product->slug,
+                    'stock' => $item->product->stock_quantity ?? 0,
+                    'brand' => $item->product->brand ?? 'Unknown Brand',
+                    'category' => $item->product->category->name ?? 'Unknown Category',
+                    'sku' => $item->product->sku ?? '',
+                    'sku_parent' => $item->product->sku_parent ?? '',
+                    'size' => $size ?: 'One Size',
+                    'color' => 'Default',
+                    'weight' => $item->product->weight ?? 500,
+                    'product_options' => $item->product_options ?? ['size' => $size ?: 'One Size']
+                ];
+            }
+        }
+
+        Session::put('cart', $sessionCart);
+    }
+
+    public function saveSessionCartToDatabase($userId)
+    {
+        try {
+            $sessionCart = Session::get('cart', []);
+            
+            foreach ($sessionCart as $cartKey => $item) {
+                $productId = $item['product_id'];
+                $quantity = $item['quantity'];
+                $size = $item['size'] ?? null;
+                
+                $productOptions = $size ? json_encode(['size' => $size]) : null;
+                
+                // Try to find existing item with PostgreSQL-compatible comparison
+                $existingItem = ShoppingCart::where('user_id', $userId)
+                    ->where('product_id', $productId)
+                    ->where(function($query) use ($productOptions) {
+                        if ($productOptions) {
+                            $query->whereRaw('product_options::jsonb @> ?::jsonb', [$productOptions]);
+                        } else {
+                            $query->whereNull('product_options');
+                        }
+                    })
+                    ->first();
+
+                if ($existingItem) {
+                    $existingItem->update(['quantity' => $quantity]);
+                } else {
+                    ShoppingCart::create([
+                        'user_id' => $userId,
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'product_options' => $productOptions ? json_decode($productOptions, true) : null
+                    ]);
+                }
+            }
+
+            Log::info('Session cart saved to database', ['user_id' => $userId]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to save session cart to database', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    private function syncCartOnPageLoad()
+    {
+        if (Auth::check()) {
+            $this->loadDatabaseCartToSession(Auth::id());
+        }
+    }
+
+    // ===============================================
+    // EXISTING METHODS (KEPT SAME)
+    // ===============================================
+
     private function getCartKey($productId, $size = null)
     {
         if ($size && $size !== 'One Size') {
@@ -366,22 +587,18 @@ class CartController extends Controller
         return (string) $productId;
     }
 
-    // ⭐ NEW: Find cart key by product ID or existing cart key
     private function findCartKey($cart, $identifier)
     {
-        // First, try exact cart key match
         if (isset($cart[$identifier])) {
             return $identifier;
         }
         
-        // Then, try to find by product ID
         foreach ($cart as $cartKey => $item) {
             if (isset($item['product_id']) && $item['product_id'] == $identifier) {
                 return $cartKey;
             }
         }
         
-        // Finally, try partial cart key match (for backward compatibility)
         foreach ($cart as $cartKey => $item) {
             if (str_starts_with($cartKey, $identifier . '_')) {
                 return $cartKey;
@@ -391,14 +608,12 @@ class CartController extends Controller
         return null;
     }
 
-    // ⭐ ENHANCED: Helper methods with size support
     private function getCartItems()
     {
         $cart = Session::get('cart', []);
         $cartItems = collect();
         
         foreach ($cart as $cartKey => $details) {
-            // Get fresh product data for accurate stock
             $productId = $details['product_id'] ?? null;
             $product = null;
             
@@ -408,12 +623,10 @@ class CartController extends Controller
             
             $currentStock = $product ? ($product->stock_quantity ?? 0) : 0;
             
-            // Remove items that are no longer available
             if (!$product || !$product->is_active) {
                 continue;
             }
             
-            // ⭐ SAFE: Ensure all required keys exist with defaults and proper handling
             $itemName = $details['name'] ?? ($product->name ?? 'Unknown Product');
             $itemPrice = $details['price'] ?? ($product->sale_price ?: ($product->price ?? 0));
             $itemOriginalPrice = $details['original_price'] ?? ($product->price ?? 0);
@@ -425,8 +638,7 @@ class CartController extends Controller
             $itemSku = $details['sku'] ?? ($product->sku ?? '');
             $itemSkuParent = $details['sku_parent'] ?? ($product->sku_parent ?? '');
             
-            // ⭐ SAFE: Size handling with proper fallbacks
-            $itemSize = 'One Size'; // Default fallback
+            $itemSize = 'One Size';
             if (isset($details['size']) && !empty($details['size'])) {
                 if (is_array($details['size'])) {
                     $itemSize = $details['size'][0] ?? 'One Size';
@@ -443,7 +655,6 @@ class CartController extends Controller
                 }
             }
             
-            // ⭐ SAFE: Product options handling
             $productOptions = $details['product_options'] ?? [];
             if (!is_array($productOptions)) {
                 $productOptions = [
@@ -488,15 +699,12 @@ class CartController extends Controller
         return array_sum(array_column($cart, 'quantity'));
     }
 
-    // API method untuk AJAX calls
     public function getCartCount()
     {
         $count = $this->getCartItemCount();
-        
         return response()->json(['count' => $count]);
     }
 
-    // Get cart data for API calls
     public function getCartData()
     {
         $cartItems = $this->getCartItems();
@@ -511,7 +719,6 @@ class CartController extends Controller
         ]);
     }
 
-    // ⭐ ENHANCED: Sync cart with size variant support
     public function syncCart()
     {
         try {
@@ -523,7 +730,6 @@ class CartController extends Controller
                 $productId = $details['product_id'] ?? null;
                 
                 if (!$productId) {
-                    // Remove invalid cart items
                     $removedItems[] = $details['name'] ?? 'Unknown Product';
                     unset($cart[$cartKey]);
                     $updated = true;
@@ -533,7 +739,6 @@ class CartController extends Controller
                 $product = Product::find($productId);
                 
                 if (!$product || !$product->is_active) {
-                    // Remove inactive products
                     $removedItems[] = $details['name'] ?? 'Unknown Product';
                     unset($cart[$cartKey]);
                     $updated = true;
@@ -542,7 +747,6 @@ class CartController extends Controller
                 
                 $currentStock = $product->stock_quantity ?? 0;
                 
-                // Update missing keys
                 if (!isset($cart[$cartKey]['size'])) {
                     $cart[$cartKey]['size'] = $product->available_sizes ?? 'One Size';
                     $updated = true;
@@ -568,7 +772,6 @@ class CartController extends Controller
                     $updated = true;
                 }
                 
-                // Update price if changed
                 $currentPrice = $product->sale_price ?: $product->price;
                 if ($cart[$cartKey]['price'] != $currentPrice) {
                     $cart[$cartKey]['price'] = $currentPrice;
@@ -576,16 +779,13 @@ class CartController extends Controller
                     $updated = true;
                 }
                 
-                // Update stock
                 $cart[$cartKey]['stock'] = $currentStock;
                 
-                // Adjust quantity if exceeds stock
                 if ($cart[$cartKey]['quantity'] > $currentStock) {
                     $cart[$cartKey]['quantity'] = $currentStock;
                     $updated = true;
                 }
                 
-                // Remove items with zero stock
                 if ($currentStock <= 0) {
                     $itemName = $details['name'] ?? 'Unknown Product';
                     $size = $details['size'] ?? null;
@@ -602,6 +802,11 @@ class CartController extends Controller
             
             if ($updated) {
                 Session::put('cart', $cart);
+                
+                // Update database cart if user is authenticated
+                if (Auth::check()) {
+                    $this->saveSessionCartToDatabase(Auth::id());
+                }
             }
             
             $message = 'Cart synchronized successfully.';

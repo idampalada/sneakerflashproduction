@@ -3,154 +3,15 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Models\ShoppingCart;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class CartService
 {
     /**
-     * Get complete cart data for checkout and voucher calculations
-     */
-    public function getCartData(): array
-{
-    $cart = Session::get('cart', []);
-    $cartItems = [];
-    $subtotal = 0;
-    $totalWeight = 0;
-    $totalQuantity = 0;
-
-    foreach ($cart as $cartKey => $details) {
-        $productId = $details['product_id'] ?? null;
-        
-        if (!$productId) {
-            continue;
-        }
-
-        $product = Product::find($productId);
-        
-        if (!$product || !$product->is_active || $product->stock_quantity <= 0) {
-            continue;
-        }
-
-        // Calculate price (use sale_price if available)
-        $price = $product->sale_price ?? $product->price;
-        $quantity = $details['quantity'] ?? 1;
-        $itemSubtotal = $price * $quantity;
-
-        // Get categories safely
-        $categories = [];
-        try {
-            if ($product->categories) {
-                $categories = $product->categories->pluck('id')->toArray();
-            }
-        } catch (\Exception $e) {
-            \Log::warning('Error getting product categories', [
-                'product_id' => $product->id,
-                'error' => $e->getMessage()
-            ]);
-            $categories = [];
-        }
-
-        // Prepare cart item data
-        $cartItem = [
-            'cart_key' => $cartKey,
-            'product_id' => $product->id,
-            'product' => $product, // Include full product for voucher validation
-            'name' => $this->getCleanProductName($product->name, $details['size'] ?? null),
-            'price' => $price,
-            'quantity' => $quantity,
-            'subtotal' => $itemSubtotal,
-            'size' => $details['size'] ?? 'One Size',
-            'image' => $this->getProductImageUrl($product),
-            'sku' => $product->sku,
-            'weight' => $product->weight ?? 250, // Default weight 250g
-            'categories' => $categories // FIXED: Safe category handling
-        ];
-
-        $cartItems[] = $cartItem;
-        $subtotal += $itemSubtotal;
-        $totalWeight += ($product->weight ?? 250) * $quantity;
-        $totalQuantity += $quantity;
-    }
-
-    return [
-        'items' => $cartItems,
-        'subtotal' => $subtotal,
-        'total_weight' => $totalWeight,
-        'total_quantity' => $totalQuantity,
-        'item_count' => count($cartItems),
-        'formatted_subtotal' => 'Rp ' . number_format($subtotal, 0, ',', '.')
-    ];
-}
-
-    /**
-     * Get cart count for header badge
-     */
-    public function getCartCount(): int
-    {
-        $cart = Session::get('cart', []);
-        $count = 0;
-
-        foreach ($cart as $details) {
-            $productId = $details['product_id'] ?? null;
-            
-            if (!$productId) {
-                continue;
-            }
-
-            $product = Product::find($productId);
-            
-            if ($product && $product->is_active && $product->stock_quantity > 0) {
-                $count += $details['quantity'] ?? 1;
-            }
-        }
-
-        return $count;
-    }
-
-    /**
-     * Clean product name for display
-     */
-    private function getCleanProductName($originalName, $size = null): string
-    {
-        $cleanName = $originalName;
-        
-        // Remove size patterns from name
-        $cleanName = preg_replace('/\s*-\s*Size\s+[A-Z0-9.]+\s*$/i', '', $cleanName);
-        $cleanName = preg_replace('/\s*Size\s+[A-Z0-9.]+\s*$/i', '', $cleanName);
-        $cleanName = preg_replace('/\s*-\s*(XS|S|M|L|XL|XXL|XXXL|[0-9]+|[0-9]+\.[0-9]+)\s*$/i', '', $cleanName);
-        
-        return trim($cleanName, ' -');
-    }
-
-    /**
-     * Get product image URL with fallback
-     */
-    private function getProductImageUrl($product): string
-    {
-        if (empty($product->featured_image)) {
-            return asset('images/default-product.jpg');
-        }
-
-        $imagePath = $product->featured_image;
-        
-        // Handle different image path formats
-        if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
-            return $imagePath;
-        } elseif (str_starts_with($imagePath, '/storage/')) {
-            return config('app.url') . $imagePath;
-        } elseif (str_starts_with($imagePath, 'products/')) {
-            return config('app.url') . '/storage/' . $imagePath;
-        } elseif (str_starts_with($imagePath, 'assets/') || str_starts_with($imagePath, 'images/')) {
-            return asset($imagePath);
-        } else {
-            return config('app.url') . '/storage/products/' . $imagePath;
-        }
-    }
-
-    /**
-     * Add item to cart
+     * Add item to cart (both session and database)
      */
     public function addToCart($productId, $quantity = 1, $size = null): array
     {
@@ -160,7 +21,7 @@ class CartService
             if (!$product || !$product->is_active) {
                 return [
                     'success' => false,
-                    'message' => 'Product not found or inactive'
+                    'message' => 'Product not found or not available'
                 ];
             }
 
@@ -171,41 +32,13 @@ class CartService
                 ];
             }
 
-            $cart = Session::get('cart', []);
+            // Add to session cart
+            $this->addToSessionCart($productId, $quantity, $size);
             
-            // Create cart key
-            $cartKey = $productId . '_' . ($size ?: 'default');
-            
-            if (isset($cart[$cartKey])) {
-                // Update existing item
-                $newQuantity = $cart[$cartKey]['quantity'] + $quantity;
-                
-                if ($newQuantity > $product->stock_quantity) {
-                    return [
-                        'success' => false,
-                        'message' => 'Cannot add more items. Stock limit: ' . $product->stock_quantity
-                    ];
-                }
-                
-                $cart[$cartKey]['quantity'] = $newQuantity;
-            } else {
-                // Add new item
-                $cart[$cartKey] = [
-                    'product_id' => $productId,
-                    'quantity' => $quantity,
-                    'size' => $size,
-                    'added_at' => now()->toISOString()
-                ];
+            // Add to database cart if user is authenticated
+            if (Auth::check()) {
+                $this->addToDatabaseCart(Auth::id(), $productId, $quantity, $size);
             }
-
-            Session::put('cart', $cart);
-            
-            Log::info('Item added to cart', [
-                'product_id' => $productId,
-                'quantity' => $quantity,
-                'size' => $size,
-                'cart_key' => $cartKey
-            ]);
 
             return [
                 'success' => true,
@@ -227,11 +60,184 @@ class CartService
     }
 
     /**
+     * Add to session cart
+     */
+    private function addToSessionCart($productId, $quantity, $size): void
+    {
+        $cart = Session::get('cart', []);
+        $cartKey = $productId . '_' . ($size ?: 'default');
+        
+        if (isset($cart[$cartKey])) {
+            $cart[$cartKey]['quantity'] += $quantity;
+        } else {
+            $cart[$cartKey] = [
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'size' => $size,
+                'added_at' => now()->toISOString()
+            ];
+        }
+
+        Session::put('cart', $cart);
+    }
+
+    /**
+     * Add to database cart
+     */
+    private function addToDatabaseCart($userId, $productId, $quantity, $size): void
+    {
+        $productOptions = $size ? ['size' => $size] : null;
+        
+        $existingItem = ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where('product_options', $productOptions)
+            ->first();
+
+        if ($existingItem) {
+            $existingItem->update([
+                'quantity' => $existingItem->quantity + $quantity
+            ]);
+        } else {
+            ShoppingCart::create([
+                'user_id' => $userId,
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'product_options' => $productOptions
+            ]);
+        }
+    }
+
+    /**
+     * Sync cart on login - merge database cart with session cart
+     */
+    public function syncCartOnLogin($userId): void
+    {
+        try {
+            // Get session cart
+            $sessionCart = Session::get('cart', []);
+            
+            // Get database cart
+            $databaseCartItems = ShoppingCart::where('user_id', $userId)
+                ->with('product')
+                ->get();
+
+            // Merge carts - prioritize session cart (more recent)
+            foreach ($sessionCart as $cartKey => $sessionItem) {
+                $productId = $sessionItem['product_id'];
+                $size = $sessionItem['size'];
+                $quantity = $sessionItem['quantity'];
+                
+                $productOptions = $size ? ['size' => $size] : null;
+                
+                // Find if item exists in database
+                $dbItem = $databaseCartItems->where('product_id', $productId)
+                    ->where('product_options', $productOptions)
+                    ->first();
+
+                if ($dbItem) {
+                    // Update database with session quantity (session is more recent)
+                    $dbItem->update(['quantity' => $quantity]);
+                } else {
+                    // Add new item to database
+                    ShoppingCart::create([
+                        'user_id' => $userId,
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'product_options' => $productOptions
+                    ]);
+                }
+            }
+
+            // Update session cart with complete merged cart
+            $this->loadDatabaseCartToSession($userId);
+            
+            Log::info('Cart synced successfully for user', ['user_id' => $userId]);
+
+        } catch (\Exception $e) {
+            Log::error('Cart sync failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Load database cart to session
+     */
+    public function loadDatabaseCartToSession($userId): void
+    {
+        $databaseCartItems = ShoppingCart::where('user_id', $userId)
+            ->with('product')
+            ->get();
+
+        $sessionCart = [];
+        
+        foreach ($databaseCartItems as $item) {
+            if ($item->product && $item->product->is_active) {
+                $size = $item->product_options['size'] ?? null;
+                $cartKey = $item->product_id . '_' . ($size ?: 'default');
+                
+                $sessionCart[$cartKey] = [
+                    'product_id' => $item->product_id,
+                    'quantity' => $item->quantity,
+                    'size' => $size,
+                    'added_at' => $item->created_at->toISOString()
+                ];
+            }
+        }
+
+        Session::put('cart', $sessionCart);
+    }
+
+    /**
+     * Save session cart to database on logout
+     */
+    public function saveSessionCartToDatabase($userId): void
+    {
+        try {
+            $sessionCart = Session::get('cart', []);
+            
+            foreach ($sessionCart as $cartKey => $item) {
+                $productId = $item['product_id'];
+                $quantity = $item['quantity'];
+                $size = $item['size'] ?? null;
+                
+                $productOptions = $size ? ['size' => $size] : null;
+                
+                $existingItem = ShoppingCart::where('user_id', $userId)
+                    ->where('product_id', $productId)
+                    ->where('product_options', $productOptions)
+                    ->first();
+
+                if ($existingItem) {
+                    $existingItem->update(['quantity' => $quantity]);
+                } else {
+                    ShoppingCart::create([
+                        'user_id' => $userId,
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'product_options' => $productOptions
+                    ]);
+                }
+            }
+
+            Log::info('Session cart saved to database', ['user_id' => $userId]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to save session cart to database', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Update cart item quantity
      */
     public function updateCartItem($identifier, $quantity): array
     {
         try {
+            // Update session cart
             $cart = Session::get('cart', []);
             
             if (!isset($cart[$identifier])) {
@@ -242,6 +248,7 @@ class CartService
             }
 
             $productId = $cart[$identifier]['product_id'];
+            $size = $cart[$identifier]['size'];
             $product = Product::find($productId);
             
             if (!$product || !$product->is_active) {
@@ -249,30 +256,31 @@ class CartService
                 unset($cart[$identifier]);
                 Session::put('cart', $cart);
                 
+                if (Auth::check()) {
+                    $this->removeDatabaseCartItem(Auth::id(), $productId, $size);
+                }
+                
                 return [
                     'success' => false,
                     'message' => 'Product no longer available. Item removed from cart.'
                 ];
             }
 
-            if ($quantity <= 0) {
-                // Remove item if quantity is 0 or negative
-                unset($cart[$identifier]);
-            } else {
-                if ($quantity > $product->stock_quantity) {
-                    return [
-                        'success' => false,
-                        'message' => 'Insufficient stock. Available: ' . $product->stock_quantity
-                    ];
-                }
-                
-                $cart[$identifier]['quantity'] = $quantity;
+            if ($quantity > $product->stock_quantity) {
+                return [
+                    'success' => false,
+                    'message' => 'Insufficient stock. Available: ' . $product->stock_quantity
+                ];
             }
 
+            // Update session
+            $cart[$identifier]['quantity'] = $quantity;
             Session::put('cart', $cart);
-            
-            // Clear applied coupon since cart changed
-            \App\Http\Controllers\Frontend\CouponController::clearCouponOnCartChange();
+
+            // Update database if user is authenticated
+            if (Auth::check()) {
+                $this->updateDatabaseCartItem(Auth::id(), $productId, $size, $quantity);
+            }
 
             return [
                 'success' => true,
@@ -283,7 +291,6 @@ class CartService
         } catch (\Exception $e) {
             Log::error('Error updating cart item', [
                 'identifier' => $identifier,
-                'quantity' => $quantity,
                 'error' => $e->getMessage()
             ]);
 
@@ -295,25 +302,55 @@ class CartService
     }
 
     /**
-     * Remove item from cart
+     * Update database cart item
      */
-    public function removeFromCart($identifier): array
+    private function updateDatabaseCartItem($userId, $productId, $size, $quantity): void
+    {
+        $productOptions = $size ? ['size' => $size] : null;
+        
+        $item = ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where('product_options', $productOptions)
+            ->first();
+
+        if ($item) {
+            $item->update(['quantity' => $quantity]);
+        }
+    }
+
+    /**
+     * Remove database cart item
+     */
+    private function removeDatabaseCartItem($userId, $productId, $size): void
+    {
+        $productOptions = $size ? ['size' => $size] : null;
+        
+        ShoppingCart::where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->where('product_options', $productOptions)
+            ->delete();
+    }
+
+    /**
+     * Remove cart item
+     */
+    public function removeCartItem($identifier): array
     {
         try {
             $cart = Session::get('cart', []);
             
-            if (!isset($cart[$identifier])) {
-                return [
-                    'success' => false,
-                    'message' => 'Cart item not found'
-                ];
-            }
+            if (isset($cart[$identifier])) {
+                $productId = $cart[$identifier]['product_id'];
+                $size = $cart[$identifier]['size'];
+                
+                unset($cart[$identifier]);
+                Session::put('cart', $cart);
 
-            unset($cart[$identifier]);
-            Session::put('cart', $cart);
-            
-            // Clear applied coupon since cart changed
-            \App\Http\Controllers\Frontend\CouponController::clearCouponOnCartChange();
+                // Remove from database if user is authenticated
+                if (Auth::check()) {
+                    $this->removeDatabaseCartItem(Auth::id(), $productId, $size);
+                }
+            }
 
             return [
                 'success' => true,
@@ -322,7 +359,7 @@ class CartService
             ];
 
         } catch (\Exception $e) {
-            Log::error('Error removing from cart', [
+            Log::error('Error removing cart item', [
                 'identifier' => $identifier,
                 'error' => $e->getMessage()
             ]);
@@ -344,6 +381,11 @@ class CartService
             Session::forget('applied_coupon');
             Session::forget('shipping_cost');
             
+            // Clear database cart if user is authenticated
+            if (Auth::check()) {
+                ShoppingCart::where('user_id', Auth::id())->delete();
+            }
+            
             return [
                 'success' => true,
                 'message' => 'Cart cleared',
@@ -360,6 +402,70 @@ class CartService
                 'message' => 'Failed to clear cart'
             ];
         }
+    }
+
+    /**
+     * Get cart count
+     */
+    public function getCartCount(): int
+    {
+        $cart = Session::get('cart', []);
+        return array_sum(array_column($cart, 'quantity'));
+    }
+
+    /**
+     * Get cart data with product details
+     */
+    public function getCartData(): array
+    {
+        $cart = Session::get('cart', []);
+        $items = [];
+        $subtotal = 0;
+        $totalWeight = 0;
+        $totalQuantity = 0;
+
+        foreach ($cart as $cartKey => $details) {
+            $product = Product::find($details['product_id']);
+            
+            if (!$product || !$product->is_active) {
+                continue;
+            }
+
+            $price = $product->sale_price ?? $product->price;
+            $itemSubtotal = $price * $details['quantity'];
+            $itemWeight = ($product->weight ?? 0) * $details['quantity'];
+
+            $items[] = [
+                'cart_key' => $cartKey,
+                'product_id' => $product->id,
+                'name' => $product->name,
+                'slug' => $product->slug,
+                'sku' => $product->sku,
+                'price' => $price,
+                'original_price' => $product->price,
+                'quantity' => $details['quantity'],
+                'size' => $details['size'],
+                'subtotal' => $itemSubtotal,
+                'weight' => $itemWeight,
+                'stock_quantity' => $product->stock_quantity,
+                'image' => $product->images[0] ?? null,
+                'added_at' => $details['added_at'] ?? null
+            ];
+
+            $subtotal += $itemSubtotal;
+            $totalWeight += $itemWeight;
+            $totalQuantity += $details['quantity'];
+        }
+
+        return [
+            'items' => $items,
+            'subtotal' => $subtotal,
+            'total_weight' => $totalWeight,
+            'total_quantity' => $totalQuantity,
+            'coupon_discount' => Session::get('coupon_discount', 0),
+            'shipping_cost' => Session::get('shipping_cost', 0),
+            'final_total' => $subtotal - Session::get('coupon_discount', 0) + Session::get('shipping_cost', 0)
+        ];
     }
 
     /**
@@ -383,11 +489,21 @@ class CartService
             
             if (!$product || !$product->is_active) {
                 $removedItems[] = $product ? $product->name : 'Unknown product';
+                
+                // Remove from database too
+                if (Auth::check()) {
+                    $this->removeDatabaseCartItem(Auth::id(), $productId, $details['size'] ?? null);
+                }
                 continue;
             }
 
             if ($product->stock_quantity <= 0) {
                 $removedItems[] = $product->name . ' (out of stock)';
+                
+                // Remove from database too
+                if (Auth::check()) {
+                    $this->removeDatabaseCartItem(Auth::id(), $productId, $details['size'] ?? null);
+                }
                 continue;
             }
 
@@ -396,6 +512,11 @@ class CartService
             if ($quantity > $product->stock_quantity) {
                 $details['quantity'] = $product->stock_quantity;
                 $removedItems[] = $product->name . ' (quantity reduced to ' . $product->stock_quantity . ')';
+                
+                // Update database quantity too
+                if (Auth::check()) {
+                    $this->updateDatabaseCartItem(Auth::id(), $productId, $details['size'] ?? null, $product->stock_quantity);
+                }
             }
 
             $updatedCart[$cartKey] = $details;
@@ -412,23 +533,6 @@ class CartService
             'removed_items' => $removedItems,
             'cart_count' => $this->getCartCount()
         ];
-    }
-
-    /**
-     * Sync cart for authenticated users
-     */
-    public function syncCartForUser($userId): void
-    {
-        // This method can be used to sync session cart with database cart
-        // for authenticated users if you implement persistent cart storage
-        
-        Log::info('Cart sync requested for user', ['user_id' => $userId]);
-        
-        // Implementation depends on your business requirements
-        // You might want to:
-        // 1. Save session cart to database
-        // 2. Merge database cart with session cart
-        // 3. Replace session cart with database cart
     }
 
     /**

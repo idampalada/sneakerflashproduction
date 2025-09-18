@@ -1,14 +1,12 @@
 <?php
-// File: app/Http/Controllers/Auth/GoogleController.php
 
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Laravel\Socialite\Facades\Socialite;
-use Illuminate\Support\Str;
+use App\Models\User;
 use Exception;
 
 class GoogleController extends Controller
@@ -18,11 +16,7 @@ class GoogleController extends Controller
      */
     public function redirectToGoogle()
     {
-        try {
-            return Socialite::driver('google')->redirect();
-        } catch (Exception $e) {
-            return redirect('/login')->with('error', 'Unable to connect to Google. Please try again.');
-        }
+        return Socialite::driver('google')->redirect();
     }
 
     /**
@@ -31,39 +25,32 @@ class GoogleController extends Controller
     public function handleGoogleCallback()
     {
         try {
-            // Get user data from Google
             $googleUser = Socialite::driver('google')->user();
             
-            // Check if user already exists by Google ID
-            $existingUser = User::where('google_id', $googleUser->getId())->first();
+            // Check if user already exists
+            $existingUser = User::where('email', $googleUser->getEmail())->first();
             
             if ($existingUser) {
-                // Update user info if exists
-                $existingUser->update([
-                    'name' => $googleUser->getName(),
-                    'avatar' => $googleUser->getAvatar(),
-                    'email_verified_at' => now(), // Auto-verify Google users
-                ]);
+                // Update Google ID if not set
+                if (!$existingUser->google_id) {
+                    $existingUser->update([
+                        'google_id' => $googleUser->getId(),
+                        'avatar' => $googleUser->getAvatar()
+                    ]);
+                }
                 
                 Auth::login($existingUser, true);
                 
-                return $this->redirectAfterLogin();
-            }
-            
-            // Check if user exists by email
-            $existingEmailUser = User::where('email', $googleUser->getEmail())->first();
-            
-            if ($existingEmailUser) {
-                // Link Google account to existing email user
-                $existingEmailUser->update([
-                    'google_id' => $googleUser->getId(),
-                    'avatar' => $googleUser->getAvatar(),
-                    'email_verified_at' => now(),
-                ]);
+                // SYNC CART SETELAH LOGIN GOOGLE BERHASIL
+                try {
+                    $cartController = new \App\Http\Controllers\Frontend\CartController();
+                    $cartController->syncCartOnLogin($existingUser->id);
+                } catch (\Exception $e) {
+                    \Log::error('Cart sync error on Google login: ' . $e->getMessage());
+                    // Don't fail login if cart sync fails
+                }
                 
-                Auth::login($existingEmailUser, true);
-                
-                return $this->redirectAfterLogin();
+                return $this->redirectAfterLogin('Welcome back! Your cart has been restored.');
             }
             
             // Create new user
@@ -73,12 +60,21 @@ class GoogleController extends Controller
                 'google_id' => $googleUser->getId(),
                 'avatar' => $googleUser->getAvatar(),
                 'email_verified_at' => now(),
-                'password' => null, // No password for Google users
+                'password' => bcrypt('google-auth-' . uniqid())
             ]);
             
             Auth::login($newUser, true);
             
-            return $this->redirectAfterLogin('Welcome! Your account has been created successfully.');
+            // SYNC CART UNTUK USER BARU (mungkin ada guest cart)
+            try {
+                $cartController = new \App\Http\Controllers\Frontend\CartController();
+                $cartController->syncCartOnLogin($newUser->id);
+            } catch (\Exception $e) {
+                \Log::error('Cart sync error on new Google user: ' . $e->getMessage());
+                // Don't fail registration if cart sync fails
+            }
+            
+            return $this->redirectAfterLogin('Welcome! Your account has been created successfully and your cart has been saved.');
             
         } catch (Exception $e) {
             \Log::error('Google OAuth Error: ' . $e->getMessage());
@@ -92,6 +88,17 @@ class GoogleController extends Controller
      */
     public function logout()
     {
+        // SAVE CART TO DATABASE SEBELUM LOGOUT
+        if (Auth::check()) {
+            try {
+                $cartController = new \App\Http\Controllers\Frontend\CartController();
+                $cartController->saveSessionCartToDatabase(Auth::id());
+            } catch (\Exception $e) {
+                \Log::error('Cart save error on Google logout: ' . $e->getMessage());
+                // Don't fail logout if cart save fails
+            }
+        }
+
         Auth::logout();
         
         request()->session()->invalidate();

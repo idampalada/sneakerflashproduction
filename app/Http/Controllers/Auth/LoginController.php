@@ -1,5 +1,4 @@
 <?php
-// File: app/Http/Controllers/Auth/LoginController.php
 
 namespace App\Http\Controllers\Auth;
 
@@ -65,6 +64,15 @@ class LoginController extends Controller
         if (Auth::attempt($credentials, $remember)) {
             $request->session()->regenerate();
 
+            // SYNC CART SETELAH LOGIN BERHASIL
+            try {
+                $cartController = new \App\Http\Controllers\Frontend\CartController();
+                $cartController->syncCartOnLogin(Auth::id());
+            } catch (\Exception $e) {
+                \Log::error('Cart sync error on login: ' . $e->getMessage());
+                // Don't fail login if cart sync fails
+            }
+
             // Redirect to intended URL or home
             $intendedUrl = session()->pull('url.intended', '/');
             
@@ -74,7 +82,7 @@ class LoginController extends Controller
                 $intendedUrl = '/checkout';
             }
 
-            return redirect($intendedUrl)->with('success', 'Welcome back!');
+            return redirect($intendedUrl)->with('success', 'Welcome back! Your cart has been restored.');
         }
 
         return back()->withErrors([
@@ -87,6 +95,17 @@ class LoginController extends Controller
      */
     public function logout(Request $request)
     {
+        // SAVE CART TO DATABASE SEBELUM LOGOUT
+        if (Auth::check()) {
+            try {
+                $cartController = new \App\Http\Controllers\Frontend\CartController();
+                $cartController->saveSessionCartToDatabase(Auth::id());
+            } catch (\Exception $e) {
+                \Log::error('Cart save error on logout: ' . $e->getMessage());
+                // Don't fail logout if cart save fails
+            }
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();
