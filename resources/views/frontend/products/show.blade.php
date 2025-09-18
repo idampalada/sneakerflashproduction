@@ -175,6 +175,71 @@
     @endif
 </div>
 
+@if(Auth::check())
+    {{-- User yang sudah login - tampilkan earn points berdasarkan tier --}}
+    @php
+        $user = Auth::user();
+        
+        // Ambil data member tier dan persentase points
+        $pointsPercentage = method_exists($user, 'getPointsPercentage') ? $user->getPointsPercentage() : 1.0;
+        $tierLabel = method_exists($user, 'getCustomerTierLabel') ? $user->getCustomerTierLabel() : 'Basic Member';
+        $tier = method_exists($user, 'getCustomerTier') ? $user->getCustomerTier() : 'basic';
+        
+        // Hitung points dari harga produk (gunakan sale price jika ada)
+        $productPrice = $product->sale_price && $product->sale_price < $product->price ? 
+                       $product->sale_price : $product->price;
+        $pointsEarned = round(($productPrice * $pointsPercentage) / 100, 0);
+        $pointsValue = $pointsEarned; // 1 point = Rp 1
+        
+        // Styling berdasarkan tier
+        $tierClass = match($tier) {
+            'ultimate' => 'tier-ultimate',
+            'advance' => 'tier-advance', 
+            'basic' => 'tier-basic',
+            default => 'tier-basic'
+        };
+        
+        $tierEmoji = match($tier) {
+            'ultimate' => '💎',
+            'advance' => '🥇',
+            'basic' => '🥉',
+            default => '🥉'
+        };
+    @endphp
+    
+    {{-- Earn Points Container untuk Member --}}
+    <div class="earn-points-container">
+        <div class="points-text">
+            Earn <span class="points-value">{{ number_format($pointsEarned, 0, ',', '.') }}</span> points when you buy me!<br>
+            That's worth <span class="points-value">Rp{{ number_format($pointsValue, 0, ',', '.') }}</span>
+        </div>
+        
+        {{-- Copy Link Section --}}
+        <div class="copy-link-container">
+            <input type="text" class="copy-link-input" value="{{ request()->url() }}" readonly>
+            <button class="copy-btn" onclick="copyProductLink(this)">
+                Copy Url
+            </button>
+        </div>
+    </div>
+@else
+    {{-- Guest User - ajak untuk login --}}
+    <div class="earn-points-container" style="opacity: 0.8;">
+        <div class="points-text">
+            <i class="fas fa-lock" style="color: #6b7280; margin-right: 8px;"></i>
+            <a href="{{ route('login') }}" class="text-blue-600 hover:text-blue-800 underline font-medium">Login</a> to see how many points you can earn!
+        </div>
+        
+        {{-- Copy Link Section untuk Guest --}}
+        <div class="copy-link-container">
+            <input type="text" class="copy-link-input" value="{{ request()->url() }}" readonly>
+            <button class="copy-btn" onclick="copyProductLink(this)">
+                Copy Url
+            </button>
+        </div>
+    </div>
+@endif
+
 <!-- Section Divider -->
 <div class="border-b border-gray-300 my-6"></div>
 
@@ -439,6 +504,83 @@
 </div>
 
 <script>
+    // Copy Product Link Function
+window.copyProductLink = function(button) {
+    const container = button.closest('.copy-link-container');
+    const input = container.querySelector('.copy-link-input');
+    const originalText = button.innerHTML;
+    
+    // Coba clipboard API modern dulu
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(input.value).then(() => {
+            showCopySuccess(button, originalText);
+        }).catch(() => {
+            fallbackCopy(input, button, originalText);
+        });
+    } else {
+        // Fallback untuk browser lama
+        fallbackCopy(input, button, originalText);
+    }
+};
+
+function showCopySuccess(button, originalText) {
+    button.classList.add('copied');
+    button.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    
+    // Tampilkan toast notification jika tersedia
+    if (window.showToast) {
+        showToast('Link berhasil disalin!', 'success');
+    }
+    
+    // Reset setelah 2 detik
+    setTimeout(() => {
+        button.classList.remove('copied');
+        button.innerHTML = originalText;
+    }, 2500);
+}
+
+function fallbackCopy(input, button, originalText) {
+    try {
+        // Select text
+        input.select();
+        input.setSelectionRange(0, 99999); // Untuk mobile
+        
+        // Copy menggunakan execCommand
+        const successful = document.execCommand('copy');
+        
+        if (successful) {
+            showCopySuccess(button, originalText);
+        } else {
+            throw new Error('execCommand failed');
+        }
+        
+        // Hapus selection
+        window.getSelection().removeAllRanges();
+        
+    } catch (err) {
+        console.error('Copy failed: ', err);
+        
+        // Tampilkan error
+        button.innerHTML = 'Failed';
+        button.style.background = '#dc2626';
+        
+        if (window.showToast) {
+            showToast('Gagal menyalin link', 'error');
+        }
+        
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.style.background = '';
+        }, 2500);
+    }
+}
+
+// Auto-focus input saat diklik untuk memudahkan copy manual
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('copy-link-input')) {
+        e.target.select();
+    }
+});
     // ⭐ Quantity controls
 window.increaseQuantity = function() {
     const quantityInput = document.getElementById('quantity');
@@ -808,6 +950,207 @@ document.addEventListener('click', function (ev) {
 </script>
 
 <style>
+    /* Earn Points & Copy Link Styles */
+.earn-points-container {
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.earn-points-container::before {
+    display: none;
+}
+
+.points-badge {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 25px;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+    margin-bottom: 12px;
+}
+
+.points-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: #374151;
+    margin: 12px 0;
+    line-height: 1.4;
+}
+
+.points-value {
+    color: #1f2937;
+    font-weight: 700;
+    font-size: 19px;
+}
+
+.copy-link-container {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.copy-link-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    color: #6b7280;
+    background: transparent;
+    padding: 4px 0;
+}
+
+.copy-btn {
+    background: #000000;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 110px;
+    justify-content: center;
+}
+
+.copy-btn:hover {
+    background: #333333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.copy-btn.copied {
+    background: #059669;
+}
+
+.tier-info {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tier-badge {
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tier-basic { 
+    background: #fef3c7; 
+    color: #92400e; 
+    border: 1px solid #fcd34d;
+}
+
+.tier-advance { 
+    background: #dbeafe; 
+    color: #1e40af; 
+    border: 1px solid #93c5fd;
+}
+
+.tier-ultimate { 
+    background: #f3e8ff; 
+    color: #7c3aed; 
+    border: 1px solid #c4b5fd;
+}
+
+.lock-icon {
+    color: #6b7280;
+    flex-shrink: 0;
+    font-size: 16px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 640px) {
+    .earn-points-container {
+        margin: 16px -16px;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        padding: 16px;
+    }
+    
+    .points-text {
+        font-size: 16px;
+    }
+    
+    .points-value {
+        font-size: 16px;
+    }
+    
+    .copy-link-container {
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+    }
+    
+    .copy-link-input {
+        text-align: center;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 13px;
+        width: 100%;
+    }
+    
+    .copy-btn {
+        width: 100%;
+        padding: 12px;
+        font-size: 15px;
+    }
+    
+    .tier-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    
+    .points-badge {
+        font-size: 13px;
+        padding: 6px 14px;
+    }
+}
+
+@media (max-width: 480px) {
+    .points-text {
+        font-size: 15px;
+    }
+    
+    .points-value {
+        font-size: 16px;
+    }
+    
+    .earn-points-container {
+        padding: 14px;
+    }
+}
     /* Related Products Horizontal Scroll Styles */
 .related-products-scroll {
     -webkit-overflow-scrolling: touch;
