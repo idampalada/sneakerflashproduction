@@ -162,6 +162,8 @@ Route::middleware('guest')->group(function () {
     Route::post('/register', [RegisterController::class, 'register'])->name('register.submit');
     Route::get('/auth/google', [GoogleController::class, 'redirectToGoogle'])->name('auth.google');
     Route::get('/auth/google/callback', [GoogleController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+        Route::get('/auth/apple', [AppleController::class, 'redirectToApple'])->name('auth.apple');
+    Route::get('/auth/apple/callback', [AppleController::class, 'handleAppleCallback'])->name('auth.apple.callback');
 });
 
 Route::post('/logout', [GoogleController::class, 'logout'])->name('logout')->middleware('auth');
