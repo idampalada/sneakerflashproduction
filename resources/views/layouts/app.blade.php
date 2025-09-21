@@ -23,7 +23,16 @@
     
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+    <script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.store('ui', {
+      showMobileSearch: false
+    });
+  });
+</script>
+
+
+
     <style>
     <!-- Custom Styles -->
     /* Reset and Base Styles */
@@ -584,22 +593,21 @@ html, body {
 
 /* Mobile Styles */
 .mobile-menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100vh;
-    background: rgba(0,0,0,0.5);
-    z-index: 9998;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.3s ease;
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100vh;
+  background: rgba(0,0,0,0.5);
+  z-index: 9998;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  pointer-events: none;         /* ← tambahkan */
+}
+.mobile-menu-overlay.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;         /* ← aktif hanya saat open */
 }
 
-.mobile-menu-overlay.open {
-    opacity: 1;
-    visibility: visible;
-}
 
 .mobile-menu {
     position: fixed;
@@ -1285,10 +1293,16 @@ html, body {
     
     <!-- Mobile Icons (KANAN): Search + Cart -->
 <div class="mobile-icons-right">
-    <button @click="showMobileSearch = !showMobileSearch" class="mobile-search-extended" title="Search Products">
-        <i class="fas fa-search"></i>
-        <span class="search-text">Search</span>
-    </button>
+    <button type="button"
+        @click="$store.ui.showMobileSearch = !$store.ui.showMobileSearch"
+        class="mobile-search-extended"
+        title="Search Products">
+  <i class="fas fa-search"></i>
+  <span class="search-text">Search</span>
+</button>
+
+
+
         <!-- Cart Button -->
             <a href="{{ route('cart.index') }}" class="icon-btn mobile-cart-hidden" title="Shopping Cart">
             <i class="fas fa-shopping-cart"></i>
@@ -1585,24 +1599,41 @@ html, body {
     </header>
 
     <!-- Mobile Search Dropdown (tampil saat button diklik) -->
-<div class="md:hidden bg-white border-b px-4 py-3" x-show="showMobileSearch" x-transition style="display: none;">
+<!-- Mobile Search Overlay (FULL SCREEN) -->
+<div class="fixed inset-0 z-[100] md:hidden bg-white"
+     x-data
+     x-show="$store.ui.showMobileSearch"
+     x-transition
+     x-trap="$store.ui.showMobileSearch"
+     @keydown.escape.window="$store.ui.showMobileSearch = false"
+     x-init="$watch(() => $store.ui.showMobileSearch, v => v && $nextTick(() => $el.querySelector('input[name=search]')?.focus()))"
+     style="display:none;">
+  <!-- Header overlay -->
+  <div class="p-5 flex items-center justify-between border-b">
+    <h2 class="text-xl font-semibold">Search</h2>
+    <button @click="$store.ui.showMobileSearch = false" class="text-3xl leading-none">&times;</button>
+  </div>
+
+  <!-- Body overlay -->
+  <div class="p-5">
     <form action="/products" method="GET">
-        <div class="ka-search-container">
-            <div class="relative flex items-center">
-                <i class="fas fa-search ka-search-icon"></i>
-                <input type="text" 
-                       name="search" 
-                       placeholder="Type any products here"
-                       value="{{ request('search') }}"
-                       class="ka-search-input flex-1"
-                       x-ref="searchInput">
-                <button type="submit" class="ka-search-btn">
-                    <i class="fas fa-search"></i>
-                </button>
-            </div>
+      <div class="ka-search-container">
+        <div class="relative flex items-center">
+          <i class="fas fa-search ka-search-icon"></i>
+          <input type="text" name="search"
+                 placeholder="Type any products here"
+                 value="{{ request('search') }}"
+                 class="ka-search-input flex-1" autofocus>
+          <button type="submit" class="ka-search-btn">
+            <i class="fas fa-search"></i>
+          </button>
         </div>
+      </div>
     </form>
+  </div>
 </div>
+
+
 
     <!-- Mobile Cart & Wishlist (tampil di mobile) -->
     <!-- Mobile Menu dengan Dropdown -->

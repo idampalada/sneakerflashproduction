@@ -70,22 +70,11 @@
                             $currentQuantity = $item['quantity'] ?? 1;
                             $subtotal = $currentPrice * $currentQuantity;
                             
-                            // Image URL
-                            $imageUrl = asset('images/default-product.jpg');
-                            if (!empty($item['image'])) {
-                                $imagePath = $item['image'];
-                                if (filter_var($imagePath, FILTER_VALIDATE_URL)) {
-                                    $imageUrl = $imagePath;
-                                } elseif (str_starts_with($imagePath, '/storage/')) {
-                                    $imageUrl = config('app.url') . $imagePath;
-                                } elseif (str_starts_with($imagePath, 'products/')) {
-                                    $imageUrl = config('app.url') . '/storage/' . $imagePath;
-                                } elseif (str_starts_with($imagePath, 'assets/') || str_starts_with($imagePath, 'images/')) {
-                                    $imageUrl = asset($imagePath);
-                                } else {
-                                    $imageUrl = config('app.url') . '/storage/products/' . $imagePath;
-                                }
-                            }
+                            // Image URL - Logic sama dengan show.blade.php
+$imageUrl = $item['image'] ?? asset('images/default-product.jpg');
+if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+    $imageUrl = asset('storage/' . ltrim($imageUrl, '/'));
+}
                         @endphp
                         
                         <!-- Desktop Layout (Hidden on Mobile) -->

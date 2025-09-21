@@ -126,7 +126,7 @@ class CartController extends Controller
                     'name' => $product->name,
                     'price' => $product->sale_price ?: $product->price,
                     'original_price' => $product->price,
-                    'image' => $product->image_main,
+                    'image' => $product->featured_image ?? $product->image_main,
                     'quantity' => $quantity,
                     'size' => $selectedSize,
                     'slug' => $product->slug,
@@ -476,7 +476,7 @@ class CartController extends Controller
                 'quantity' => $details['quantity'] ?? 1,
                 'total' => $itemTotal,
                 'size' => $details['size'] ?? null,
-                'image' => $details['image'] ?? $product->image_main,
+                'image' => $dbItem->product->featured_image ?? $dbItem->product->image_main,
                 'slug' => $details['slug'] ?? $product->slug
             ];
             
@@ -541,7 +541,7 @@ class CartController extends Controller
                     'name' => $dbItem->product->name,
                     'price' => $dbItem->product->sale_price ?: $dbItem->product->price,
                     'original_price' => $dbItem->product->price,
-                    'image' => $dbItem->product->image_main,
+                    'image' => $details['image'] ?? ($product->featured_image ?? $product->image_main),
                     'quantity' => $dbItem->quantity,
                     'size' => $size,
                     'slug' => $dbItem->product->slug,
@@ -663,7 +663,7 @@ class CartController extends Controller
             $itemName = $details['name'] ?? ($product->name ?? 'Unknown Product');
             $itemPrice = $details['price'] ?? ($product->sale_price ?: ($product->price ?? 0));
             $itemOriginalPrice = $details['original_price'] ?? ($product->price ?? 0);
-            $itemImage = $details['image'] ?? $product->image_main;
+            $itemImage = $details['image'] ?? ($product->featured_image ?? $product->image_main);
             $quantity = $details['quantity'] ?? 1;
             $size = $details['size'] ?? null;
             $slug = $details['slug'] ?? $product->slug;
