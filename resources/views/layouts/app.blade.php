@@ -1600,6 +1600,8 @@ html, body {
 
     <!-- Mobile Search Dropdown (tampil saat button diklik) -->
 <!-- Mobile Search Overlay (FULL SCREEN) -->
+<!-- Mobile Search Overlay (slide-in from right) -->
+<!-- Mobile Search Overlay (FULL SCREEN) -->
 <div class="fixed inset-0 z-[100] md:hidden bg-white"
      x-data
      x-show="$store.ui.showMobileSearch"
@@ -1632,7 +1634,6 @@ html, body {
     </form>
   </div>
 </div>
-
 
 
     <!-- Mobile Cart & Wishlist (tampil di mobile) -->

@@ -22,61 +22,7 @@
                         <li class="text-gray-900">Products</li>
                     @endif
                 </ol>
-            </nav>
-            
-            <div class="flex justify-between items-center">
-                <h1 class="text-3xl font-bold text-gray-900">
-                    @if(request('category') && request('type'))
-                        {{ strtoupper(request('category')) }} {{ ucfirst(str_replace('_', ' ', request('type'))) }}
-                    @elseif(request('category'))
-                        {{ strtoupper(request('category')) }} Products
-                    @else
-                        All Products
-                    @endif
-                </h1>
-                <div class="text-gray-600">
-                    {{ $total ?? 0 }} products found
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Category Tabs -->
-    <section class="bg-white py-4 border-b border-gray-200">
-        <div class="container mx-auto px-4">
-            <div class="flex items-center space-x-4 overflow-x-auto">
-                <!-- Filter Toggle Button -->
-                <button id="filterToggle" class="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
-                    <i class="fas fa-filter text-gray-600"></i>
-                    <span class="text-sm font-medium text-gray-700">Filter</span>
-                    <i id="filterIcon" class="fas fa-chevron-down text-gray-400 text-xs"></i>
-                </button>
-
-                <!-- Category Pills -->
-                <div class="flex space-x-2 flex-shrink-0">
-                    <a href="{{ route('products.index') }}" class="category-pill {{ !request('category') ? 'active' : '' }}">
-                        All Products
-                    </a>
-                    <a href="{{ route('products.index', ['category' => 'mens']) }}" class="category-pill {{ request('category') === 'mens' ? 'active' : '' }}">
-                        MENS
-                    </a>
-                    <a href="{{ route('products.index', ['category' => 'womens']) }}" class="category-pill {{ request('category') === 'womens' ? 'active' : '' }}">
-                        WOMENS
-                    </a>
-                    <a href="{{ route('products.index', ['category' => 'unisex']) }}" class="category-pill {{ request('category') === 'unisex' ? 'active' : '' }}">
-                        UNISEX
-                    </a>
-                    <a href="{{ route('products.index', ['sale' => 'true']) }}" class="category-pill {{ request('sale') ? 'active' : '' }} special">
-                        SALE
-                    </a>
-                </div>
-
-                <!-- Reset Filter -->
-                <button onclick="clearFilters()" class="flex items-center space-x-1 text-sm text-gray-500 hover:text-gray-700 flex-shrink-0">
-                    <span>Reset</span>
-                    <i class="fas fa-times text-xs"></i>
-                </button>
-            </div>
+            </nav>     
         </div>
     </section>
 
