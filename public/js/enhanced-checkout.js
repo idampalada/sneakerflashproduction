@@ -1595,6 +1595,17 @@ function showStep(step) {
 
     currentStep = step;
 
+        // TAMBAHKAN KODE INI SETELAH currentStep = step;
+    // Show/hide order summary based on step
+    const orderSummary = document.getElementById('order-summary-section');
+    if (orderSummary) {
+        if (step === 4) {
+            orderSummary.classList.remove('hidden');
+        } else {
+            orderSummary.classList.add('hidden');
+        }
+    }
+
     // Scroll to top of form
     const container = document.querySelector(".container");
     if (container) {

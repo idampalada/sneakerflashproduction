@@ -506,8 +506,8 @@
 
                 <!-- Right Column: Order Summary - NO TAX VERSION + VOUCHER SUPPORT -->
                 <div class="lg:col-span-1">
-                    <div class="bg-white rounded-lg shadow-md p-6 sticky top-8">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Order Summary</h3>
+                    <div class="lg:col-span-1">
+    <div class="bg-white rounded-lg shadow-md p-6 sticky top-8 checkout-section hidden" id="order-summary-section">
                         
                         <!-- Cart Items Display - FIXED: Show actual cart items -->
                         <div class="space-y-3 mb-4">
@@ -1776,6 +1776,8 @@ window.triggerShippingCalculation = triggerShippingCalculation;
 window.setSelectedDestination = setSelectedDestination;
 
 console.log('🚀 Checkout location functions defined globally with shipping fix');
+
+
 </script>
 
 <!-- Load the NO TAX JavaScript file -->
