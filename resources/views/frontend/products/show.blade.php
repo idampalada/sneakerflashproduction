@@ -140,7 +140,7 @@
                     $cleanProductName = trim($cleanProductName, ' -');
                 @endphp
                 
-                <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ $cleanProductName }}</h1>
+                <h1 class="text-xl md:text-3xl font-semibold md:font-bold text-gray-900 mb-3 md:mb-4">{{ $cleanProductName }}</h1>
                 
                 
 

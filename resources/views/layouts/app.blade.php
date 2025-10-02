@@ -1327,23 +1327,36 @@ html, body {
             </div>
 
             <!-- Desktop Search Bar -->
-            <div class="flex-1 max-w-2xl mx-8">
-                <form action="/products" method="GET" class="w-full ka-search-custom mx-auto">
-                    <div class="ka-search-container">
-                        <div class="relative flex items-center">
-                            <i class="fas fa-search ka-search-icon"></i>
-                            <input type="text" 
-                                   name="search" 
-                                   placeholder="Type any products here"
-                                   value="{{ request('search') }}"
-                                   class="ka-search-input flex-1">
-                            <button type="submit" class="ka-search-btn">
-                                <i class="fas fa-search"></i>
-                            </button>
-                        </div>
-                    </div>
-                </form>
+<div class="flex-1 max-w-2xl mx-8">
+    <form action="{{ route('search') }}" method="GET" class="w-full ka-search-custom mx-auto">
+        {{-- Hidden input untuk maintain filter lain jika ada (opsional) --}}
+        @if(request()->hasAny(['category', 'brands', 'min_price', 'max_price', 'sort']))
+            @foreach(request()->only(['category', 'brands', 'min_price', 'max_price', 'sort']) as $key => $value)
+                @if(is_array($value))
+                    @foreach($value as $val)
+                        <input type="hidden" name="{{ $key }}[]" value="{{ $val }}">
+                    @endforeach
+                @else
+                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                @endif
+            @endforeach
+        @endif
+        
+        <div class="ka-search-container">
+            <div class="relative flex items-center">
+                <i class="fas fa-search ka-search-icon"></i>
+                <input type="text" 
+                       name="q"  {{-- ⭐ UBAH: name="q" untuk query utama --}}
+                       placeholder="Type any products here"
+                       value="{{ request('q') }}"  {{-- ⭐ UBAH: value dari request('q') --}}
+                       class="ka-search-input flex-1">
+                <button type="submit" class="ka-search-btn">
+                    <i class="fas fa-search"></i>
+                </button>
             </div>
+        </div>
+    </form>
+</div>
 
             <!-- Desktop User Menu -->
             <div class="flex items-center space-x-3">
@@ -1617,14 +1630,28 @@ html, body {
   </div>
 
   <!-- Body overlay -->
-  <div class="p-5">
-    <form action="/products" method="GET">
+<div class="p-5">
+    <form action="{{ route('search') }}" method="GET">
+        {{-- Hidden input untuk maintain filter lain jika ada (opsional) --}}
+        @if(request()->hasAny(['category', 'brands', 'min_price', 'max_price', 'sort']))
+            @foreach(request()->only(['category', 'brands', 'min_price', 'max_price', 'sort']) as $key => $value)
+                @if(is_array($value))
+                    @foreach($value as $val)
+                        <input type="hidden" name="{{ $key }}[]" value="{{ $val }}">
+                    @endforeach
+                @else
+                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                @endif
+            @endforeach
+        @endif
+        
       <div class="ka-search-container">
         <div class="relative flex items-center">
           <i class="fas fa-search ka-search-icon"></i>
-          <input type="text" name="search"
+          <input type="text" 
+                 name="q"  {{-- ⭐ UBAH: name="q" untuk query utama --}}
                  placeholder="Type any products here"
-                 value="{{ request('search') }}"
+                 value="{{ request('q') }}"  {{-- ⭐ UBAH: value dari request('q') --}}
                  class="ka-search-input flex-1" autofocus>
           <button type="submit" class="ka-search-btn">
             <i class="fas fa-search"></i>
@@ -1632,7 +1659,7 @@ html, body {
         </div>
       </div>
     </form>
-  </div>
+</div>
 </div>
 
 

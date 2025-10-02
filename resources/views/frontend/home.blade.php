@@ -5,10 +5,10 @@
 @section('content')
 
     <!-- Best Sellers Section - Horizontal Scroll -->
-<section class="py-16 bg-gray-50">
+<section class="pt-0 pb-0 bg-gray-50">
     <div class="container mx-auto px-4">
         <div class="text-center mb-12">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Best Sellers</h2>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Best Sellers</h2>
             <p class="text-gray-600 text-lg">Most popular products from our customers</p>
         </div>
 
@@ -236,10 +236,10 @@
 </style>
 
     <!-- Featured Products - Horizontal Scroll -->
-<section class="py-16 bg-white">
+<section class="pt-16 pb-0 bg-gray">
     <div class="container mx-auto px-4">
         <div class="text-center mb-12">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Featured Products</h2>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Featured Products</h2>
             <p class="text-gray-600 text-lg">Hand-picked favorites from our collection</p>
         </div>
         
@@ -399,7 +399,7 @@
 <section class="py-16 bg-gray-50">
     <div class="container mx-auto px-4">
         <div class="text-center mb-12">
-            <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Latest Arrivals</h2>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Latest Arrivals</h2>
             <p class="text-gray-600 text-lg">Fresh kicks just dropped</p>
         </div>
         

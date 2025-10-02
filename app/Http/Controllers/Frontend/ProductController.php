@@ -15,137 +15,137 @@ use Illuminate\Support\Facades\Log;
 class ProductController extends Controller
 {
     public function index(Request $request)
-    {
-        // ⭐ CORRECTED: Group by sku_parent, differentiate by SKU
-        $query = Product::query()
-            ->where('is_active', true)
-            ->whereNotNull('published_at')
-            ->where('published_at', '<=', now())
-            ->with('category');
+{
+    // ⭐ SEARCH INTEGRATION: Ambil query dari ?q= atau ?keywords=
+    $searchQuery = $request->get('q') ?? $request->get('keywords') ?? '';
+    $searchWithin = $request->get('search') ?? ''; // Refine dari form (opsional)
 
-        // Apply filters BEFORE grouping
-        $this->applyAllFilters($query, $request);
+    // Base query: Active & published products
+    $query = Product::query()
+        ->where('is_active', true)
+        ->whereNotNull('published_at')
+        ->where('published_at', '<=', now())
+        ->with('category');
+
+    // ⭐ SEARCH LOGIC: Ketat di NAME jika ada query
+    $finalSearch = $searchQuery;
+    if ($searchWithin) {
+        $finalSearch = $searchQuery . ' ' . $searchWithin; // Gabung refine
+    }
+
+    if ($finalSearch) {
+        // KETAT: HANYA match di NAME (seperti query manual Anda)
+        $query->where('name', 'ilike', "%{$finalSearch}%");
         
-        // Get all products
-        $allProducts = $query->get();
-        
-        Log::info('Products found before grouping', [
-            'total_products' => $allProducts->count(),
-            'sample_data' => $allProducts->take(3)->map(function($p) {
-                return [
-                    'id' => $p->id,
-                    'name' => $p->name,
-                    'sku' => $p->sku,
-                    'sku_parent' => $p->sku_parent,
-                    'size' => $p->available_sizes
-                ];
-            })
+        // Log untuk debug
+        Log::info('Search integrated in index', [
+            'finalSearch' => $finalSearch,
+            'url' => $request->fullUrl()
         ]);
-        
-        // ⭐ CORRECTED: Group products by sku_parent (same product, different sizes)
-        $groupedProducts = $this->groupProductsBySkuParent($allProducts);
-        
-        Log::info('Products after grouping', [
-            'grouped_count' => $groupedProducts->count(),
-            'sample_group' => $groupedProducts->first()
-        ]);
-        
-        // Apply sorting to grouped products
+    }
+
+    // Apply all filters dari request (seperti existing: category, brands[], price, dll.)
+    $this->applyAllFilters($query, $request);
+
+    // ⭐ SORTING: Default 'relevance' jika search, else dari request
+    $sort = $request->get('sort', $finalSearch ? 'relevance' : 'latest');
+    if ($sort === 'relevance' && $finalSearch) {
+        // Relevance: Prioritas name > brand > description
+        $query->orderByRaw("
+            CASE 
+                WHEN name ILIKE ? THEN 1
+                WHEN brand ILIKE ? THEN 2
+                WHEN description ILIKE ? OR short_description ILIKE ? THEN 3
+                WHEN sku ILIKE ? THEN 4
+                ELSE 5
+            END ASC,
+            created_at DESC
+        ", array_fill(0, 5, "%{$finalSearch}%"));
+    } else {
+        $this->applySorting($query, $request); // Existing sorting (latest, price_low, dll.)
+    }
+
+    // Get all products BEFORE grouping (untuk filter data)
+    $allProducts = $query->get();
+
+    // ⭐ GROUPING: Sama seperti existing (by sku_parent, handle varian sizes)
+    $groupedProducts = $this->groupProductsBySkuParent($allProducts);
+
+    // Apply sorting ke collection jika bukan relevance
+    if ($sort !== 'relevance') {
         $groupedProducts = $this->applySortingToCollection($groupedProducts, $request);
+    }
 
-        // Manual pagination
-        $perPage = 12;
-        $currentPage = $request->page ?? 1;
-        $offset = ($currentPage - 1) * $perPage;
-        
-        $paginatedProducts = $groupedProducts->slice($offset, $perPage)->values();
-        
-        // Create pagination info
-        $total = $groupedProducts->count();
-        $lastPage = ceil($total / $perPage);
-        
-        // Get filter data
-        $categories = Category::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+    // Manual pagination (seperti existing, karena grouping rusak Laravel paginator)
+    $perPage = 12;
+    $currentPage = $request->get('page', 1);
+    $offset = ($currentPage - 1) * $perPage;
+    $paginatedProducts = $groupedProducts->slice($offset, $perPage)->values();
 
-        $brands = Product::query()
-            ->where('is_active', true)
-            ->whereNotNull('published_at')
-            ->where('published_at', '<=', now())
-            ->whereNotNull('brand')
-            ->distinct()
-            ->pluck('brand')
+    // Pagination info
+    $total = $groupedProducts->count();
+    $lastPage = ceil($total / $perPage);
+
+    // ⭐ FILTER DATA: Dari hasil (relevan dengan search/filter)
+    $categories = Category::where('is_active', true)->orderBy('name')->get();
+    $brands = $allProducts->pluck('brand')->filter()->unique()->sort()->values();
+
+    // Sizes & Colors dari hasil (seperti existing)
+    $availableSizes = collect();
+    $availableColors = collect();
+    
+    if (Schema::hasColumn('products', 'available_sizes')) {
+        $availableSizes = $allProducts
+            ->filter(function($product) {
+                return !empty($product->available_sizes);
+            })
+            ->flatMap(function($product) {
+                $sizes = $product->available_sizes;
+                return is_array($sizes) ? $sizes : (is_string($sizes) ? [$sizes] : []);
+            })
+            ->filter()
+            ->unique()
             ->sort()
             ->values();
-
-        $stockCounts = $this->getStockCounts();
-
-        // Get size and color options - ⭐ FIXED: Safe handling of array data
-        $availableSizes = collect();
-        $availableColors = collect();
-        
-        if (Schema::hasColumn('products', 'available_sizes')) {
-            $availableSizes = $allProducts
-                ->filter(function($product) {
-                    // ⭐ FIXED: Ensure available_sizes is an array or string
-                    $sizes = $product->available_sizes;
-                    return !empty($sizes);
-                })
-                ->flatMap(function($product) {
-                    $sizes = $product->available_sizes;
-                    // ⭐ FIXED: Handle both array and string formats
-                    if (is_array($sizes)) {
-                        return $sizes;
-                    } elseif (is_string($sizes)) {
-                        return [$sizes];
-                    }
-                    return [];
-                })
-                ->filter()
-                ->unique()
-                ->sort()
-                ->values();
-        }
-
-        if (Schema::hasColumn('products', 'available_colors')) {
-            $allProducts->each(function ($product) use (&$availableColors) {
-                $colors = $product->available_colors;
-                // ⭐ FIXED: Safe array handling
-                if (is_array($colors)) {
-                    $availableColors = $availableColors->merge($colors);
-                } elseif (is_string($colors)) {
-                    $availableColors = $availableColors->push($colors);
-                }
-            });
-            $availableColors = $availableColors->filter()->unique()->sort()->values();
-        }
-
-        // Get user wishlist product IDs
-        $userWishlistProductIds = collect();
-        if (Auth::check()) {
-            $allProductIds = $paginatedProducts->pluck('id');
-            $userWishlistProductIds = Wishlist::where('user_id', Auth::id())
-                ->whereIn('product_id', $allProductIds)
-                ->pluck('product_id')
-                ->toArray();
-        }
-
-        return view('frontend.products.index', compact(
-            'paginatedProducts',
-            'categories', 
-            'brands', 
-            'stockCounts',
-            'availableSizes',
-            'availableColors',
-            'userWishlistProductIds',
-            'total',
-            'currentPage',
-            'lastPage',
-            'perPage'
-        ));
     }
+
+    if (Schema::hasColumn('products', 'available_colors')) {
+        $allProducts->each(function ($product) use (&$availableColors) {
+            $colors = $product->available_colors ?? [];
+            if (is_array($colors)) {
+                $availableColors = $availableColors->merge($colors);
+            } elseif (is_string($colors) && !empty($colors)) {
+                $availableColors = $availableColors->push($colors);
+            }
+        });
+        $availableColors = $availableColors->filter()->unique()->sort()->values();
+    }
+
+    // Wishlist (jika pakai, seperti existing; jika tidak, bisa hilangkan)
+    $userWishlistProductIds = collect();
+    if (Auth::check()) {
+        $paginatedProductIds = $paginatedProducts->pluck('id');
+        $userWishlistProductIds = Wishlist::where('user_id', Auth::id())
+            ->whereIn('product_id', $paginatedProductIds)
+            ->pluck('product_id')
+            ->toArray();
+    }
+
+    // Return view existing (index.blade.php) dengan tambahan $searchQuery
+    return view('frontend.products.index', compact(
+        'paginatedProducts',
+        'categories',
+        'brands',
+        'availableSizes',
+        'availableColors',
+        'userWishlistProductIds',
+        'searchQuery',  // ⭐ Baru: Untuk header & highlight
+        'total',
+        'currentPage',
+        'lastPage',
+        'perPage'
+    ));
+}
 
     // ⭐ NEW: Product Detail Show Method
     public function show($slug)
@@ -735,33 +735,17 @@ class ProductController extends Controller
         return $this->index($request);
     }
 
-    public function search(Request $request)
+        public function search(Request $request)
     {
-        $searchQuery = $request->q ?? $request->search;
+        // Get search query
+        $searchQuery = $request->get('q') ?? $request->get('keywords') ?? '';
         
         if (empty($searchQuery)) {
             return redirect()->route('products.index');
         }
 
-        $query = Product::query()
-            ->where('is_active', true)
-            ->whereNotNull('published_at')
-            ->where('published_at', '<=', now())
-            ->with('category')
-            ->where(function ($q) use ($searchQuery) {
-                $q->where('name', 'ilike', "%{$searchQuery}%")
-                  ->orWhere('description', 'ilike', "%{$searchQuery}%")
-                  ->orWhere('short_description', 'ilike', "%{$searchQuery}%")
-                  ->orWhere('brand', 'ilike', "%{$searchQuery}%")
-                  ->orWhere('sku', 'ilike', "%{$searchQuery}%")
-                  ->orWhereHas('category', function ($cat) use ($searchQuery) {
-                      $cat->where('name', 'ilike', "%{$searchQuery}%");
-                  });
-            });
-
-        $products = $query->paginate(12);
-        
-        return view('frontend.products.search', compact('products', 'searchQuery'));
+        // ⭐ CHANGE: Redirect to index with all parameters including search
+        return redirect()->route('products.index', $request->all());
     }
 
     public function filter(Request $request)

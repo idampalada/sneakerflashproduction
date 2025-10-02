@@ -519,3 +519,5 @@ Route::group(['prefix' => 'integrations/ginee', 'middleware' => ['auth', 'web']]
     Route::post('/sync-single-sku-enhanced', [App\Http\Controllers\Frontend\GineeSyncController::class, 'syncSingleSkuEnhanced']);
     Route::post('/compare-methods', [App\Http\Controllers\Frontend\GineeSyncController::class, 'compareAllMethods']);
 });
+
+

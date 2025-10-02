@@ -421,30 +421,17 @@ if (!filter_var($imageUrl, FILTER_VALIDATE_URL)) {
             </div>
         </div>
     @else
-        <!-- Empty Cart -->
-        <div class="text-center py-16 mobile-empty-cart">
-            <div class="max-w-md mx-auto">
-                <div class="mb-6">
-                    <i class="fas fa-shopping-cart text-6xl text-gray-300"></i>
-                </div>
-                <h2 class="text-2xl font-semibold text-gray-600 mb-4">Your cart is empty</h2>
-                <p class="text-gray-500 mb-8">Looks like you haven't added any items to your cart yet. Start browsing our amazing products!</p>
-                <div class="space-y-4">
-                    <a href="{{ route('products.index') }}" 
-                       class="inline-block bg-black text-white px-8 py-3 rounded-xl hover:bg-gray-800 transition-colors font-medium">
-                        <i class="fas fa-search mr-2"></i>Start Shopping
-                    </a>
-                    <div class="flex justify-center space-x-4 text-sm">
-                        <a href="{{ route('products.sale') }}" class="text-red-600 hover:text-red-700 transition-colors">
-                            <i class="fas fa-percent mr-1"></i>Sale Items
-                        </a>
-                        <a href="{{ route('products.index', ['featured' => '1']) }}" class="text-yellow-600 hover:text-yellow-700 transition-colors">
-                            <i class="fas fa-star mr-1"></i>Featured Products
-                        </a>
-                    </div>
-                </div>
-            </div>
+        <!-- Empty Cart State -->
+<div class="bg-white rounded-2xl p-12 text-center border border-gray-100">
+    <div class="max-w-md mx-auto">
+        <div class="mb-6">
+            <i class="fas fa-shopping-cart text-6xl text-gray-300"></i>
         </div>
+        <h3 class="text-2xl font-semibold text-gray-900 mb-4">Your cart is empty</h3>
+        <p class="text-gray-500">Looks like you haven't added any items to your cart yet. 
+            Start browsing our amazing products!</p>
+    </div>
+</div>
     @endif
 </div>
 
