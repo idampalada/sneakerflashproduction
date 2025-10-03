@@ -326,34 +326,97 @@ protected function syncAllProducts(array $data): void
         $dryRun = $data['dry_run'] ?? true;
         $onlyActive = $data['only_active'] ?? true; 
         $onlyMapped = $data['only_mapped'] ?? false;
-        $batchSize = $data['batch_size'] ?? 50;
-        $delay = $data['delay_between_batches'] ?? 2;
-        $maxProducts = $data['max_products'] ?? 0;
-
-        // Get SKUs
-        $query = Product::whereNotNull('sku')->where('sku', '!=', '');
-        if ($onlyActive) $query->where('status', 'active');
-        if ($onlyMapped) $query->whereHas('gineeMappings', function($q) { $q->where('sync_enabled', true); });
-        if ($maxProducts > 0) $query->limit($maxProducts);
         
-        $skus = $query->pluck('sku')->filter()->toArray();
+        // ✅ FIX 1: INCREASE DEFAULT BATCH SIZE
+        $batchSize = $data['batch_size'] ?? 100; // Changed from 50 to 100
+        
+        // ✅ FIX 2: REDUCE DELAY
+        $delay = $data['delay_between_batches'] ?? 2; // Changed from 5 to 2 seconds
+        
+        // ✅ FIX 3: FIX MAX PRODUCTS LOGIC - 0 should mean ALL products
+        $maxProducts = $data['max_products'] ?? 0;
+        
+        // Get base query
+        $query = Product::query();
+        
+        if ($onlyActive) {
+            $query->where('is_active', true);
+        }
+        
+        if ($onlyMapped) {
+            $query->whereHas('gineeMappings');
+        }
+        
+        // ✅ CRITICAL FIX: Only apply limit if maxProducts > 0
+        // If maxProducts = 0, sync ALL products
+        if ($maxProducts > 0) {
+            $skus = $query->limit($maxProducts)->pluck('sku')->toArray();
+        } else {
+            $skus = $query->pluck('sku')->toArray();
+        }
         
         if (empty($skus)) {
-            Notification::make()->title('No Products Found')->warning()->send();
+            Notification::make()
+                ->title('⚠️ No Products to Sync')
+                ->body('No products match the selected criteria')
+                ->warning()
+                ->send();
             return;
         }
 
-        // Dispatch job
-        \App\Jobs\OptimizedBulkGineeSyncJob::dispatch($skus, $dryRun, $batchSize, $delay);
+        $sessionId = \App\Models\GineeSyncLog::generateSessionId();
+        
+        // Log start
+        \App\Models\GineeSyncLog::create([
+            'session_id' => $sessionId,
+            'type' => 'bulk_sync_summary',
+            'status' => 'pending',
+            'operation_type' => 'stock_push',
+            'method_used' => 'dashboard_sync_all',
+            'message' => ($dryRun ? "🧪 DRY RUN - " : "🚀 SYNC - ") . 
+                        "Starting sync for " . count($skus) . " products " .
+                        "(Batch: {$batchSize}, Delay: {$delay}s, Max: " . 
+                        ($maxProducts > 0 ? $maxProducts : 'ALL') . ")",
+            'dry_run' => $dryRun,
+            'created_at' => now()
+        ]);
+
+        // Show initial notification
+        Notification::make()
+            ->title($dryRun ? '🧪 Starting Dry Run...' : '🚀 Starting Sync...')
+            ->body("Processing " . count($skus) . " products\nBatch: {$batchSize} | Delay: {$delay}s | Max: " . 
+                   ($maxProducts > 0 ? $maxProducts : 'ALL'))
+            ->info()
+            ->duration(5000)
+            ->send();
+
+        // ✅ DISPATCH BACKGROUND JOB untuk proses yang panjang
+        \App\Jobs\OptimizedBulkGineeSyncJob::dispatch(
+            $skus, 
+            $dryRun, 
+            $batchSize, 
+            $delay
+        );
+
+        // Success notification
+        Notification::make()
+            ->title('✅ Background Sync Started')
+            ->body("Processing " . count($skus) . " products in background\n" .
+                   "Session ID: {$sessionId}\n" .
+                   "Check 'View Statistics' to monitor progress")
+            ->success()
+            ->duration(10000)
+            ->send();
+
+    } catch (\Exception $e) {
+        Log::error("❌ Sync all products failed: " . $e->getMessage());
         
         Notification::make()
-            ->title('Background Job Started')
-            ->body("Processing " . count($skus) . " products in background")
-            ->success()
+            ->title('❌ Sync Failed')
+            ->body('Error: ' . $e->getMessage())
+            ->danger()
+            ->duration(10000)
             ->send();
-            
-    } catch (\Exception $e) {
-        Notification::make()->title('Job Failed')->body($e->getMessage())->danger()->send();
     }
 }
 

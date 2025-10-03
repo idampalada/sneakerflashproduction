@@ -429,12 +429,38 @@
     </div>
 
     <!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
+<!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
 <script>
 console.log('🚀 Enhanced JavaScript with Price Support...');
 
 window.addEventListener('load', function() {
     setupSizeSelection();
 });
+
+// ⭐ BARU: Fungsi untuk update sort by (mengatasi masalah dropdown tidak berjalan)
+function updateSort(sortValue) {
+    console.log('🔄 Updating sort to:', sortValue);
+    
+    // Buat URL baru berdasarkan current URL
+    const url = new URL(window.location.href);
+    
+    // Set parameter sort baru
+    url.searchParams.set('sort', sortValue);
+    
+    // Reset page ke 1 saat sort berubah (standar UX, agar tidak stuck di page lama)
+    url.searchParams.delete('page');
+    
+    // Redirect ke URL baru (reload halaman dengan sorting baru)
+    window.location.href = url.toString();
+}
+
+// ⭐ BARU: Fungsi clear filters (untuk empty state button)
+function clearFilters() {
+    console.log('🧹 Clearing all filters...');
+    
+    // Redirect ke products index tanpa parameter apa pun
+    window.location.href = '{{ route("products.index") }}';
+}
 
 function setupSizeSelection() {
     document.addEventListener('click', handleClick);
@@ -929,4 +955,5 @@ function hideToast() {
     
     .fixed.top-4.right-4 { animation: slideInRight 0.3s ease-out; }
 </style>
+
 @endpush

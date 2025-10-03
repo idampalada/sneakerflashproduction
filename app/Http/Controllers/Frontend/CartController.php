@@ -27,154 +27,143 @@ class CartController extends Controller
     }
 
     public function add(Request $request, $productId = null)
-    {
-        try {
-            // AUTHENTICATION CHECK - Redirect to login if not authenticated
-            if (!Auth::check()) {
-                // Store the intended URL (current page) for redirect after login
-                session(['url.intended' => url()->previous()]);
-                
-                if ($request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Please login to add items to cart',
-                        'redirect' => route('login')
-                    ], 401);
-                }
-                
-                return redirect()->route('login')
-                    ->with('error', 'Please login to add items to cart');
-            }
+{
+    try {
+        // Get product ID
+        if (!$productId) {
+            $productId = $request->input('product_id');
+        }
 
-            if (!$productId) {
-                $productId = $request->input('product_id');
-            }
-
-            if (!$productId) {
-                if ($request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Product ID is required.'
-                    ], 400);
-                }
-                return back()->with('error', 'Product ID is required.');
-            }
-
-            $request->validate([
-                'quantity' => 'nullable|integer|min:1|max:10',
-                'size' => 'nullable|string|max:50'
-            ]);
-            
-            $quantity = $request->quantity ?? 1;
-            $selectedSize = $request->size;
-            
-            $product = Product::find($productId);
-            
-            if (!$product || !$product->is_active) {
-                if ($request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Product not found or not available.'
-                    ], 404);
-                }
-                return back()->with('error', 'Product not found or not available.');
-            }
-            
-            $currentStock = $product->stock_quantity ?? 0;
-            if ($currentStock < $quantity) {
-                if ($request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Insufficient stock. Available: ' . $currentStock
-                    ], 400);
-                }
-                return back()->with('error', 'Insufficient stock. Available: ' . $currentStock);
-            }
-            
-            // Calculate current quantity in cart for this product
-            $cart = Session::get('cart', []);
-            $currentQuantityInCart = 0;
-            foreach ($cart as $item) {
-                if (isset($item['product_id']) && $item['product_id'] == $productId) {
-                    $currentQuantityInCart += $item['quantity'];
-                }
-            }
-            
-            // Check if adding this quantity would exceed stock
-            if (($currentQuantityInCart + $quantity) > $currentStock) {
-                $availableToAdd = $currentStock - $currentQuantityInCart;
-                
-                if ($request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot add {$quantity} items. You can only add {$availableToAdd} more (you already have {$currentQuantityInCart} in cart, stock available: {$currentStock})"
-                    ], 400);
-                }
-                
-                return back()->with('error', "Cannot add {$quantity} items. You can only add {$availableToAdd} more (you already have {$currentQuantityInCart} in cart, stock available: {$currentStock})");
-            }
-            
-            // Add to cart
-            $cartKey = $this->getCartKey($productId, $selectedSize);
-            
-            // Update session cart
-            if (isset($cart[$cartKey])) {
-                $cart[$cartKey]['quantity'] += $quantity;
-            } else {
-                $cart[$cartKey] = [
-                    'product_id' => $productId,
-                    'name' => $product->name,
-                    'price' => $product->sale_price ?: $product->price,
-                    'original_price' => $product->price,
-                    'image' => $product->featured_image ?? $product->image_main,
-                    'quantity' => $quantity,
-                    'size' => $selectedSize,
-                    'slug' => $product->slug,
-                    'stock' => $currentStock
-                ];
-            }
-            
-            Session::put('cart', $cart);
-            
-            // Also save to database since user is authenticated
-            $this->addToDatabase($productId, $quantity, $selectedSize);
-
-            Log::info('Product added to cart successfully', [
-                'user_id' => Auth::id(),
-                'product_id' => $productId,
-                'quantity' => $quantity,
-                'size' => $selectedSize
-            ]);
-
-            if ($request->ajax()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Product added to cart successfully!',
-                    'cart_count' => $this->getCartCount(),
-                    'cart_key' => $cartKey
-                ]);
-            }
-
-            return back()->with('success', 'Product added to cart successfully!');
-
-        } catch (\Exception $e) {
-            Log::error('Error adding product to cart', [
-                'user_id' => Auth::id(),
-                'product_id' => $productId,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
+        if (!$productId) {
             if ($request->ajax()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error adding product to cart. Please try again.'
-                ], 500);
+                    'message' => 'Product ID is required.'
+                ], 400);
             }
-
-            return back()->with('error', 'Error adding product to cart. Please try again.');
+            return back()->with('error', 'Product ID is required.');
         }
+
+        // Validate request
+        $request->validate([
+            'quantity' => 'nullable|integer|min:1|max:10',
+            'size' => 'nullable|string|max:50'
+        ]);
+        
+        $quantity = $request->quantity ?? 1;
+        $selectedSize = $request->size;
+        
+        // Get product
+        $product = Product::find($productId);
+        
+        if (!$product || !$product->is_active) {
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found or not available.'
+                ], 404);
+            }
+            return back()->with('error', 'Product not found or not available.');
+        }
+        
+        // Check stock
+        $currentStock = $product->stock_quantity ?? 0;
+        if ($currentStock < $quantity) {
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient stock. Available: ' . $currentStock
+                ], 400);
+            }
+            return back()->with('error', 'Insufficient stock. Available: ' . $currentStock);
+        }
+        
+        // Calculate current quantity in cart for this product
+        $cart = Session::get('cart', []);
+        $currentQuantityInCart = 0;
+        foreach ($cart as $item) {
+            if (isset($item['product_id']) && $item['product_id'] == $productId) {
+                $currentQuantityInCart += $item['quantity'];
+            }
+        }
+        
+        // Check if adding this quantity would exceed stock
+        if (($currentQuantityInCart + $quantity) > $currentStock) {
+            $availableToAdd = $currentStock - $currentQuantityInCart;
+            
+            if ($request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Cannot add {$quantity} items. You can only add {$availableToAdd} more (you already have {$currentQuantityInCart} in cart, stock available: {$currentStock})"
+                ], 400);
+            }
+            
+            return back()->with('error', "Cannot add {$quantity} items. You can only add {$availableToAdd} more (you already have {$currentQuantityInCart} in cart, stock available: {$currentStock})");
+        }
+        
+        // Add to cart
+        $cartKey = $this->getCartKey($productId, $selectedSize);
+        
+        // Update session cart
+        if (isset($cart[$cartKey])) {
+            $cart[$cartKey]['quantity'] += $quantity;
+        } else {
+            $cart[$cartKey] = [
+                'product_id' => $productId,
+                'name' => $product->name,
+                'price' => $product->sale_price ?: $product->price,
+                'original_price' => $product->price,
+                'image' => $product->featured_image ?? $product->image_main,
+                'quantity' => $quantity,
+                'size' => $selectedSize,
+                'slug' => $product->slug,
+                'stock' => $currentStock
+            ];
+        }
+        
+        Session::put('cart', $cart);
+        
+        // Save to database if user is logged in
+        if (Auth::check()) {
+            $this->addToDatabase($productId, $quantity, $selectedSize);
+        }
+
+        Log::info('Product added to cart successfully', [
+            'user_id' => Auth::id(),
+            'product_id' => $productId,
+            'quantity' => $quantity,
+            'size' => $selectedSize
+        ]);
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Product added to cart successfully!',
+                'cart_count' => $this->getCartCount(),
+                'cart_key' => $cartKey
+            ]);
+        }
+
+        return back()->with('success', 'Product added to cart successfully!');
+
+    } catch (\Exception $e) {
+        Log::error('Error adding product to cart', [
+            'user_id' => Auth::id(),
+            'product_id' => $productId,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        if ($request->ajax()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error adding product to cart. Please try again.'
+            ], 500);
+        }
+
+        return back()->with('error', 'Error adding product to cart. Please try again.');
     }
+}
 
     private function addToDatabase($productId, $quantity, $size = null)
     {
@@ -516,48 +505,54 @@ class CartController extends Controller
     }
 
     private function loadDatabaseCartToSession($userId)
-    {
-        try {
-            $databaseCartItems = ShoppingCart::where('user_id', $userId)
-                ->with('product')
-                ->get();
+{
+    try {
+        $databaseCartItems = ShoppingCart::where('user_id', $userId)
+            ->with('product')
+            ->get();
 
-            if ($databaseCartItems->isEmpty()) {
-                return;
-            }
-
-            $sessionCart = Session::get('cart', []);
-
-            foreach ($databaseCartItems as $dbItem) {
-                if (!$dbItem->product || !$dbItem->product->is_active) {
-                    continue;
-                }
-
-                $size = isset($dbItem->product_options['size']) ? $dbItem->product_options['size'] : null;
-                $cartKey = $this->getCartKey($dbItem->product_id, $size);
-
-                $sessionCart[$cartKey] = [
-                    'product_id' => $dbItem->product_id,
-                    'name' => $dbItem->product->name,
-                    'price' => $dbItem->product->sale_price ?: $dbItem->product->price,
-                    'original_price' => $dbItem->product->price,
-                    'image' => $details['image'] ?? ($product->featured_image ?? $product->image_main),
-                    'quantity' => $dbItem->quantity,
-                    'size' => $size,
-                    'slug' => $dbItem->product->slug,
-                    'stock' => $dbItem->product->stock_quantity
-                ];
-            }
-
-            Session::put('cart', $sessionCart);
-
-        } catch (\Exception $e) {
-            Log::error('Error loading database cart to session', [
-                'user_id' => $userId,
-                'error' => $e->getMessage()
-            ]);
+        if ($databaseCartItems->isEmpty()) {
+            return;
         }
+
+        $sessionCart = [];  // ← PENTING: Jangan merge dengan session lama, reset dulu
+
+        foreach ($databaseCartItems as $dbItem) {
+            if (!$dbItem->product || !$dbItem->product->is_active) {
+                continue;
+            }
+
+            $size = isset($dbItem->product_options['size']) ? $dbItem->product_options['size'] : null;
+            $cartKey = $this->getCartKey($dbItem->product_id, $size);
+
+            $sessionCart[$cartKey] = [
+                'product_id' => $dbItem->product_id,
+                'name' => $dbItem->product->name,
+                'price' => $dbItem->product->sale_price ?: $dbItem->product->price,
+                'original_price' => $dbItem->product->price,
+                'image' => $dbItem->product->featured_image ?? $dbItem->product->image_main,  // ← FIX INI
+                'quantity' => $dbItem->quantity,
+                'size' => $size,
+                'slug' => $dbItem->product->slug,
+                'stock' => $dbItem->product->stock_quantity ?? 0
+            ];
+        }
+
+        Session::put('cart', $sessionCart);
+        
+        Log::info('Database cart loaded to session', [
+            'user_id' => $userId,
+            'items_count' => count($sessionCart)
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Error loading database cart to session', [
+            'user_id' => $userId,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
     }
+}
 
     public function saveSessionCartToDatabase($userId)
     {
