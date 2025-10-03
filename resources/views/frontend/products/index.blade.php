@@ -430,6 +430,7 @@
 
     <!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
 <!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
+<!-- ENHANCED JAVASCRIPT - Size Selection with Clean Product Names -->
 <script>
 console.log('🚀 Enhanced JavaScript with Price Support...');
 
@@ -718,6 +719,7 @@ function hideToast() {
     if (toast) toast.classList.add('hidden');
 }
 </script>
+
 @endsection
 
 @push('styles')
