@@ -1665,7 +1665,7 @@ html, body {
 
     <!-- Mobile Cart & Wishlist (tampil di mobile) -->
     <!-- Mobile Menu dengan Dropdown -->
-<div class="md:hidden bg-white border-b px-0 py-0 mobile-nav-hidden" x-data="mobileDropdown()">
+<div class="md:hidden bg-white border-b px-0 py-0 mobile-nav-hidden" x-data="navigationDropdown()">
     <div class="overflow-x-auto" style="-webkit-overflow-scrolling: touch; scrollbar-width: none;">
         <div class="flex px-4 py-3 min-w-max space-x-0">
             <!-- MENS dengan dropdown -->

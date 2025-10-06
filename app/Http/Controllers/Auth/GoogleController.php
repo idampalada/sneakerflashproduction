@@ -110,17 +110,20 @@ class GoogleController extends Controller
     /**
      * Redirect user after successful login
      */
-    private function redirectAfterLogin($message = 'Welcome back!')
-    {
-        // Check for intended URL
-        $intendedUrl = session()->pull('url.intended', '/');
-        
-        // Redirect to checkout if there are items in cart
-        $cart = session('cart', []);
-        if (!empty($cart) && $intendedUrl === '/') {
-            $intendedUrl = '/checkout';
-        }
-        
+    /**
+ * Redirect user after successful login
+ */
+private function redirectAfterLogin($message = 'Welcome back!')
+{
+    // Check for intended URL
+    $intendedUrl = session()->pull('url.intended');
+    
+    if ($intendedUrl) {
+        // Ada intended URL - redirect ke sana
         return redirect($intendedUrl)->with('success', $message);
     }
+    
+    // Tidak ada intended URL - redirect ke home
+    return redirect('/')->with('success', $message);
+}
 }
