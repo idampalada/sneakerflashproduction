@@ -344,7 +344,7 @@ protected function syncAllProducts(array $data): void
         }
 
         // Dispatch job
-        \App\Jobs\OptimizedBulkGineeSyncDispatcherJob::dispatch($skus, $dryRun, $batchSize, $delay);
+        \App\Jobs\OptimizedBulkGineeSyncDispatcherJob::dispatch($skus, $dryRun, $batchSize);
         
         Notification::make()
             ->title('Background Job Started')
