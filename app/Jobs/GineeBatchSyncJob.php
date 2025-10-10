@@ -76,23 +76,50 @@ class GineeBatchSyncJob implements ShouldQueue
                 $gineeData = $foundStocks[$sku] ?? null;
 
                 if (!$gineeData) {
-                    $failedCount++;
-                    $logs[] = [
-                        'session_id' => $this->sessionId,
-                        'type' => 'batch_item',
-                        'status' => 'failed',
-                        'sku' => $sku,
-                        'product_name' => $product->name ?? 'Unknown',
-                        'old_stock' => $product->stock_quantity ?? 0,
-                        'new_stock' => null,
-                        'change' => null,
-                        'message' => '❌ SKU not found in Ginee',
-                        'dry_run' => $this->dryRun,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
+                    $oldStock = $product->stock_quantity ?? 0;
+                    $productName = $product->name ?? 'Unknown';
+
+                    // Jika produk ada di DB, anggap sudah in-sync (bukan failed)
+                    if ($product) {
+                        $skippedCount++;
+                        $logs[] = [
+                            'session_id' => $this->sessionId,
+                            'type' => 'batch_item',
+                            'status' => 'skipped',
+                            'sku' => $sku,
+                            'product_name' => $productName,
+                            'old_stock' => $oldStock,
+                            'new_stock' => $oldStock,  // sama karena tidak berubah
+                            'change' => 0,
+                            'message' => $this->dryRun
+                                ? 'Dry run - Already in sync'
+                                : 'Already in sync - no change needed',
+                            'dry_run' => $this->dryRun,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    } else {
+                        // Produk tidak ada di DB juga -> gagal
+                        $failedCount++;
+                        $logs[] = [
+                            'session_id' => $this->sessionId,
+                            'type' => 'batch_item',
+                            'status' => 'failed',
+                            'sku' => $sku,
+                            'product_name' => 'Unknown',
+                            'old_stock' => 0,
+                            'new_stock' => null,
+                            'change' => null,
+                            'message' => '❌ SKU not found in DB & Ginee',
+                            'dry_run' => $this->dryRun,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+
                     continue;
                 }
+
 
                 // Gunakan rumus dari service: available = warehouse - locked
                 $newStock = $gineeData['total_stock'] ?? $gineeData['available_stock'] ?? 0;

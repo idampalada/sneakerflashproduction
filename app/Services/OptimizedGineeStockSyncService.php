@@ -212,6 +212,61 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
     }
 
     /**
+     * 🔍 Fallback individual search for SKUs that weren't found in bulk
+     * Uses GineeClient::smartSkuSearch() for maximum reliability.
+     */
+    private function fallbackIndividualSearch(array $skus): array
+    {
+        Log::info("🔍 [FallbackIndividualSearch] Starting fallback for " . count($skus) . " SKUs");
+
+        try {
+            // Gunakan smartSkuSearch bawaan GineeClient
+            $result = $this->gineeClient->smartSkuSearch($skus, [
+                'strategies' => ['sku_filter', 'bulk_inventory', 'master_products'],
+                'max_pages' => 20,
+            ]);
+
+            if (($result['code'] ?? null) !== 'SUCCESS') {
+                Log::warning("⚠️ [FallbackIndividualSearch] API returned failure", [
+                    'message' => $result['message'] ?? 'Unknown error'
+                ]);
+
+                return [
+                    'success' => false,
+                    'found_stock' => [],
+                    'not_found' => $skus,
+                ];
+            }
+
+            $data = $result['data'] ?? [];
+            $foundItems = $data['found_items'] ?? [];
+            $notFound = $data['not_found_skus'] ?? [];
+
+            Log::info("✅ [FallbackIndividualSearch] Completed", [
+                'found_count' => count($foundItems),
+                'not_found_count' => count($notFound)
+            ]);
+
+            return [
+                'success' => true,
+                'found_stock' => $foundItems,
+                'not_found' => $notFound,
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("💥 [FallbackIndividualSearch] Exception during fallback", [
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'found_stock' => [],
+                'not_found' => $skus,
+            ];
+        }
+    }
+
+    /**
      * 🚀 Update local stock
      */
     public function updateLocalProductStock(string $sku, array $stockData, bool $dryRun = false, ?string $sessionId = null): bool
@@ -247,18 +302,31 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             $oldStock = $product->stock_quantity ?? 0;
             $oldWarehouseStock = $product->warehouse_stock ?? 0;
 
-            // 🧩 FIX: Prioritize available_stock
+            // 🧾 Parse stock data dari API
             Log::debug('🧾 [Stock Data Parsed]', [
                 'sku' => $sku,
                 'warehouse_stock' => $stockData['warehouse_stock'] ?? null,
                 'locked_stock' => $stockData['locked_stock'] ?? null,
-                'available_stock' => $stockData['available_stock'] ?? null,
+                'available_stock_raw' => $stockData['available_stock'] ?? null,
                 'total_stock' => $stockData['total_stock'] ?? null,
             ]);
 
-            $newStock = $stockData['available_stock'] ?? $stockData['total_stock'] ?? 0;
-            $newWarehouseStock = $stockData['warehouse_stock'] ?? 0;
+            $warehouseStock = (int) ($stockData['warehouse_stock'] ?? 0);
+            $lockedStock    = (int) ($stockData['locked_stock'] ?? 0);
+
+            // 🧮 Rumus: available_stock = warehouse_stock - locked_stock
+            $newStock = max($warehouseStock - $lockedStock, 0);
+            $newWarehouseStock = $warehouseStock;
             $stockChange = $newStock - $oldStock;
+
+            Log::debug('🧮 [Optimized] Calculated newStock from formula', [
+                'sku' => $sku,
+                'warehouse_stock' => $warehouseStock,
+                'locked_stock' => $lockedStock,
+                'calculated_available_stock' => $newStock,
+                'old_stock' => $oldStock,
+                'change' => $stockChange,
+            ]);
 
             // ✅ DRY RUN mode
             if ($dryRun) {
@@ -281,7 +349,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                     'change' => $stockChange,
                     'old_warehouse_stock' => $oldWarehouseStock,
                     'new_warehouse_stock' => $newWarehouseStock,
-                    'message' => "DRY RUN - Would update from {$oldStock} to {$newStock}",
+                    'message' => "DRY RUN - Would update from {$oldStock} to {$newStock} (formula: warehouse - locked)",
                     'ginee_response' => $stockData,
                     'dry_run' => true,
                     'session_id' => $sessionId,
@@ -311,7 +379,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                     'change' => $stockChange,
                     'old_warehouse_stock' => $oldWarehouseStock,
                     'new_warehouse_stock' => $newWarehouseStock,
-                    'message' => "SUCCESS - Updated from {$oldStock} to {$newStock}",
+                    'message' => "SUCCESS - Updated from {$oldStock} to {$newStock} (formula: warehouse - locked)",
                     'dry_run' => false,
                     'session_id' => $sessionId,
                     'created_at' => now()
@@ -337,4 +405,5 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             return false;
         }
     }
+
 }
