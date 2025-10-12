@@ -475,32 +475,78 @@ public function createAvailableStockUpdate(
 }
 public function getWarehouseInventory(array $params = []): array
 {
-    // Get the ENABLED warehouse ID first
+    // Ambil warehouse ID aktif
     $enabledWarehouseId = $this->getEnabledWarehouseId();
-    
-    $body = [
-        'page' => $params['page'] ?? 0,
-        'size' => $params['size'] ?? 50,
-    ];
-    
-    // If we found an enabled warehouse, include it
-    if ($enabledWarehouseId) {
-        $body['warehouseId'] = $enabledWarehouseId;
-        
-        Log::info('📊 [Ginee] Getting warehouse inventory with enabled warehouse ID', [
-            'warehouse_id' => $enabledWarehouseId,
-            'page' => $body['page'],
-            'size' => $body['size']
-        ]);
-    } else {
-        Log::info('📊 [Ginee] Getting warehouse inventory without warehouse ID', [
-            'page' => $body['page'],
-            'size' => $body['size']
-        ]);
+
+    // Parameter konfigurasi dasar
+    $pageSize = $params['size'] ?? 100;
+    $warehouseId = $params['warehouseId'] ?? $enabledWarehouseId;
+
+    $allInventory = [];
+    $page = 0;
+
+    Log::info('🚀 [Ginee] Mulai fetch semua SKU dari warehouse inventory', [
+        'warehouse_id' => $warehouseId,
+        'page_size' => $pageSize,
+    ]);
+
+    while (true) {
+        $body = [
+            'page' => $page,
+            'size' => $pageSize,
+            'warehouseId' => $warehouseId,
+        ];
+
+        Log::info("📄 [Ginee] Fetching page {$page}...");
+
+        $result = $this->request('POST', '/openapi/warehouse-inventory/v1/sku/list', $body);
+
+        if (($result['code'] ?? null) !== 'SUCCESS') {
+            Log::warning('⚠️ [Ginee] Fetch berhenti karena error', [
+                'page' => $page,
+                'message' => $result['message'] ?? 'No message',
+            ]);
+            break;
+        }
+
+        $items = $result['data']['content'] ?? [];
+        $count = count($items);
+
+        if ($count === 0) {
+            Log::info('✅ [Ginee] Semua halaman selesai diambil.');
+            break;
+        }
+
+        $allInventory = array_merge($allInventory, $items);
+
+        Log::info("📦 [Ginee] Halaman {$page} berisi {$count} item (Total: " . count($allInventory) . ")");
+
+        $page++;
+
+        // Delay 300ms biar gak kena rate limit (sama kayak Node.js)
+        usleep(300000);
     }
-    
-    return $this->request('POST', '/openapi/warehouse-inventory/v1/sku/list', $body);
+
+    // Simpan hasil ke file JSON (opsional)
+    $outputPath = storage_path('app/all_skus.json');
+    file_put_contents($outputPath, json_encode($allInventory, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    Log::info('✅ [Ginee] Fetch selesai', [
+        'total_items' => count($allInventory),
+        'saved_file' => $outputPath,
+    ]);
+
+    return [
+        'code' => 'SUCCESS',
+        'message' => 'All warehouse inventory fetched successfully',
+        'data' => [
+            'content' => $allInventory,
+            'total' => count($allInventory),
+            'file' => $outputPath,
+        ],
+    ];
 }
+
 
 private function getEnabledWarehouseId(): ?string
 {
