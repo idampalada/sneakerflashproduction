@@ -117,7 +117,7 @@ class OptimizationStatsWidget extends BaseWidget
             ->whereIn('status', ['success', 'skipped'])
             ->count();
 
-        return $total > 0 ? round(($successful / $total) * 100) : 0;
+        return $total > 0 ? round((($successful + $skipped) / $total) * 100) : 0;
     }
 
     private function getSpeedTrend($syncs): array

@@ -303,7 +303,7 @@ class ListGineeSyncLogs extends ListRecords
         $successful = $query->whereIn('status', ['success', 'skipped'])->count();
         $failed = $query->where('status', 'failed')->count();
         $skipped = $query->where('status', 'skipped')->count();
-        $successRate = $total > 0 ? round((($successful) / $total) * 100, 1) : 0;
+        $successRate = $total > 0 ? round((($successful + $skipped) / $total) * 100, 1) : 0;
 
         
         $uniqueSkus = $query->whereNotNull('sku')->distinct('sku')->count();

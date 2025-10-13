@@ -286,7 +286,7 @@ class OptimizedBulkGineeSyncJob implements ShouldQueue
         $endTime = now();
         $duration = $startTime->diffInSeconds($endTime);
         
-        $successRate = $totalSkus > 0 ? round(($successful / $totalSkus) * 100, 1) : 0;
+        $successRate = $totalSkus > 0 ? round((($successful + $skipped) / $totalSkus) * 100, 1) : 0;
         $summary = "Sync completed in {$duration} seconds: {$successful} updated, {$skipped} already in sync, {$failed} failed. Success rate: {$successRate}%";
         
         Log::info("✅ [OptimizedBulkGineeSyncJob] {$summary}");
@@ -441,7 +441,7 @@ class OptimizedBulkGineeSyncJob implements ShouldQueue
         $endTime = now();
         $duration = $startTime->diffInSeconds($endTime);
         
-        $successRate = $totalSkus > 0 ? round(($successful / $totalSkus) * 100, 1) : 0;
+        $successRate = $totalSkus > 0 ? round((($successful + $skipped) / $totalSkus) * 100, 1) : 0;
         $summary = "Individual sync completed in {$duration} seconds: {$successful} updated, {$skipped} already in sync, {$failed} failed. Success rate: {$successRate}%";
         
         Log::info("✅ [OptimizedBulkGineeSyncJob] {$summary}");

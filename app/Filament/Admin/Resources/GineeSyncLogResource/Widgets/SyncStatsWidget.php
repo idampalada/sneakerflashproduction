@@ -19,8 +19,9 @@ class SyncStatsWidget extends BaseWidget
         ])->count();
         
         $totalWithStatus = GineeSyncLog::whereIn('status', ['success', 'failed', 'skipped'])->count();
-        $successfulSyncs = GineeSyncLog::where('status', 'success')->count();
-        $successRate = $totalWithStatus > 0 ? round(($successfulSyncs / $totalWithStatus) * 100, 1) : 0;
+// ✅ BENAR - hitung 'success' DAN 'skipped'
+$successfulSyncs = GineeSyncLog::whereIn('status', ['success', 'skipped'])->count();
+$successRate = $totalWithStatus > 0 ? round(($successfulSyncs / $totalWithStatus) * 100, 1) : 0;
         
         return [
             Stat::make('Total Syncs', number_format($totalSyncs))

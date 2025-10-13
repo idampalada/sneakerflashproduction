@@ -520,25 +520,50 @@ class Dashboard extends Page
         try {
             $query = GineeSyncLog::query()
                 ->whereIn('type', ['individual_sync', 'bulk_optimized_sync', 'bulk_sync']);
-            
+
+            $total = $query->count();
+
+            // ✅ Hitung success termasuk skipped
+            $success = GineeSyncLog::whereIn('type', ['individual_sync', 'bulk_optimized_sync', 'bulk_sync'])
+                ->whereIn('status', ['success', 'skipped'])
+                ->count();
+
+            $failed = GineeSyncLog::whereIn('type', ['individual_sync', 'bulk_optimized_sync', 'bulk_sync'])
+                ->where('status', 'failed')
+                ->count();
+
+            $dryRun = GineeSyncLog::whereIn('type', ['individual_sync', 'bulk_optimized_sync', 'bulk_sync'])
+                ->where('dry_run', true)
+                ->count();
+
+            $today = GineeSyncLog::whereIn('type', ['individual_sync', 'bulk_optimized_sync', 'bulk_sync'])
+                ->whereDate('created_at', today())
+                ->count();
+
+            // ✅ Tambahkan success rate di sini (termasuk skipped)
+            $successRate = $total > 0 ? round(($success / $total) * 100, 1) : 0;
+
             return [
-                'total' => $query->count(),
-                'success' => $query->where('status', 'success')->count(),
-                'failed' => $query->where('status', 'failed')->count(),
-                'dry_run' => $query->where('dry_run', true)->count(),
-                'today' => $query->whereDate('created_at', today())->count(),
+                'total' => $total,
+                'success' => $success,
+                'failed' => $failed,
+                'dry_run' => $dryRun,
+                'today' => $today,
+                'success_rate' => $successRate,
             ];
         } catch (\Exception $e) {
-            Log::error("❌ Exception getting table stats", ['error' => $e->getMessage()]);
+            \Log::error("❌ Exception getting table stats", ['error' => $e->getMessage()]);
             return [
                 'total' => 0,
                 'success' => 0,
                 'failed' => 0,
                 'dry_run' => 0,
                 'today' => 0,
+                'success_rate' => 0,
             ];
         }
     }
+
 
     /**
      * Get page heading with stats
