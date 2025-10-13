@@ -320,42 +320,30 @@ class Dashboard extends Page
     /**
      * Sync all products with advanced options
      */
-protected function syncAllProducts(array $data): void
-{
-    try {
-        $dryRun = $data['dry_run'] ?? true;
-        $onlyActive = $data['only_active'] ?? true; 
-        $onlyMapped = $data['only_mapped'] ?? false;
-        $batchSize = $data['batch_size'] ?? 50;
-        $delay = $data['delay_between_batches'] ?? 2;
-        $maxProducts = $data['max_products'] ?? 0;
+    protected function syncAllProducts(array $data): void
+    {
+        try {
+            $dryRun = $data['dry_run'] ?? true;
 
-        // Get SKUs
-        $query = Product::whereNotNull('sku')->where('sku', '!=', '');
-        if ($onlyActive) $query->where('status', 'active');
-        if ($onlyMapped) $query->whereHas('gineeMappings', function($q) { $q->where('sync_enabled', true); });
-        if ($maxProducts > 0) $query->limit($maxProducts);
-        
-        $skus = $query->pluck('sku')->filter()->toArray();
-        
-        if (empty($skus)) {
-            Notification::make()->title('No Products Found')->warning()->send();
-            return;
+            // 🔄 Jalankan job baru yang handle semua proses (fetch Ginee → Redis → compare → log)
+            \App\Jobs\SyncAllProductsJob::dispatch($dryRun)->onQueue('ginee-sync');
+
+            \Filament\Notifications\Notification::make()
+                ->title($dryRun ? '🧪 Sync All Products (Dry Run) started' : '🚀 Sync All Products started')
+                ->body('Proses akan berjalan di background queue. Silakan cek log di GineeSyncLog setelah selesai.')
+                ->success()
+                ->duration(7000)
+                ->send();
+        } catch (\Throwable $e) {
+            \Filament\Notifications\Notification::make()
+                ->title('❌ Sync All Products Failed')
+                ->body($e->getMessage())
+                ->danger()
+                ->duration(8000)
+                ->send();
         }
-
-        // Dispatch job
-        \App\Jobs\OptimizedBulkGineeSyncDispatcherJob::dispatch($skus, $dryRun, $batchSize);
-        
-        Notification::make()
-            ->title('Background Job Started')
-            ->body("Processing " . count($skus) . " products in background")
-            ->success()
-            ->send();
-            
-    } catch (\Exception $e) {
-        Notification::make()->title('Job Failed')->body($e->getMessage())->danger()->send();
     }
-}
+
 
 
     /**

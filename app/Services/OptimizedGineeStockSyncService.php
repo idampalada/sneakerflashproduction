@@ -67,26 +67,47 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                 foreach ($items as $item) {
                     $masterVariation = $item['masterVariation'] ?? [];
                     $warehouseInventory = $item['warehouseInventory'] ?? [];
+
                     $itemSku = strtoupper(trim($masterVariation['masterSku'] ?? ''));
 
                     if (in_array($itemSku, $skus, true)) {
-                        Log::info("🎯 Found SKU: {$itemSku}");
+                        // 🔹 Ambil semua jenis stok yang relevan
+                        $warehouseStock = (int) ($warehouseInventory['warehouseStock'] ?? 0);
+                        $lockedStock    = (int) ($warehouseInventory['lockedStock'] ?? 0);
+                        $spareStock     = (int) ($warehouseInventory['spareStock'] ?? 0);
+                        $promotionStock = (int) ($warehouseInventory['promotionStock'] ?? 0);
+
+                        // 🔹 Rumus baru sesuai struktur Ginee
+                        // available = warehouse - locked - spare - promotion
+                        $availableStock = max($warehouseStock - $lockedStock - $spareStock - $promotionStock, 0);
+
+                        Log::info("🎯 Found SKU {$itemSku}", [
+                            'warehouse' => $warehouseStock,
+                            'locked' => $lockedStock,
+                            'spare' => $spareStock,
+                            'promotion' => $promotionStock,
+                            'available' => $availableStock
+                        ]);
 
                         $foundStock[$itemSku] = [
                             'sku' => $itemSku,
                             'product_name' => $masterVariation['name'] ?? 'Unknown Product',
-                            'warehouse_stock' => $warehouseInventory['warehouseStock'] ?? 0,
-                            'available_stock' => $warehouseInventory['availableStock'] ?? 0,
-                            'locked_stock' => $warehouseInventory['lockedStock'] ?? 0,
-                            'total_stock' => ($warehouseInventory['warehouseStock'] ?? 0) + ($warehouseInventory['lockedStock'] ?? 0),
+                            'warehouse_stock' => $warehouseStock,
+                            'locked_stock' => $lockedStock,
+                            'spare_stock' => $spareStock,
+                            'promotion_stock' => $promotionStock,
+                            'available_stock' => $availableStock,
+                            'total_stock' => $warehouseStock, // total stok fisik di gudang
                             'last_updated' => $warehouseInventory['updateDatetime'] ?? now(),
-                            'api_source' => 'bulk_warehouse_inventory',
+                            'api_source' => 'warehouse_inventory_v1',
                             'found_at_page' => $page
                         ];
 
+                        // Hapus SKU dari daftar target setelah ditemukan
                         $skus = array_diff($skus, [$itemSku]);
                     }
                 }
+
 
                 $page++;
                 $retries = 0;
@@ -306,26 +327,28 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             Log::debug('🧾 [Stock Data Parsed]', [
                 'sku' => $sku,
                 'warehouse_stock' => $stockData['warehouse_stock'] ?? null,
+                'spare_stock' => $stockData['spare_stock'] ?? null,
                 'locked_stock' => $stockData['locked_stock'] ?? null,
-                'available_stock_raw' => $stockData['available_stock'] ?? null,
-                'total_stock' => $stockData['total_stock'] ?? null,
+                'promotion_stock' => $stockData['promotion_stock'] ?? null,
             ]);
 
             $warehouseStock = (int) ($stockData['warehouse_stock'] ?? 0);
+            $spareStock     = (int) ($stockData['spare_stock'] ?? 0);
             $lockedStock    = (int) ($stockData['locked_stock'] ?? 0);
+            $promotionStock = (int) ($stockData['promotion_stock'] ?? 0);
 
-            // 🧮 Rumus: available_stock = warehouse_stock - locked_stock
-            $newStock = max($warehouseStock - $lockedStock, 0);
+            // ✅ Rumus final tanpa fallback: available = warehouse - spare - locked - promotion
+            $newStock = max($warehouseStock - $spareStock - $lockedStock - $promotionStock, 0);
             $newWarehouseStock = $warehouseStock;
             $stockChange = $newStock - $oldStock;
 
-            Log::debug('🧮 [Optimized] Calculated newStock from formula', [
+            Log::info('🧮 [StockCalc] Final stock formula applied', [
                 'sku' => $sku,
-                'warehouse_stock' => $warehouseStock,
-                'locked_stock' => $lockedStock,
-                'calculated_available_stock' => $newStock,
-                'old_stock' => $oldStock,
-                'change' => $stockChange,
+                'warehouse' => $warehouseStock,
+                'spare' => $spareStock,
+                'locked' => $lockedStock,
+                'promotion' => $promotionStock,
+                'calculated_available' => $newStock
             ]);
 
             // ✅ DRY RUN mode
@@ -349,7 +372,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                     'change' => $stockChange,
                     'old_warehouse_stock' => $oldWarehouseStock,
                     'new_warehouse_stock' => $newWarehouseStock,
-                    'message' => "DRY RUN - Would update from {$oldStock} to {$newStock} (formula: warehouse - locked)",
+                    'message' => "DRY RUN - Would update from {$oldStock} → {$newStock} (warehouse - spare - locked - promotion)",
                     'ginee_response' => $stockData,
                     'dry_run' => true,
                     'session_id' => $sessionId,
@@ -379,7 +402,7 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
                     'change' => $stockChange,
                     'old_warehouse_stock' => $oldWarehouseStock,
                     'new_warehouse_stock' => $newWarehouseStock,
-                    'message' => "SUCCESS - Updated from {$oldStock} to {$newStock} (formula: warehouse - locked)",
+                    'message' => "SUCCESS - Updated {$oldStock} → {$newStock} (warehouse - spare - locked - promotion)",
                     'dry_run' => false,
                     'session_id' => $sessionId,
                     'created_at' => now()
@@ -405,5 +428,106 @@ class OptimizedGineeStockSyncService extends GineeStockSyncService
             return false;
         }
     }
+
+
+    /**
+     * 🔄 Fetch semua SKU langsung dari Ginee tanpa fallback (versi Node.js)
+     * Menyimpan hasil di Redis sementara & return array keyed by SKU.
+     */
+    public function fetchAllSkusFromGinee(string $redisKey): array
+    {
+        $BASE_PATH = '/openapi/warehouse-inventory/v1/sku/list';
+        $PAGE_SIZE = 100;
+        $page = 0;
+        $allData = [];
+        $client = $this->gineeClient;
+
+        Log::info("🚀 [Ginee FetchAll] Mulai ambil semua SKU dari Ginee...", [
+            'redis_key' => $redisKey
+        ]);
+
+        while (true) {
+            try {
+                Log::info("📄 [Ginee FetchAll] Fetch page {$page}");
+
+                $response = $client->getWarehouseInventory([
+                    'page' => $page,
+                    'size' => $PAGE_SIZE,
+                    'warehouseId' => config('services.ginee.warehouse_id'),
+                ]);
+
+                if (($response['code'] ?? '') !== 'SUCCESS') {
+                    Log::warning("⚠️ [Ginee FetchAll] Gagal page {$page}: " . ($response['message'] ?? 'Unknown error'));
+                    break;
+                }
+
+                $content = $response['data']['content'] ?? [];
+                if (empty($content)) {
+                    Log::info("✅ [Ginee FetchAll] Tidak ada data di page {$page}, selesai.");
+                    break;
+                }
+
+                foreach ($content as $item) {
+                    $master = $item['masterVariation'] ?? [];
+                    $inv = $item['warehouseInventory'] ?? [];
+
+                    $sku = strtoupper(trim($master['masterSku'] ?? ''));
+                    if (!$sku) continue;
+
+                    $warehouse = (int)($inv['warehouseStock'] ?? 0);
+                    $spare = (int)($inv['spareStock'] ?? 0);
+                    $locked = (int)($inv['lockedStock'] ?? 0);
+                    $promotion = (int)($inv['promotionStock'] ?? 0);
+
+                    // ✅ rumus resmi
+                    $available = max($warehouse - $spare - $locked - $promotion, 0);
+
+                    $allData[$sku] = [
+                        'sku' => $sku,
+                        'product_name' => $master['name'] ?? 'Unknown Product',
+                        'warehouse_stock' => $warehouse,
+                        'spare_stock' => $spare,
+                        'locked_stock' => $locked,
+                        'promotion_stock' => $promotion,
+                        'available_stock' => $available,
+                        'total_stock' => $warehouse, // stok fisik gudang
+                        'last_updated' => $inv['updateDatetime'] ?? now(),
+                        'page' => $page,
+                    ];
+
+                    Log::debug("📦 [StockCalc] {$sku}: warehouse={$warehouse}, spare={$spare}, locked={$locked}, promo={$promotion}, available={$available}");
+                }
+
+
+                $page++;
+
+                // delay kecil agar tidak rate-limit
+                usleep(300000); // 300ms
+            } catch (\Throwable $e) {
+                Log::error("💥 [Ginee FetchAll] Exception di page {$page}: " . $e->getMessage());
+                break;
+            }
+        }
+
+        // Simpan di Redis
+        try {
+            if (!empty($allData)) {
+                \Illuminate\Support\Facades\Redis::set($redisKey, json_encode($allData));
+                Log::info("💾 [Ginee FetchAll] Data disimpan ke Redis", [
+                    'total' => count($allData),
+                    'redis_key' => $redisKey
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::error("⚠️ [Ginee FetchAll] Gagal simpan Redis: " . $e->getMessage());
+        }
+
+        Log::info("🏁 [Ginee FetchAll] Selesai ambil semua SKU", [
+            'total_fetched' => count($allData)
+        ]);
+
+        return $allData;
+    }
+
 
 }
