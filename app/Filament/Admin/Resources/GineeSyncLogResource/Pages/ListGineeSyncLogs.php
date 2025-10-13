@@ -300,10 +300,11 @@ class ListGineeSyncLogs extends ListRecords
         $query = GineeSyncLog::whereBetween('created_at', [$fromDate, $toDate]);
         
         $total = $query->count();
-        $successful = $query->where('status', 'success')->count();
+        $successful = $query->whereIn('status', ['success', 'skipped'])->count();
         $failed = $query->where('status', 'failed')->count();
         $skipped = $query->where('status', 'skipped')->count();
-        $successRate = $total > 0 ? round(($successful / $total) * 100, 1) : 0;
+        $successRate = $total > 0 ? round((($successful) / $total) * 100, 1) : 0;
+
         
         $uniqueSkus = $query->whereNotNull('sku')->distinct('sku')->count();
         $uniqueSessions = $query->whereNotNull('session_id')->distinct('session_id')->count();

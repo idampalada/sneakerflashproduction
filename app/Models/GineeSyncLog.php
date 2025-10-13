@@ -193,7 +193,8 @@ class GineeSyncLog extends Model
         
         return [
             'total' => $logs->count(),
-            'successful' => $logs->where('status', 'success')->count(),
+            // ✅ Hitung success termasuk skipped
+            'successful' => $logs->whereIn('status', ['success', 'skipped'])->count(),
             'failed' => $logs->where('status', 'failed')->count(),
             'skipped' => $logs->where('status', 'skipped')->count(),
             'would_update' => $logs->where('status', 'success')->where('change', '!=', 0)->count(),
@@ -272,8 +273,8 @@ class GineeSyncLog extends Model
                 'method_name' => static::getMethodDisplayName($method),
                 'total_uses' => $methodLogs->count(),
                 'success_rate' => $methodLogs->count() > 0 ? 
-                    round(($methodLogs->where('status', 'success')->count() / $methodLogs->count()) * 100, 1) : 0,
-                'successful' => $methodLogs->where('status', 'success')->count(),
+                    round(($methodLogs->whereIn('status', ['success', 'skipped'])->count() / $methodLogs->count()) * 100, 1) : 0,
+                'successful' => $methodLogs->whereIn('status', ['success', 'skipped'])->count(),
                 'failed' => $methodLogs->where('status', 'failed')->count(),
                 'skipped' => $methodLogs->where('status', 'skipped')->count(),
                 'average_stock_change' => $methodLogs->where('change', '!=', null)->avg('change') ?? 0,
