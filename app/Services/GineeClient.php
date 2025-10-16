@@ -20,7 +20,7 @@ class GineeClient
         $this->accessKey = (string)($cfg['access_key'] ?? '');
         $this->secretKey = (string)($cfg['secret_key'] ?? '');
         $this->country   = (string)($cfg['country'] ?? 'ID');
-        $this->defaultWarehouseId = (string)($cfg['warehouse_id'] ?? 'WW614C57B6E21B840001B4A467');
+        $this->defaultWarehouseId = (string)($cfg['warehouse_id'] ?? 'WW68EEFA0F46E0FB000124FE87');
 
         if (!$this->accessKey || !$this->secretKey) {
             throw new \RuntimeException('Ginee access_key/secret_key belum terisi.');
